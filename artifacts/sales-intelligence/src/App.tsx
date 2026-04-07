@@ -9,6 +9,8 @@ import DoctorDetailPage from "@/pages/DoctorDetailPage";
 import VisitLogPage from "@/pages/VisitLogPage";
 import SnippetsPage from "@/pages/SnippetsPage";
 import DashboardPage from "@/pages/DashboardPage";
+import HospitalsPage from "@/pages/HospitalsPage";
+import SettingsPage from "@/pages/SettingsPage";
 
 const queryClient = new QueryClient();
 
@@ -20,7 +22,9 @@ function Router() {
         <Route path="/doctors" component={DoctorsPage} />
         <Route path="/doctors/:id" component={DoctorDetailPage} />
         <Route path="/visit-log" component={VisitLogPage} />
+        <Route path="/hospitals" component={HospitalsPage} />
         <Route path="/snippets" component={SnippetsPage} />
+        <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
