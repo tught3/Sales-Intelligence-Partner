@@ -52,6 +52,9 @@ export default function DoctorsPage() {
       id: generateId(),
       ...data,
       objections: [],
+      conversationHistory: [],
+      prescriptionTendency: data.prescriptionTendency ?? '',
+      interestAreas: data.interestAreas ?? '',
       createdAt: now,
       updatedAt: now,
     };

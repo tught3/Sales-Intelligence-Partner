@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
-import { doctorStorage, visitLogStorage, snippetStorage, generateId, type Doctor, type DoctorTrait, type Objection } from "@/lib/storage";
-import { generateObjectionResponse, generateNextVisitStrategy } from "@/lib/ai";
+import { doctorStorage, visitLogStorage, snippetStorage, generateId, type Doctor, type DoctorTrait, type Objection, type ConversationRecord } from "@/lib/storage";
+import { generateObjectionResponse, generateNextVisitStrategy, analyzePastConversations } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,9 @@ import {
   Loader2,
   Shield,
   Pencil,
+  MessageSquare,
+  Sparkles,
+  Clock,
 } from "lucide-react";
 
 const TRAIT_COLORS: Record<string, string> = {
@@ -50,6 +53,12 @@ export default function DoctorDetailPage() {
   const [strategy, setStrategy] = useState<string | null>(null);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const [showEditForm, setShowEditForm] = useState(false);
+
+  const [convText, setConvText] = useState("");
+  const [convPeriod, setConvPeriod] = useState("2025년 2월~현재");
+  const [analyzingConv, setAnalyzingConv] = useState(false);
+  const [convAnalysisResult, setConvAnalysisResult] = useState<{ analysis: string; detectedTraits: string[]; nextSuggestions: string } | null>(null);
+  const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
 
   if (!doctor) {
     return (
@@ -121,6 +130,45 @@ export default function DoctorDetailPage() {
     setDoctor(doctorStorage.getById(id));
     setShowEditForm(false);
     toast({ title: "프로파일이 수정되었습니다" });
+  }
+
+  async function handleAnalyzeConversation() {
+    if (!doctor || !convText.trim()) return;
+    setAnalyzingConv(true);
+    setConvAnalysisResult(null);
+    try {
+      const result = await analyzePastConversations(convText, doctor, convPeriod);
+      setConvAnalysisResult(result);
+    } catch (e) {
+      toast({ title: "분석 실패", description: String(e), variant: "destructive" });
+    } finally {
+      setAnalyzingConv(false);
+    }
+  }
+
+  function handleSaveConvAnalysis() {
+    if (!doctor || !convAnalysisResult) return;
+    const record: ConversationRecord = {
+      id: generateId(),
+      rawText: convText,
+      period: convPeriod,
+      aiAnalysis: convAnalysisResult.analysis,
+      detectedTraits: convAnalysisResult.detectedTraits,
+      nextSuggestions: convAnalysisResult.nextSuggestions,
+      createdAt: new Date().toISOString(),
+    };
+    doctorStorage.addConversationRecord(doctor.id, record);
+    setDoctor(doctorStorage.getById(id));
+    setConvText("");
+    setConvAnalysisResult(null);
+    toast({ title: "과거 대화 기록이 저장되었습니다", description: "AI가 다음 방문 생성 시 자동으로 참고합니다" });
+  }
+
+  function handleDeleteConvRecord(recordId: string) {
+    if (!doctor) return;
+    doctorStorage.deleteConversationRecord(doctor.id, recordId);
+    setDoctor(doctorStorage.getById(id));
+    toast({ title: "기록이 삭제되었습니다" });
   }
 
   return (
@@ -327,6 +375,151 @@ export default function DoctorDetailPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Conversation History Section */}
+      <div className="mt-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-primary" />
+              과거 대화 기록 & 성향 분석
+              <span className="text-xs font-normal text-muted-foreground ml-1">
+                ({(doctor.conversationHistory ?? []).length}개 저장됨)
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-xs text-muted-foreground">
+              <p className="font-medium text-primary mb-1">📋 사용법</p>
+              <p>2월부터 일했던 내용, 방문 메모, 대화 내용 등을 그대로 붙여넣으세요. AI가 이 교수의 성향을 분석하고 다음 방문 전략을 제안합니다. 저장하면 영업 일지 생성 시 자동으로 참고합니다.</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground mb-1 block">기간</label>
+                  <input
+                    type="text"
+                    value={convPeriod}
+                    onChange={(e) => setConvPeriod(e.target.value)}
+                    className="w-full border border-input bg-background rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="예: 2025년 2월~현재"
+                  />
+                </div>
+              </div>
+              <Textarea
+                placeholder={`이 교수와의 대화 내용, 방문 기록, 메모 등을 자유롭게 붙여넣으세요.\n\n예:\n2월 3일 첫 방문. 페린젝트 얘기했는데 가격 비싸다고 바로 거절. 다음엔 임상 데이터 가져가야할 것 같음.\n2월 17일 두번째 방문. 위너프 처방 패턴 물어보니 경구제는 별로 안 믿는 스타일. IV 선호. 학회지 논문 하나 드렸더니 읽어보겠다고 함...`}
+                value={convText}
+                onChange={(e) => setConvText(e.target.value)}
+                rows={8}
+                className="text-sm resize-none"
+              />
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleAnalyzeConversation}
+                  disabled={!convText.trim() || analyzingConv}
+                  className="gap-2 flex-1"
+                >
+                  {analyzingConv
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />AI가 성향 분석 중...</>
+                    : <><Sparkles className="w-4 h-4" />AI 성향 분석</>}
+                </Button>
+              </div>
+            </div>
+
+            {convAnalysisResult && (
+              <div className="border border-primary/30 rounded-lg overflow-hidden">
+                <div className="bg-primary/5 p-3 border-b border-primary/20">
+                  <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    AI 분석 결과
+                  </p>
+                </div>
+                <div className="p-3 space-y-3">
+                  {convAnalysisResult.detectedTraits.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-1.5">파악된 성향 태그</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {convAnalysisResult.detectedTraits.map((t) => (
+                          <span key={t} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">성향 분석</p>
+                    <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed bg-muted/30 rounded p-2">{convAnalysisResult.analysis}</pre>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-primary mb-1">다음 방문 전략 제안</p>
+                    <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed bg-primary/5 rounded p-2">{convAnalysisResult.nextSuggestions}</pre>
+                  </div>
+                  <Button onClick={handleSaveConvAnalysis} size="sm" className="w-full gap-1.5">
+                    <Plus className="w-3.5 h-3.5" />
+                    이 분석 저장 (AI가 다음부터 자동 참고)
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {(doctor.conversationHistory ?? []).length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">저장된 과거 대화 분석</p>
+                {(doctor.conversationHistory ?? []).map((record) => (
+                  <div key={record.id} className="border rounded-lg overflow-hidden group">
+                    <button
+                      onClick={() => setExpandedConvId(expandedConvId === record.id ? null : record.id)}
+                      className="w-full flex items-center justify-between p-3 hover:bg-muted/30 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        <div>
+                          <span className="text-sm font-medium">{record.period}</span>
+                          {record.detectedTraits.length > 0 && (
+                            <div className="flex gap-1 mt-0.5">
+                              {record.detectedTraits.slice(0, 3).map((t) => (
+                                <span key={t} className="text-xs bg-primary/10 text-primary px-1.5 py-0 rounded-full">{t}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteConvRecord(record.id); }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                        {expandedConvId === record.id
+                          ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                          : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </button>
+                    {expandedConvId === record.id && (
+                      <div className="border-t p-3 space-y-2 bg-muted/20 text-xs">
+                        <div>
+                          <p className="font-semibold text-muted-foreground mb-1">성향 분석</p>
+                          <pre className="text-foreground whitespace-pre-wrap font-sans leading-relaxed">{record.aiAnalysis}</pre>
+                        </div>
+                        {record.nextSuggestions && (
+                          <div>
+                            <p className="font-semibold text-primary mb-1">다음 방문 전략</p>
+                            <pre className="text-foreground whitespace-pre-wrap font-sans leading-relaxed">{record.nextSuggestions}</pre>
+                          </div>
+                        )}
+                        <div className="border-t pt-2">
+                          <p className="font-semibold text-muted-foreground mb-1">원본 기록</p>
+                          <pre className="text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed line-clamp-3">{record.rawText.slice(0, 300)}{record.rawText.length > 300 ? '...' : ''}</pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {showEditForm && doctor && (

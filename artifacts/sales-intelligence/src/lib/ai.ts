@@ -26,16 +26,17 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<string>
 
 function buildSystemPrompt(): string {
   const manualText = manualStorage.getCombinedText();
-  const base = `당신은 JW중외제약 MR(의약품 영업사원)의 전문 영업 비서입니다.
+  const base = `당신은 JW중외제약 MR(의약품 영업사원)의 영업 비서입니다.
 JW중외제약의 주요 제품:
 - 위너프(Winnerp): 철 결핍성 빈혈 치료제 (경구용 철분제) - 편의성, 부작용 적음
 - 페린젝트(Ferinject): 정맥주사용 철 결핍 치료제 (IV 철 보충제) - 빠른 효과, 1회 고용량 투여 가능
 
-당신의 역할:
-- 전문적이고 격식 있는 한국어로 응답
-- 의약품 영업에 특화된 전문 용어 사용
+중요 원칙:
+- 응답은 자연스러운 한국어로, 너무 딱딱하거나 문어체일 필요 없음
+- 영업사원이 실제로 쓰는 말투와 표현을 유지할 것
 - 교수/의사의 성향, 병원 특성, 과 특성, 과거 대화 맥락을 반드시 반영
-- JW중외제약의 제품 강점을 자연스럽게 강조`;
+- 회사 규칙과 가이드라인 내에서 내용을 정리할 것
+- JW중외제약 제품 강점은 자연스럽게 녹여낼 것`;
 
   if (manualText) {
     return `${base}
@@ -93,6 +94,15 @@ function buildContextSection(
     context += '\n\n방문 기록: 없음 (첫 방문 또는 기록 없음)';
   }
 
+  const convHistory = doctor.conversationHistory ?? [];
+  if (convHistory.length > 0) {
+    const latestConv = convHistory[0];
+    context += `\n\n과거 대화 패턴 분석 (${latestConv.period}):
+성향 태그: ${latestConv.detectedTraits.join(', ') || '없음'}
+성향 요약: ${latestConv.aiAnalysis.slice(0, 400)}
+이전 전략 제안: ${latestConv.nextSuggestions.slice(0, 300)}`;
+  }
+
   return context;
 }
 
@@ -111,31 +121,27 @@ export async function convertToVisitLog(
 
   const prompt = `${contextSection}
 
-오늘 날것의 방문 메모:
+오늘 방문 메모 (날것):
 ${rawNotes}
 
-위 모든 맥락(과거 방문 이력, 교수 성향, 병원/과 특성, 회사 매뉴얼)을 종합하여 다음을 작성해주세요:
+위 메모를 회사 규칙과 가이드라인에 맞춰 정리해주세요.
 
-1. [전문 영업 일지]
-- 방문목적, 주요 대화 내용, 교수 반응, 제품 논의사항, 특이사항 포함
-- 과거 방문 대비 변화/진전 사항 언급
-- 300자 이상
-
-2. [다음 방문 전략]  
-- 이번 방문의 반응을 반영한 구체적 다음 단계
-- 강조할 제품 포인트 (위너프/페린젝트)
-- 예상 반박과 대응책
-- 200자 이상
+작성 기준:
+- 너무 딱딱한 문어체나 보고서 형식으로 바꾸지 말 것. 영업사원이 실제로 기록하는 자연스러운 말투 유지
+- 내용을 과도하게 부풀리거나 없는 내용을 추가하지 말 것
+- 회사 규칙에 어긋나는 표현이 있으면 수정
+- 교수 성향과 과거 방문 맥락을 반영하여 빠진 부분 보완
+- 다음 방문 전략은 실용적으로: 무엇을 들고 갈지, 어떤 말을 꺼낼지 구체적으로
 
 응답 형식:
-===전문영업일지===
+===정리된방문일지===
 (일지 내용)
 
 ===다음방문전략===
 (전략 내용)`;
 
   const response = await callAI(systemPrompt, prompt);
-  const logMatch = response.match(/===전문영업일지===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
+  const logMatch = response.match(/===(?:전문영업일지|정리된방문일지)===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   return {
@@ -319,4 +325,62 @@ ${text.slice(0, 3000)}
 3. 앞으로의 영업 전략 제안`;
 
   return callAI(systemPrompt, prompt);
+}
+
+export async function analyzePastConversations(
+  rawText: string,
+  doctor: Doctor,
+  period: string
+): Promise<{ analysis: string; detectedTraits: string[]; nextSuggestions: string }> {
+  const hospital = hospitalStorage.getByName(doctor.hospital);
+  const deptProfile = hospital
+    ? departmentStorage.getByHospitalAndName(hospital.id, doctor.department)
+    : undefined;
+
+  const systemPrompt = buildSystemPrompt();
+  const traitText = doctor.traits.map((t) => t.label).join(', ');
+
+  const prompt = `교수 정보:
+- 이름: ${doctor.name} (${doctor.position})
+- 병원: ${doctor.hospital} / 과: ${doctor.department}
+- 기존 파악된 성향: ${traitText || '없음'}
+- 처방 경향: ${doctor.prescriptionTendency || '미기록'}
+${hospital ? `- 병원 특성: ${hospital.characteristics}` : ''}
+${deptProfile ? `- 과 특성: ${deptProfile.characteristics}` : ''}
+
+아래는 ${period} 동안의 이 교수와의 방문/대화 기록입니다:
+---
+${rawText.slice(0, 4000)}
+---
+
+위 내용을 바탕으로 다음을 분석해주세요:
+
+응답 형식:
+===성향분석===
+이 교수의 성격, 의사결정 스타일, 제품에 대한 태도, 영업 접근법에서 통했던 것과 안 통했던 것을 자연스럽게 정리해주세요.
+
+===파악된성향태그===
+성향을 나타내는 태그를 쉼표로 구분해서 5개 이내로 작성 (예: 데이터중시, 바쁨, 경쟁사충성도높음, 임상관심많음, 가격민감)
+
+===다음방문전략===
+지금까지의 대화를 바탕으로 다음에 어떤 방식으로 접근하면 좋을지 구체적으로 제안해주세요. 어떤 자료를 가져갈지, 어떤 말을 꺼낼지, 어떤 것을 피해야 할지 포함.`;
+
+  const response = await callAI(systemPrompt, prompt);
+
+  const analysisMatch = response.match(/===성향분석===\s*([\s\S]*?)(?:===파악된성향태그===|$)/);
+  const tagsMatch = response.match(/===파악된성향태그===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
+  const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
+
+  const tagsText = tagsMatch ? tagsMatch[1].trim() : '';
+  const detectedTraits = tagsText
+    .split(/[,，、\n]/)
+    .map((t) => t.trim().replace(/^[-·•]\s*/, ''))
+    .filter(Boolean)
+    .slice(0, 5);
+
+  return {
+    analysis: analysisMatch ? analysisMatch[1].trim() : response,
+    detectedTraits,
+    nextSuggestions: strategyMatch ? strategyMatch[1].trim() : '',
+  };
 }

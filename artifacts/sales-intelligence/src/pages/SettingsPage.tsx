@@ -27,16 +27,14 @@ import {
 } from "lucide-react";
 
 const CATEGORY_LABELS: Record<CompanyManual["category"], string> = {
-  guideline: "영업 가이드라인",
+  rule: "회사 규칙",
   product: "제품 정보",
-  objection: "반박 대응",
   other: "기타",
 };
 
 const CATEGORY_COLORS: Record<CompanyManual["category"], string> = {
-  guideline: "bg-blue-100 text-blue-700",
+  rule: "bg-blue-100 text-blue-700",
   product: "bg-green-100 text-green-700",
-  objection: "bg-red-100 text-red-700",
   other: "bg-gray-100 text-gray-700",
 };
 
@@ -49,12 +47,12 @@ export default function SettingsPage() {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [category, setCategory] = useState<CompanyManual["category"]>("guideline");
+  const [category, setCategory] = useState<CompanyManual["category"]>("rule");
 
   function resetForm() {
     setTitle("");
     setContent("");
-    setCategory("guideline");
+    setCategory("rule");
     setEditingManual(null);
     setShowForm(false);
   }
@@ -349,10 +347,10 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground space-y-2">
               <div className="p-2 bg-muted rounded text-foreground">
-                <p className="font-medium mb-1">📋 영업 가이드라인 예시</p>
-                <p>- 방문 시작 시 항상 "교수님, 오늘 바쁘신데 잠시만 시간 내주셔서..."로 시작</p>
+                <p className="font-medium mb-1">📋 회사 규칙 예시</p>
                 <p>- 경쟁사 제품명 직접 언급 금지</p>
                 <p>- 임상 자료 인용 시 반드시 출처 명시</p>
+                <p>- 방문 보고서는 당일 내 작성 원칙</p>
               </div>
               <div className="p-2 bg-muted rounded text-foreground">
                 <p className="font-medium mb-1">💊 제품 정보 예시</p>

@@ -33,6 +33,7 @@ export interface Doctor {
   notes: string;
   prescriptionTendency: string;
   interestAreas: string;
+  conversationHistory: ConversationRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -75,8 +76,18 @@ export interface CompanyManual {
   id: string;
   title: string;
   content: string;
-  category: 'guideline' | 'product' | 'objection' | 'other';
+  category: 'rule' | 'product' | 'other';
   updatedAt: string;
+}
+
+export interface ConversationRecord {
+  id: string;
+  rawText: string;
+  period: string;
+  aiAnalysis: string;
+  detectedTraits: string[];
+  nextSuggestions: string;
+  createdAt: string;
 }
 
 const STORAGE_KEYS = {
@@ -114,10 +125,29 @@ function saveAll<T>(key: string, data: T[]): void {
 
 export const doctorStorage = {
   getAll(): Doctor[] {
-    return load<Doctor>(STORAGE_KEYS.DOCTORS);
+    return load<Doctor>(STORAGE_KEYS.DOCTORS).map((d) => ({
+      ...d,
+      conversationHistory: d.conversationHistory ?? [],
+    }));
   },
   getById(id: string): Doctor | undefined {
     return this.getAll().find((d) => d.id === id);
+  },
+  addConversationRecord(doctorId: string, record: ConversationRecord): void {
+    const all = this.getAll();
+    const idx = all.findIndex((d) => d.id === doctorId);
+    if (idx < 0) return;
+    all[idx].conversationHistory = [record, ...(all[idx].conversationHistory ?? [])];
+    all[idx].updatedAt = new Date().toISOString();
+    saveAll(STORAGE_KEYS.DOCTORS, all);
+  },
+  deleteConversationRecord(doctorId: string, recordId: string): void {
+    const all = this.getAll();
+    const idx = all.findIndex((d) => d.id === doctorId);
+    if (idx < 0) return;
+    all[idx].conversationHistory = (all[idx].conversationHistory ?? []).filter((r) => r.id !== recordId);
+    all[idx].updatedAt = new Date().toISOString();
+    saveAll(STORAGE_KEYS.DOCTORS, all);
   },
   getByHospital(hospital: string): Doctor[] {
     return this.getAll().filter((d) => d.hospital === hospital);
