@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "JW 영업 비서"
+version = "1.0.0"
+id = "artifacts/sales-intelligence"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21375
+
+[services.development]
+run = "pnpm --filter @workspace/sales-intelligence run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sales-intelligence", "run", "build" ]
+publicDir = "artifacts/sales-intelligence/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21375"
+BASE_PATH = "/"
