@@ -34,7 +34,7 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **Purpose**: JW중외제약 MR(의약품 영업사원) 전용 AI 영업 비서 앱
 - **Stack**: React, Wouter, Tailwind CSS, Replit AI Integration (OpenAI)
 - **Data storage**: Browser LocalStorage (no backend required)
-- **AI**: Replit OpenAI Integration via `AI_INTEGRATIONS_OPENAI_BASE_URL` / `AI_INTEGRATIONS_OPENAI_API_KEY` env vars (exposed via Vite `define`)
+- **AI**: Replit OpenAI Integration via `AI_INTEGRATIONS_OPENAI_BASE_URL` / `AI_INTEGRATIONS_OPENAI_API_KEY` env vars (server-side only, accessed via `/api/ai/chat` proxy route on api-server)
 
 ### Key Features
 1. **교수 프로파일 DB** — 교수별 성향 태그, 반박 패턴, 방문 이력 관리
