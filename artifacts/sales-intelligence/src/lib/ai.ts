@@ -118,7 +118,11 @@ function buildContextSection(
 
   const pastContext = pastLogs
     .slice(0, 5)
-    .map((log, i) => `  [${i + 1}회 전 방문 - ${log.visitDate}]\n  ${log.formattedLog.slice(0, 400)}\n  다음전략: ${log.nextStrategy.slice(0, 200)}`)
+    .map((log, i) => {
+      let entry = `  [${i + 1}회 전 방문 - ${log.visitDate}]\n  ${log.formattedLog.slice(0, 500)}`;
+      if (log.nextStrategy) entry += `\n  다음전략: ${log.nextStrategy.slice(0, 200)}`;
+      return entry;
+    })
     .join('\n\n');
 
   let context = `교수 정보:
@@ -182,28 +186,24 @@ export async function convertToVisitLog(
 오늘 방문 메모 (날것):
 ${rawNotes}
 
-위 메모를 바탕으로 2가지만 출력해주세요.
+위 메모를 바탕으로 영업일지를 하나의 글로 작성해주세요.
 
 작성 기준:
 - 입력된 메모의 말투와 톤을 그대로 유지할 것. 보고서 형식으로 바꾸지 말 것
 - 내용을 과도하게 부풀리거나 없는 내용을 추가하지 말 것
-- 반응근거 + 다음방문계획 모든 텍스트를 합쳐서 반드시 250자 이내로 작성할 것
+- 전체 250자 이내로 작성할 것
 - 교수 성향과 과거 방문 맥락을 반영
+- 앞부분에 오늘 방문의 반응근거(교수가 보인 반응의 해석), 뒷부분에 다음방문계획(다음에 뭘 들고 갈지/어떤 말을 꺼낼지)을 자연스럽게 이어서 작성
+- 두 내용 사이는 줄바꿈으로 문단만 나눌 것. 별도 제목이나 구분선 붙이지 말 것
 
-응답 형식 (이 형식을 정확히 지킬 것):
-===반응근거===
-(이 교수가 오늘 보인 반응의 근거와 해석. 입력 말투 유지)
-
-===다음방문계획===
-(다음에 무엇을 들고 갈지, 어떤 말을 꺼낼지 구체적으로. 입력 말투 유지)`;
+응답은 영업일지 본문만 출력하세요. 제목, 구분선, 라벨 등은 절대 붙이지 마세요.`;
 
   const response = await callAI(systemPrompt, prompt);
-  const logMatch = response.match(/===(?:전문영업일지|정리된방문일지|반응근거)===\s*([\s\S]*?)(?:===(?:다음방문전략|다음방문계획)===|$)/);
-  const strategyMatch = response.match(/===(?:다음방문전략|다음방문계획)===\s*([\s\S]*?)$/);
+  const cleaned = response.replace(/^===.*===\s*/gm, '').trim();
 
   return {
-    formattedLog: logMatch ? logMatch[1].trim() : response,
-    nextStrategy: strategyMatch ? strategyMatch[1].trim() : '',
+    formattedLog: cleaned,
+    nextStrategy: '',
   };
 }
 
@@ -242,16 +242,13 @@ export async function autoGenerateVisitLog(
 ===제품===
 (위너프 또는 페린젝트 또는 두 제품 모두, 쉼표 구분)
 
-===전문영업일지===
-(실제 방문한 것처럼 작성한 전문 일지, 300자 이상)
-
-===다음방문전략===
-(다음 방문을 위한 전략, 200자 이상)`;
+===영업일지===
+(실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 두 내용 사이는 줄바꿈으로 문단만 나눌 것. 별도 제목이나 구분선 붙이지 말 것. 500자 이상)`;
 
   const response = await callAI(systemPrompt, prompt);
 
-  const productMatch = response.match(/===제품===\s*([\s\S]*?)(?:===전문영업일지===|$)/);
-  const logMatch = response.match(/===전문영업일지===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
+  const productMatch = response.match(/===제품===\s*([\s\S]*?)(?:===(?:영업일지|전문영업일지)===|$)/);
+  const logMatch = response.match(/===(?:영업일지|전문영업일지)===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   const productText = productMatch ? productMatch[1].trim() : '';
@@ -260,11 +257,16 @@ export async function autoGenerateVisitLog(
     .map((p) => p.trim())
     .filter((p) => ['위너프', '페린젝트', '기타'].includes(p));
 
+  let fullLog = logMatch ? logMatch[1].trim() : response.replace(/===제품===[\s\S]*?(?=\n\n|$)/, '').trim();
+  if (strategyMatch) {
+    fullLog = fullLog + '\n\n' + strategyMatch[1].trim();
+  }
+
   return {
     visitDate: today,
     products: products.length > 0 ? products : ['위너프'],
-    formattedLog: logMatch ? logMatch[1].trim() : response,
-    nextStrategy: strategyMatch ? strategyMatch[1].trim() : '',
+    formattedLog: fullLog,
+    nextStrategy: '',
   };
 }
 

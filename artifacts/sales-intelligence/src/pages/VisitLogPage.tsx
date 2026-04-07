@@ -263,10 +263,10 @@ export default function VisitLogPage() {
                           ))}
                         </div>
                       )}
-                      {pastLogs.length > 0 && (
+                      {pastLogs.length > 0 && (pastLogs[0].nextStrategy || pastLogs[0].formattedLog) && (
                         <div className="border-t pt-2">
-                          <p className="text-xs font-semibold text-muted-foreground mb-1">이전 방문 전략</p>
-                          <p className="text-muted-foreground line-clamp-2">{pastLogs[0].nextStrategy}</p>
+                          <p className="text-xs font-semibold text-muted-foreground mb-1">최근 방문 일지</p>
+                          <p className="text-muted-foreground line-clamp-3">{pastLogs[0].nextStrategy || pastLogs[0].formattedLog}</p>
                         </div>
                       )}
                     </div>
@@ -421,21 +421,12 @@ export default function VisitLogPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2">반응근거</p>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">영업일지</p>
                   <Textarea
                     value={result.formattedLog}
                     onChange={(e) => setResult({ ...result, formattedLog: e.target.value })}
-                    rows={4}
+                    rows={8}
                     className="text-sm resize-none bg-muted/20"
-                  />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-primary mb-2">다음방문계획</p>
-                  <Textarea
-                    value={result.nextStrategy}
-                    onChange={(e) => setResult({ ...result, nextStrategy: e.target.value })}
-                    rows={4}
-                    className="text-sm resize-none bg-primary/5"
                   />
                 </div>
                 <Button
