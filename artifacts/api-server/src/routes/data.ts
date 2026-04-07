@@ -15,8 +15,16 @@ function wrap(fn: (req: Request, res: Response) => Promise<void>) {
 
 function toDate(v: any): Date {
   if (v instanceof Date) return v;
-  if (typeof v === "string" || typeof v === "number") return new Date(v);
+  if (typeof v === "string" || typeof v === "number") {
+    const d = new Date(v);
+    if (!isNaN(d.getTime())) return d;
+  }
   return new Date();
+}
+
+function stripId<T extends Record<string, any>>(obj: T): Omit<T, 'id'> {
+  const { id, ...rest } = obj;
+  return rest as any;
 }
 
 function prepDoctor(d: any) {
@@ -115,7 +123,7 @@ router.post("/doctors", wrap(async (req, res) => {
   const data = prepDoctor(req.body);
   await db.insert(doctors).values(data).onConflictDoUpdate({
     target: doctors.id,
-    set: { ...data, updatedAt: new Date() },
+    set: { ...stripId(data), updatedAt: new Date() },
   });
   res.json({ ok: true });
 }));
@@ -134,7 +142,7 @@ router.post("/visit-logs", wrap(async (req, res) => {
   const data = prepVisitLog(req.body);
   await db.insert(visitLogs).values(data).onConflictDoUpdate({
     target: visitLogs.id,
-    set: data,
+    set: stripId(data),
   });
   res.json({ ok: true });
 }));
@@ -153,7 +161,7 @@ router.post("/snippets", wrap(async (req, res) => {
   const data = prepSnippet(req.body);
   await db.insert(goldenSnippets).values(data).onConflictDoUpdate({
     target: goldenSnippets.id,
-    set: data,
+    set: stripId(data),
   });
   res.json({ ok: true });
 }));
@@ -172,7 +180,7 @@ router.post("/hospitals", wrap(async (req, res) => {
   const data = prepHospital(req.body);
   await db.insert(hospitalProfiles).values(data).onConflictDoUpdate({
     target: hospitalProfiles.id,
-    set: { ...data, updatedAt: new Date() },
+    set: { ...stripId(data), updatedAt: new Date() },
   });
   res.json({ ok: true });
 }));
@@ -191,7 +199,7 @@ router.post("/departments", wrap(async (req, res) => {
   const data = prepDepartment(req.body);
   await db.insert(departmentProfiles).values(data).onConflictDoUpdate({
     target: departmentProfiles.id,
-    set: { ...data, updatedAt: new Date() },
+    set: { ...stripId(data), updatedAt: new Date() },
   });
   res.json({ ok: true });
 }));
@@ -210,7 +218,7 @@ router.post("/manuals", wrap(async (req, res) => {
   const data = prepManual(req.body);
   await db.insert(companyManuals).values(data).onConflictDoUpdate({
     target: companyManuals.id,
-    set: { ...data, updatedAt: new Date() },
+    set: { ...stripId(data), updatedAt: new Date() },
   });
   res.json({ ok: true });
 }));
@@ -242,43 +250,59 @@ router.post("/export", wrap(async (_req, res) => {
 
 router.post("/import", wrap(async (req, res) => {
   const data = req.body;
+  const errors: string[] = [];
   if (data.doctors) {
     for (const d of data.doctors) {
-      const row = prepDoctor(d);
-      await db.insert(doctors).values(row).onConflictDoUpdate({ target: doctors.id, set: { ...row, updatedAt: new Date() } });
+      try {
+        const row = prepDoctor(d);
+        await db.insert(doctors).values(row).onConflictDoUpdate({ target: doctors.id, set: { ...stripId(row), updatedAt: new Date() } });
+      } catch (e: any) { errors.push(`doctor ${d.id}: ${e.message}`); }
     }
   }
   if (data.visitLogs) {
     for (const v of data.visitLogs) {
-      const row = prepVisitLog(v);
-      await db.insert(visitLogs).values(row).onConflictDoUpdate({ target: visitLogs.id, set: row });
+      try {
+        const row = prepVisitLog(v);
+        await db.insert(visitLogs).values(row).onConflictDoUpdate({ target: visitLogs.id, set: stripId(row) });
+      } catch (e: any) { errors.push(`visitLog ${v.id}: ${e.message}`); }
     }
   }
   if (data.snippets) {
     for (const s of data.snippets) {
-      const row = prepSnippet(s);
-      await db.insert(goldenSnippets).values(row).onConflictDoUpdate({ target: goldenSnippets.id, set: row });
+      try {
+        const row = prepSnippet(s);
+        await db.insert(goldenSnippets).values(row).onConflictDoUpdate({ target: goldenSnippets.id, set: stripId(row) });
+      } catch (e: any) { errors.push(`snippet ${s.id}: ${e.message}`); }
     }
   }
   if (data.hospitals) {
     for (const h of data.hospitals) {
-      const row = prepHospital(h);
-      await db.insert(hospitalProfiles).values(row).onConflictDoUpdate({ target: hospitalProfiles.id, set: { ...row, updatedAt: new Date() } });
+      try {
+        const row = prepHospital(h);
+        await db.insert(hospitalProfiles).values(row).onConflictDoUpdate({ target: hospitalProfiles.id, set: { ...stripId(row), updatedAt: new Date() } });
+      } catch (e: any) { errors.push(`hospital ${h.id}: ${e.message}`); }
     }
   }
   if (data.departments) {
     for (const d of data.departments) {
-      const row = prepDepartment(d);
-      await db.insert(departmentProfiles).values(row).onConflictDoUpdate({ target: departmentProfiles.id, set: { ...row, updatedAt: new Date() } });
+      try {
+        const row = prepDepartment(d);
+        await db.insert(departmentProfiles).values(row).onConflictDoUpdate({ target: departmentProfiles.id, set: { ...stripId(row), updatedAt: new Date() } });
+      } catch (e: any) { errors.push(`department ${d.id}: ${e.message}`); }
     }
   }
   if (data.manuals) {
     for (const m of data.manuals) {
-      const row = prepManual(m);
-      await db.insert(companyManuals).values(row).onConflictDoUpdate({ target: companyManuals.id, set: { ...row, updatedAt: new Date() } });
+      try {
+        const row = prepManual(m);
+        await db.insert(companyManuals).values(row).onConflictDoUpdate({ target: companyManuals.id, set: { ...stripId(row), updatedAt: new Date() } });
+      } catch (e: any) { errors.push(`manual ${m.id}: ${e.message}`); }
     }
   }
-  res.json({ ok: true });
+  if (errors.length > 0) {
+    console.error("Import partial errors:", errors);
+  }
+  res.json({ ok: true, errors: errors.length > 0 ? errors : undefined });
 }));
 
 export default router;
