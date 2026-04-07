@@ -20,26 +20,63 @@ function validateChatBody(body: unknown): body is {
     if (typeof m.content !== "string" || m.content.length > 20000) return false;
   }
   if (b.max_completion_tokens !== undefined) {
-    if (typeof b.max_completion_tokens !== "number" || b.max_completion_tokens <= 0 || b.max_completion_tokens > 16384) return false;
+    if (
+      typeof b.max_completion_tokens !== "number" ||
+      b.max_completion_tokens <= 0 ||
+      b.max_completion_tokens > 16384
+    ) return false;
   }
   return true;
 }
 
+const requestCounts = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 20;
+const RATE_WINDOW_MS = 60_000;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = requestCounts.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    requestCounts.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  if (entry.count >= RATE_LIMIT) return true;
+  entry.count++;
+  return false;
+}
+
 router.post("/ai/chat", async (req, res) => {
   const origin = req.headers.origin;
-  const host = req.headers.host ?? "";
 
   if (origin) {
+    const allowedOrigins = [
+      req.headers.host,
+      process.env["REPLIT_DEV_DOMAIN"],
+      process.env["REPL_SLUG"],
+    ].filter(Boolean);
+
+    let originHost: string;
     try {
-      const originHost = new URL(origin).host;
-      if (originHost !== host) {
-        res.status(403).json({ error: "Cross-origin requests are not allowed" });
-        return;
-      }
+      originHost = new URL(origin).host;
     } catch {
       res.status(403).json({ error: "Invalid origin" });
       return;
     }
+
+    const isAllowed = allowedOrigins.some(
+      (allowed) => allowed && (originHost === allowed || originHost.endsWith(`.${allowed}`))
+    );
+
+    if (!isAllowed && req.headers.host && originHost !== req.headers.host) {
+      res.status(403).json({ error: "Cross-origin requests are not allowed" });
+      return;
+    }
+  }
+
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
+  if (isRateLimited(clientIp)) {
+    res.status(429).json({ error: "Too many requests — please wait before retrying" });
+    return;
   }
 
   if (!validateChatBody(req.body)) {
