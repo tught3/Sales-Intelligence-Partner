@@ -2,22 +2,33 @@ import { Router } from "express";
 
 const router = Router();
 
-const ALLOWED_ROLES = new Set(["system", "user", "assistant"]);
+const ALLOWED_MODELS = new Set([
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
+  "claude-opus-4-6",
+]);
+
+type ContentBlock =
+  | string
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
 
 function validateChatBody(body: unknown): body is {
   model: string;
-  messages: { role: string; content: string }[];
+  messages: { role: string; content: ContentBlock | ContentBlock[] }[];
   max_completion_tokens?: number;
 } {
   if (!body || typeof body !== "object") return false;
   const b = body as Record<string, unknown>;
-  if (typeof b.model !== "string" || b.model.length > 64) return false;
+  if (typeof b.model !== "string" || !ALLOWED_MODELS.has(b.model)) return false;
   if (!Array.isArray(b.messages) || b.messages.length === 0 || b.messages.length > 20) return false;
   for (const msg of b.messages) {
     if (!msg || typeof msg !== "object") return false;
     const m = msg as Record<string, unknown>;
-    if (!ALLOWED_ROLES.has(m.role as string)) return false;
-    if (typeof m.content !== "string" || m.content.length > 20000) return false;
+    const role = m.role as string;
+    if (!["system", "user", "assistant"].includes(role)) return false;
+    if (typeof m.content !== "string" && !Array.isArray(m.content)) return false;
+    if (typeof m.content === "string" && m.content.length > 30000) return false;
   }
   if (b.max_completion_tokens !== undefined) {
     if (
@@ -65,6 +76,33 @@ function isAllowedOrigin(origin: string): boolean {
   return false;
 }
 
+function convertToAnthropicContent(
+  content: ContentBlock | ContentBlock[]
+): Array<{ type: string; [key: string]: unknown }> {
+  const blocks = Array.isArray(content) ? content : [content];
+  return blocks.map((block) => {
+    if (typeof block === "string") {
+      return { type: "text", text: block };
+    }
+    if (block.type === "image_url") {
+      const url = block.image_url.url;
+      const match = url.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        return {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: match[1] as string,
+            data: match[2] as string,
+          },
+        };
+      }
+      return { type: "text", text: `[이미지: ${url}]` };
+    }
+    return block as { type: string; [key: string]: unknown };
+  });
+}
+
 router.post("/ai/chat", async (req, res) => {
   const origin = req.headers.origin;
 
@@ -93,32 +131,69 @@ router.post("/ai/chat", async (req, res) => {
     return;
   }
 
-  const baseUrl = process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"];
-  const apiKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
+  const baseUrl = process.env["AI_INTEGRATIONS_ANTHROPIC_BASE_URL"];
+  const apiKey = process.env["AI_INTEGRATIONS_ANTHROPIC_API_KEY"];
 
   if (!baseUrl || !apiKey) {
     res.status(503).json({ error: "AI integration not configured" });
     return;
   }
 
+  const { model, messages, max_completion_tokens } = req.body;
+
+  let systemPrompt: string | undefined;
+  const anthropicMessages: Array<{ role: string; content: unknown }> = [];
+
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      systemPrompt = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+    } else {
+      const converted = convertToAnthropicContent(msg.content as ContentBlock | ContentBlock[]);
+      anthropicMessages.push({
+        role: msg.role,
+        content: converted.length === 1 && converted[0].type === "text"
+          ? (converted[0] as { type: string; text: string }).text
+          : converted,
+      });
+    }
+  }
+
+  const anthropicBody: Record<string, unknown> = {
+    model,
+    max_tokens: max_completion_tokens ?? 8192,
+    messages: anthropicMessages,
+  };
+  if (systemPrompt) {
+    anthropicBody["system"] = systemPrompt;
+  }
+
   try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${baseUrl}/v1/messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({
-        model: req.body.model,
-        messages: req.body.messages,
-        ...(req.body.max_completion_tokens !== undefined
-          ? { max_completion_tokens: req.body.max_completion_tokens }
-          : {}),
-      }),
+      body: JSON.stringify(anthropicBody),
     });
 
-    const data = await response.json();
-    res.status(response.status).json(data);
+    const data = await response.json() as {
+      content?: Array<{ type: string; text?: string }>;
+      error?: { message: string };
+    };
+
+    if (!response.ok) {
+      res.status(response.status).json({ error: data.error?.message ?? "AI request failed" });
+      return;
+    }
+
+    const textBlock = data.content?.find((b) => b.type === "text");
+    const text = textBlock?.text ?? "";
+
+    res.json({
+      choices: [{ message: { role: "assistant", content: text } }],
+    });
   } catch (err) {
     res.status(500).json({ error: "AI request failed", detail: String(err) });
   }

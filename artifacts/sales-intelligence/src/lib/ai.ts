@@ -8,7 +8,7 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<string>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-5',
+      model: 'claude-sonnet-4-6',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -29,7 +29,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: 'claude-sonnet-4-6',
       messages: [
         { role: 'system', content: systemPrompt },
         {
