@@ -1,19 +1,23 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   doctorStorage,
   visitLogStorage,
   type VisitLog,
 } from "@/lib/storage";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
-  BookOpen,
   Building2,
   Users,
   Trash2,
   FileText,
   Calendar,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 
 export default function VisitLogHistoryPage() {
@@ -23,6 +27,16 @@ export default function VisitLogHistoryPage() {
 
   const [selectedHospital, setSelectedHospital] = useState("");
   const [selectedDept, setSelectedDept] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editingId && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.selectionStart = textareaRef.current.value.length;
+    }
+  }, [editingId]);
 
   const hospitals = useMemo(() => {
     const docIds = new Set(allLogs.map(l => l.doctorId));
@@ -68,6 +82,7 @@ export default function VisitLogHistoryPage() {
   function handleDelete(id: string) {
     visitLogStorage.delete(id);
     setAllLogs(visitLogStorage.getAll());
+    if (editingId === id) setEditingId(null);
     toast({ title: "일지가 삭제되었습니다" });
   }
 
@@ -76,11 +91,30 @@ export default function VisitLogHistoryPage() {
     setSelectedDept("");
   }
 
+  function startEdit(log: VisitLog) {
+    setEditingId(log.id);
+    setEditText(log.formattedLog);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditText("");
+  }
+
+  function saveEdit(log: VisitLog) {
+    const updated = { ...log, formattedLog: editText };
+    visitLogStorage.save(updated);
+    setAllLogs(visitLogStorage.getAll());
+    setEditingId(null);
+    setEditText("");
+    toast({ title: "일지가 수정되었습니다", description: "수정된 말투와 내용은 다음 AI 생성에 반영됩니다." });
+  }
+
   return (
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">방문 일지 기록</h1>
-        <p className="text-muted-foreground mt-1">병원별, 과별로 영업 일지를 조회합니다</p>
+        <p className="text-muted-foreground mt-1">병원별, 과별로 영업 일지를 조회하고 수정합니다</p>
       </div>
 
       <div className="space-y-4 mb-6">
@@ -145,8 +179,9 @@ export default function VisitLogHistoryPage() {
         )}
       </div>
 
-      <div className="mb-4 text-sm text-muted-foreground">
-        총 {filteredLogs.length}건의 일지
+      <div className="mb-4 text-sm text-muted-foreground flex items-center justify-between">
+        <span>총 {filteredLogs.length}건의 일지</span>
+        <span className="text-xs">일지를 클릭하면 수정할 수 있습니다</span>
       </div>
 
       {filteredLogs.length === 0 ? (
@@ -160,8 +195,13 @@ export default function VisitLogHistoryPage() {
         <div className="space-y-3">
           {filteredLogs.map((log) => {
             const doc = doctors.find((d) => d.id === log.doctorId);
+            const isEditing = editingId === log.id;
             return (
-              <Card key={log.id} className="group">
+              <Card
+                key={log.id}
+                className={`group transition-all ${isEditing ? 'border-primary ring-1 ring-primary/20' : 'cursor-pointer hover:border-primary/30'}`}
+                onClick={() => { if (!isEditing) startEdit(log); }}
+              >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -180,18 +220,50 @@ export default function VisitLogHistoryPage() {
                         <Calendar className="w-3 h-3" />
                         {log.visitDate}
                       </span>
-                      <button
-                        onClick={() => handleDelete(log.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-all rounded"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {!isEditing && (
+                        <>
+                          <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDelete(log.id); }}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-all rounded"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{log.formattedLog}</p>
-                  {log.nextStrategy && (
-                    <p className="text-sm text-primary/70 mt-1">→ {log.nextStrategy}</p>
+
+                  {isEditing ? (
+                    <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+                      <Textarea
+                        ref={textareaRef}
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        rows={6}
+                        className="text-sm resize-none"
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <Button size="sm" variant="ghost" onClick={cancelEdit} className="gap-1">
+                          <X className="w-3.5 h-3.5" /> 취소
+                        </Button>
+                        <Button size="sm" onClick={() => saveEdit(log)} className="gap-1">
+                          <Check className="w-3.5 h-3.5" /> 저장
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        수정된 말투와 내용은 다음 AI 일지 생성에 자동으로 반영됩니다.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{log.formattedLog}</p>
+                      {log.nextStrategy && (
+                        <p className="text-sm text-primary/70 mt-1">→ {log.nextStrategy}</p>
+                      )}
+                    </>
                   )}
+
                   {log.products.length > 0 && (
                     <div className="flex gap-1 mt-2">
                       {log.products.map((p) => (

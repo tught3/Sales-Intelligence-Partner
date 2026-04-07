@@ -3,7 +3,6 @@ import { useLocation, useSearch } from "wouter";
 import {
   doctorStorage,
   visitLogStorage,
-  snippetStorage,
   generateId,
   type Doctor,
   type VisitLog,
@@ -19,13 +18,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileText,
   Loader2,
-  Save,
   Sparkles,
   CheckCircle2,
   Users,
   Calendar,
   ChevronDown,
-  BookOpen,
   Wand2,
   Upload,
   Info,
@@ -115,17 +112,37 @@ export default function VisitLogPage() {
 
   async function handleGenerate() {
     if (!selectedDoctor || !rawNotes.trim()) return;
+    const snapshotDoctorId = selectedDoctorId;
+    const snapshotRawNotes = rawNotes;
+    const snapshotDate = visitDate;
+    const snapshotProducts = [...selectedProducts];
     setIsGenerating(true);
     resetResult();
     try {
-      const res = await convertToVisitLog(rawNotes, selectedDoctor, pastLogs);
-      setResult(res);
-      if (selectedProducts.length === 0) {
-        const detected = PRODUCTS.filter(
-          (p) => rawNotes.includes(p) || res.formattedLog.includes(p)
-        );
-        if (detected.length) setSelectedProducts(detected);
+      const res = await convertToVisitLog(snapshotRawNotes, selectedDoctor, pastLogs);
+      if (!res.formattedLog || res.formattedLog.trim().length < 10) {
+        toast({ title: "AI 생성 결과가 너무 짧습니다", description: "다시 시도해주세요.", variant: "destructive" });
+        return;
       }
+      setResult(res);
+      let prods = snapshotProducts;
+      if (prods.length === 0) {
+        const detected = PRODUCTS.filter(
+          (p) => snapshotRawNotes.includes(p) || res.formattedLog.includes(p)
+        );
+        if (detected.length) { setSelectedProducts(detected); prods = detected; }
+      }
+      if (snapshotDoctorId) {
+        const log: VisitLog = {
+          id: generateId(), doctorId: snapshotDoctorId, visitDate: snapshotDate,
+          rawNotes: snapshotRawNotes, formattedLog: res.formattedLog,
+          nextStrategy: res.nextStrategy, products: prods, createdAt: new Date().toISOString(),
+        };
+        visitLogStorage.save(log);
+        setAllLogs(visitLogStorage.getAll());
+        setIsSaved(true);
+      }
+      toast({ title: "영업 일지가 자동 저장되었습니다", description: "방문 일지 기록에서 확인 및 수정할 수 있습니다." });
     } catch (e) {
       toast({ title: "AI 생성 실패", description: String(e), variant: "destructive" });
     } finally {
@@ -135,37 +152,34 @@ export default function VisitLogPage() {
 
   async function handleAutoGenerate() {
     if (!selectedDoctor) return;
+    const snapshotDoctorId = selectedDoctorId;
     setIsAutoGenerating(true);
     resetResult();
     try {
       const res = await autoGenerateVisitLog(selectedDoctor, pastLogs);
+      if (!res.formattedLog || res.formattedLog.trim().length < 10) {
+        toast({ title: "AI 생성 결과가 너무 짧습니다", description: "다시 시도해주세요.", variant: "destructive" });
+        return;
+      }
       setResult({ formattedLog: res.formattedLog, nextStrategy: res.nextStrategy });
       setVisitDate(res.visitDate);
       setSelectedProducts(res.products);
-      toast({ title: "AI가 방문 일지를 자동 생성했습니다", description: "내용을 검토하고 필요시 수정 후 저장하세요." });
+      if (snapshotDoctorId) {
+        const log: VisitLog = {
+          id: generateId(), doctorId: snapshotDoctorId, visitDate: res.visitDate,
+          rawNotes: "", formattedLog: res.formattedLog,
+          nextStrategy: res.nextStrategy, products: res.products, createdAt: new Date().toISOString(),
+        };
+        visitLogStorage.save(log);
+        setAllLogs(visitLogStorage.getAll());
+        setIsSaved(true);
+      }
+      toast({ title: "영업 일지가 자동 저장되었습니다", description: "방문 일지 기록에서 확인 및 수정할 수 있습니다." });
     } catch (e) {
       toast({ title: "자동 생성 실패", description: String(e), variant: "destructive" });
     } finally {
       setIsAutoGenerating(false);
     }
-  }
-
-  function handleSave() {
-    if (!result || !selectedDoctorId) return;
-    const log: VisitLog = {
-      id: generateId(),
-      doctorId: selectedDoctorId,
-      visitDate,
-      rawNotes,
-      formattedLog: result.formattedLog,
-      nextStrategy: result.nextStrategy,
-      products: selectedProducts,
-      createdAt: new Date().toISOString(),
-    };
-    visitLogStorage.save(log);
-    setAllLogs(visitLogStorage.getAll());
-    setIsSaved(true);
-    toast({ title: "영업 일지가 저장되었습니다" });
   }
 
   async function handleFileImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -494,11 +508,11 @@ export default function VisitLogPage() {
 
         <div className="lg:col-span-2 space-y-4">
           {result && (
-            <Card className="border-primary/30">
+            <Card className="border-green-300 bg-green-50/30">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2 text-primary">
-                  <Sparkles className="w-4 h-4" />
-                  AI 생성 결과
+                <CardTitle className="text-base flex items-center gap-2 text-green-700">
+                  <CheckCircle2 className="w-4 h-4" />
+                  자동 저장 완료
                   {pastLogs.length > 0 && (
                     <span className="text-xs font-normal text-muted-foreground ml-auto">
                       과거 {pastLogs.length}회 방문 맥락 반영
@@ -506,28 +520,13 @@ export default function VisitLogPage() {
                   )}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2">영업일지</p>
-                  <Textarea
-                    value={result.formattedLog}
-                    onChange={(e) => setResult({ ...result, formattedLog: e.target.value })}
-                    rows={8}
-                    className="text-sm resize-none bg-muted/20"
-                  />
-                </div>
-                <Button
-                  onClick={handleSave}
-                  disabled={isSaved}
-                  className="w-full gap-2"
-                  variant={isSaved ? "outline" : "default"}
-                >
-                  {isSaved ? (
-                    <><CheckCircle2 className="w-4 h-4 text-green-600" />저장 완료</>
-                  ) : (
-                    <><Save className="w-4 h-4" />일지 저장</>
-                  )}
-                </Button>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed bg-white rounded-lg p-3 border">
+                  {result.formattedLog}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  방문 일지 기록 페이지에서 내용을 수정할 수 있습니다. 수정된 말투와 내용은 다음 AI 생성에 반영됩니다.
+                </p>
               </CardContent>
             </Card>
           )}
