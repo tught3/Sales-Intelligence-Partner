@@ -24,6 +24,63 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<string>
   return data.choices[0].message.content;
 }
 
+async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBase64: string, mimeType: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/ai/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: textPrompt },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          ],
+        },
+      ],
+      max_completion_tokens: 4096,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`AI 이미지 분석 실패: ${err}`);
+  }
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  return data.choices[0].message.content;
+}
+
+export async function extractTextFromImage(imageBase64: string, mimeType: string): Promise<string> {
+  const system = `당신은 JW중외제약 MR 영업 비서 시스템의 문서 분석 AI입니다.
+이미지에서 텍스트를 추출하고, 영업 매뉴얼/규칙으로 정리해줍니다.`;
+  const prompt = `이 이미지에서 텍스트를 모두 추출하고, 내용을 잘 읽히게 정리해주세요.
+- 원본 내용을 최대한 그대로 보존
+- 표나 리스트가 있으면 그 구조 유지
+- 추출한 텍스트만 출력 (설명이나 "이미지에서 추출한 내용:" 같은 말 붙이지 말 것)`;
+  return callAIWithImage(system, prompt, imageBase64, mimeType);
+}
+
+export async function reformatAsCompanyRule(rawText: string, category: string): Promise<string> {
+  const categoryLabel = category === 'rule' ? '회사 규칙/영업 지침' : category === 'product' ? '제품 정보' : '기타 매뉴얼';
+  const system = `당신은 JW중외제약 MR 영업 비서 시스템의 문서 정리 AI입니다.
+주어진 텍스트를 ${categoryLabel} 매뉴얼 형식으로 깔끔하게 재작성합니다.`;
+  const prompt = `아래 내용을 ${categoryLabel} 매뉴얼로 재작성해주세요.
+
+규칙:
+- 핵심 내용을 항목별로 정리 (글머리 기호 또는 번호 사용)
+- 영업사원이 실무에서 바로 활용할 수 있도록 명확하게
+- 불필요한 반복 제거, 중요한 내용은 강조
+- 원본 내용을 임의로 추가하거나 변형하지 말 것
+- 재작성한 내용만 출력 (설명 없이)
+
+원본 내용:
+---
+${rawText}
+---`;
+  return callAI(system, prompt);
+}
+
 function buildSystemPrompt(): string {
   const manualText = manualStorage.getCombinedText();
   const base = `당신은 JW중외제약 MR(의약품 영업사원)의 영업 비서입니다.

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   manualStorage,
   exportAllData,
@@ -6,12 +6,12 @@ import {
   generateId,
   type CompanyManual,
 } from "@/lib/storage";
+import { extractTextFromImage, reformatAsCompanyRule } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   BookOpen,
@@ -24,6 +24,9 @@ import {
   ChevronUp,
   Brain,
   Info,
+  Image,
+  Wand2,
+  Loader2,
 } from "lucide-react";
 
 const CATEGORY_LABELS: Record<CompanyManual["category"], string> = {
@@ -48,6 +51,8 @@ export default function SettingsPage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState<CompanyManual["category"]>("rule");
+  const [aiLoading, setAiLoading] = useState<"image" | "reformat" | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   function resetForm() {
     setTitle("");
@@ -132,6 +137,45 @@ export default function SettingsPage() {
     e.target.value = "";
   }
 
+  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const mimeType = file.type;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const base64 = dataUrl.split(",")[1];
+      setShowForm(true);
+      setAiLoading("image");
+      try {
+        const extracted = await extractTextFromImage(base64, mimeType);
+        setContent(extracted);
+        if (!title) setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
+        toast({ title: "이미지에서 텍스트 추출 완료", description: "내용을 확인 후 저장하세요" });
+      } catch (err) {
+        toast({ title: "이미지 분석 실패", description: String(err), variant: "destructive" });
+      } finally {
+        setAiLoading(null);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  async function handleReformat() {
+    if (!content.trim()) return;
+    setAiLoading("reformat");
+    try {
+      const reformatted = await reformatAsCompanyRule(content, category);
+      setContent(reformatted);
+      toast({ title: "AI 재작성 완료" });
+    } catch (err) {
+      toast({ title: "AI 재작성 실패", description: String(err), variant: "destructive" });
+    } finally {
+      setAiLoading(null);
+    }
+  }
+
   return (
     <div className="p-8">
       <div className="mb-6">
@@ -203,24 +247,62 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <Label>내용 *</Label>
-                    <label className="text-xs text-primary cursor-pointer hover:underline flex items-center gap-1">
-                      <Upload className="w-3 h-3" />
-                      텍스트 파일 불러오기
-                      <input type="file" accept=".txt,.md,.csv" className="hidden" onChange={handleTextFileImport} />
-                    </label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="text-xs text-primary cursor-pointer hover:underline flex items-center gap-1">
+                        <Upload className="w-3 h-3" />
+                        텍스트 파일
+                        <input type="file" accept=".txt,.md,.csv" className="hidden" onChange={handleTextFileImport} />
+                      </label>
+                      <label className="text-xs text-primary cursor-pointer hover:underline flex items-center gap-1">
+                        <Image className="w-3 h-3" />
+                        이미지 업로드
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleImageUpload}
+                        />
+                      </label>
+                    </div>
                   </div>
+
+                  {aiLoading === "image" && (
+                    <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 rounded-md px-3 py-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      이미지에서 텍스트 추출 중...
+                    </div>
+                  )}
+
                   <Textarea
-                    placeholder={`예시:\n- 위너프는 하루 1정으로 편의성이 뛰어나다고 강조할 것\n- 경쟁사 제품을 직접 비교하는 표현은 삼갈 것\n- 임상 데이터 인용시 출처 명시 필수`}
+                    placeholder={`직접 입력하거나, 이미지를 업로드하면 AI가 자동으로 텍스트를 추출합니다.\n\n예시:\n- 경쟁사 제품명 직접 언급 금지\n- 임상 데이터 인용시 출처 명시 필수`}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     rows={10}
                     className="text-sm resize-none font-mono"
+                    disabled={aiLoading === "image"}
                   />
+
+                  {content.trim() && (
+                    <button
+                      type="button"
+                      onClick={handleReformat}
+                      disabled={!!aiLoading}
+                      className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-700 disabled:opacity-50"
+                    >
+                      {aiLoading === "reformat" ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Wand2 className="w-3 h-3" />
+                      )}
+                      {aiLoading === "reformat" ? "AI 재작성 중..." : "AI로 깔끔하게 재작성"}
+                    </button>
+                  )}
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleSave} disabled={!title.trim() || !content.trim()}>
+                  <Button onClick={handleSave} disabled={!title.trim() || !content.trim() || !!aiLoading}>
                     저장
                   </Button>
                   <Button variant="outline" onClick={resetForm}>취소</Button>
