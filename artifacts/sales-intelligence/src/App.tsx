@@ -14,6 +14,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import HospitalsPage from "@/pages/HospitalsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import BulkImportPage from "@/pages/BulkImportPage";
+import VisitLogHistoryPage from "@/pages/VisitLogHistoryPage";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,7 @@ function Router() {
         <Route path="/doctors" component={DoctorsPage} />
         <Route path="/doctors/:id" component={DoctorDetailPage} />
         <Route path="/visit-log" component={VisitLogPage} />
+        <Route path="/visit-log-history" component={VisitLogHistoryPage} />
         <Route path="/hospitals" component={HospitalsPage} />
         <Route path="/snippets" component={SnippetsPage} />
         <Route path="/settings" component={SettingsPage} />

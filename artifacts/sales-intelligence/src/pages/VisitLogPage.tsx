@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import {
   doctorStorage,
   visitLogStorage,
@@ -25,11 +25,12 @@ import {
   Users,
   Calendar,
   ChevronDown,
-  Trash2,
   BookOpen,
   Wand2,
   Upload,
   Info,
+  Building2,
+  ClipboardList,
 } from "lucide-react";
 
 const PRODUCTS = ["위너프", "페린젝트", "기타"];
@@ -39,11 +40,13 @@ export default function VisitLogPage() {
   const params = new URLSearchParams(search);
   const preselectedDoctorId = params.get("doctorId") ?? "";
 
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [doctors] = useState(() => doctorStorage.getAll());
   const [allLogs, setAllLogs] = useState(() => visitLogStorage.getAll());
-  const allSnippets = useMemo(() => snippetStorage.getAll(), []);
 
+  const [selectedHospital, setSelectedHospital] = useState("");
+  const [selectedDept, setSelectedDept] = useState("");
   const [selectedDoctorId, setSelectedDoctorId] = useState(preselectedDoctorId);
   const [visitDate, setVisitDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [rawNotes, setRawNotes] = useState("");
@@ -53,9 +56,28 @@ export default function VisitLogPage() {
   const [isAnalyzingImport, setIsAnalyzingImport] = useState(false);
   const [result, setResult] = useState<{ formattedLog: string; nextStrategy: string } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
-  const [filterDoctorId, setFilterDoctorId] = useState("");
   const [importAnalysis, setImportAnalysis] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'manual' | 'auto' | 'import'>('manual');
+
+  const hospitals = useMemo(() => {
+    const set = new Set(doctors.map(d => d.hospital).filter(Boolean));
+    return Array.from(set).sort();
+  }, [doctors]);
+
+  const departments = useMemo(() => {
+    if (!selectedHospital) return [];
+    const set = new Set(
+      doctors.filter(d => d.hospital === selectedHospital).map(d => d.department).filter(Boolean)
+    );
+    return Array.from(set).sort();
+  }, [doctors, selectedHospital]);
+
+  const filteredDoctors = useMemo(() => {
+    let list = doctors;
+    if (selectedHospital) list = list.filter(d => d.hospital === selectedHospital);
+    if (selectedDept) list = list.filter(d => d.department === selectedDept);
+    return list;
+  }, [doctors, selectedHospital, selectedDept]);
 
   const selectedDoctor = useMemo(
     () => doctors.find((d) => d.id === selectedDoctorId),
@@ -67,13 +89,18 @@ export default function VisitLogPage() {
     [selectedDoctorId, allLogs]
   );
 
-  const filteredLogs = useMemo(() => {
-    const sorted = [...allLogs].sort(
-      (a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime()
-    );
-    if (!filterDoctorId) return sorted;
-    return sorted.filter((l) => l.doctorId === filterDoctorId);
-  }, [allLogs, filterDoctorId]);
+  function handleHospitalChange(h: string) {
+    setSelectedHospital(h);
+    setSelectedDept("");
+    setSelectedDoctorId("");
+    resetResult();
+  }
+
+  function handleDeptChange(d: string) {
+    setSelectedDept(d);
+    setSelectedDoctorId("");
+    resetResult();
+  }
 
   function toggleProduct(p: string) {
     setSelectedProducts((prev) =>
@@ -139,12 +166,6 @@ export default function VisitLogPage() {
     setAllLogs(visitLogStorage.getAll());
     setIsSaved(true);
     toast({ title: "영업 일지가 저장되었습니다" });
-  }
-
-  function handleDeleteLog(id: string) {
-    visitLogStorage.delete(id);
-    setAllLogs(visitLogStorage.getAll());
-    toast({ title: "일지가 삭제되었습니다" });
   }
 
   async function handleFileImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -214,8 +235,72 @@ export default function VisitLogPage() {
           {(activeTab === 'manual' || activeTab === 'auto') && (
             <Card>
               <CardContent className="p-5 space-y-4">
-                <div className="space-y-1.5">
+                <div className="space-y-3">
                   <Label className="flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5" />
+                    병원 선택
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleHospitalChange("")}
+                      className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
+                        !selectedHospital
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      전체
+                    </button>
+                    {hospitals.map((h) => (
+                      <button
+                        key={h}
+                        onClick={() => handleHospitalChange(h)}
+                        className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
+                          selectedHospital === h
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border text-muted-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        {h}
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedHospital && departments.length > 0 && (
+                    <>
+                      <Label className="flex items-center gap-1.5 mt-2">
+                        <Users className="w-3.5 h-3.5" />
+                        진료과 선택
+                      </Label>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleDeptChange("")}
+                          className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                            !selectedDept
+                              ? "border-blue-500 bg-blue-500 text-white"
+                              : "border-border text-muted-foreground hover:border-blue-400"
+                          }`}
+                        >
+                          전체 과
+                        </button>
+                        {departments.map((d) => (
+                          <button
+                            key={d}
+                            onClick={() => handleDeptChange(d)}
+                            className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                              selectedDept === d
+                                ? "border-blue-500 bg-blue-500 text-white"
+                                : "border-border text-muted-foreground hover:border-blue-400"
+                            }`}
+                          >
+                            {d}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  <Label className="flex items-center gap-1.5 mt-2">
                     <Users className="w-3.5 h-3.5" />
                     교수 선택 *
                   </Label>
@@ -226,7 +311,7 @@ export default function VisitLogPage() {
                       className="w-full appearance-none border border-input bg-background rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring pr-8"
                     >
                       <option value="">교수를 선택하세요...</option>
-                      {doctors.map((d) => (
+                      {filteredDoctors.map((d) => (
                         <option key={d.id} value={d.id}>
                           {d.name} 교수 | {d.hospital} {d.department}
                         </option>
@@ -405,7 +490,9 @@ export default function VisitLogPage() {
               </CardContent>
             </Card>
           )}
+        </div>
 
+        <div className="lg:col-span-2 space-y-4">
           {result && (
             <Card className="border-primary/30">
               <CardHeader className="pb-3">
@@ -444,67 +531,16 @@ export default function VisitLogPage() {
               </CardContent>
             </Card>
           )}
-        </div>
 
-        <div className="lg:col-span-2">
-          <Card className="sticky top-6">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-primary" />
-                  방문 일지 기록
-                </span>
-                <select
-                  value={filterDoctorId}
-                  onChange={(e) => setFilterDoctorId(e.target.value)}
-                  className="text-xs border border-input bg-background rounded px-2 py-1 focus:outline-none"
-                >
-                  <option value="">전체</option>
-                  {doctors.map((d) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="max-h-[600px] overflow-y-auto">
-              {filteredLogs.length === 0 ? (
-                <p className="text-center text-sm text-muted-foreground py-6">기록이 없습니다</p>
-              ) : (
-                <div className="space-y-2">
-                  {filteredLogs.map((log) => {
-                    const doc = doctors.find((d) => d.id === log.doctorId);
-                    return (
-                      <div key={log.id} className="border rounded-lg p-3 text-xs group relative">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-foreground">{doc ? doc.name : "?"}</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-muted-foreground">{log.visitDate}</span>
-                            <button
-                              onClick={() => handleDeleteLog(log.id)}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-all"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-muted-foreground line-clamp-2">{log.formattedLog}</p>
-                        {log.nextStrategy && (
-                          <p className="text-primary/70 line-clamp-1 mt-0.5">→ {log.nextStrategy}</p>
-                        )}
-                        {log.products.length > 0 && (
-                          <div className="flex gap-1 mt-1.5">
-                            {log.products.map((p) => (
-                              <Badge key={p} variant="secondary" className="text-xs py-0">{p}</Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <Button
+            variant="outline"
+            className="w-full gap-2"
+            onClick={() => setLocation("/visit-log-history")}
+          >
+            <ClipboardList className="w-4 h-4" />
+            방문 일지 기록 전체보기
+            <Badge variant="secondary" className="ml-auto text-xs">{allLogs.length}건</Badge>
+          </Button>
         </div>
       </div>
     </div>

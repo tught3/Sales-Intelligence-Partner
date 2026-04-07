@@ -11,6 +11,7 @@ import {
   Settings,
   Brain,
   FolderInput,
+  ClipboardList,
 } from "lucide-react";
 
 const navGroups = [
@@ -19,6 +20,7 @@ const navGroups = [
     items: [
       { href: "/", label: "대시보드", icon: LayoutDashboard },
       { href: "/visit-log", label: "영업 일지 작성", icon: FileText },
+      { href: "/visit-log-history", label: "방문 일지 기록", icon: ClipboardList },
       { href: "/bulk-import", label: "교수 파일 일괄 입력", icon: FolderInput },
     ],
   },
@@ -68,7 +70,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   const isActive =
                     item.href === "/"
                       ? location === "/"
-                      : location.startsWith(item.href);
+                      : location === item.href || (item.href !== "/visit-log" && location.startsWith(item.href));
                   return (
                     <button
                       key={item.href}
