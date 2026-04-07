@@ -28,6 +28,15 @@ interface ImportResult {
   error?: string;
 }
 
+// 괄호 안 내용 제거: (기억용 메모), (참고) 등 무시
+function stripParentheses(text: string): string {
+  return text
+    .replace(/\([^)]*\)/g, "")   // 소괄호 ()
+    .replace(/\[[^\]]*\]/g, "")  // 대괄호 []
+    .replace(/\s{2,}/g, " ")     // 연속 공백 정리
+    .trim();
+}
+
 function parseBulkInput(text: string): ParsedDoctor[] {
   const doctors: ParsedDoctor[] = [];
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -55,16 +64,19 @@ function parseBulkInput(text: string): ParsedDoctor[] {
 
     if (!line) { i++; continue; }
 
+    // 괄호 제거한 버전으로 판별
+    const stripped = stripParentheses(line);
+
     // 진료과 먼저 체크 (isName보다 우선)
-    if (isDept(line)) {
-      currentDept = line;
+    if (isDept(stripped)) {
+      currentDept = stripped;
       i++;
       continue;
     }
 
     // 교수 이름이면 새 교수 블록 시작
-    if (isName(line)) {
-      const name = line;
+    if (isName(stripped)) {
+      const name = stripped;
       const dept = currentDept;
       i++;
 
@@ -72,16 +84,17 @@ function parseBulkInput(text: string): ParsedDoctor[] {
       const contentLines: string[] = [];
       while (i < lines.length) {
         const cl = lines[i];
-        if (!cl) { i++; continue; }           // 빈줄은 건너뜀
-        if (isDept(cl) || isName(cl)) break;   // 다음 과 또는 다음 교수
-        contentLines.push(cl);
+        if (!cl) { i++; continue; }                           // 빈줄은 건너뜀
+        const cls = stripParentheses(cl);
+        if (isDept(cls) || isName(cls)) break;                // 다음 과 또는 다음 교수
+        contentLines.push(cl);                                // 원본 그대로 수집 (stripParentheses는 visit 분리 후 처리)
         i++;
       }
 
       const rawContent = contentLines.join(" ");
       const visits = rawContent
         .split("/")
-        .map((v) => v.trim())
+        .map((v) => stripParentheses(v))
         .filter((v) => v.length > 5);
 
       if (visits.length > 0) {
@@ -261,6 +274,7 @@ export default function BulkImportPage() {
                   "첫 줄: 진료과명",
                   "둘째 줄: 교수 이름",
                   "셋째 줄: 방문 내역 (/ 로 각 방문 구분)",
+                  "괄호 () [ ] 안 내용은 자동으로 무시됩니다",
                   "여러 명을 한 번에 붙여넣기 가능",
                   "이미 등록된 교수면 방문 기록만 추가됨",
                 ].map((t) => (
