@@ -90,223 +90,363 @@ export interface ConversationRecord {
   createdAt: string;
 }
 
-const STORAGE_KEYS = {
-  DOCTORS: 'jw_doctors',
-  VISIT_LOGS: 'jw_visit_logs',
-  GOLDEN_SNIPPETS: 'jw_golden_snippets',
-  HOSPITAL_PROFILES: 'jw_hospital_profiles',
-  DEPARTMENT_PROFILES: 'jw_department_profiles',
-  COMPANY_MANUALS: 'jw_company_manuals',
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const cache: {
+  doctors: Doctor[];
+  visitLogs: VisitLog[];
+  snippets: GoldenSnippet[];
+  hospitals: HospitalProfile[];
+  departments: DepartmentProfile[];
+  manuals: CompanyManual[];
+  loaded: boolean;
+} = {
+  doctors: [],
+  visitLogs: [],
+  snippets: [],
+  hospitals: [],
+  departments: [],
+  manuals: [],
+  loaded: false,
 };
 
-function load<T>(key: string): T[] {
+async function api(path: string, method = 'GET', body?: any) {
+  const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${API_BASE}/api/data${path}`, opts);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+function toISOStr(v: any): string {
+  if (!v) return new Date().toISOString();
+  if (typeof v === 'string') return v;
+  if (v instanceof Date) return v.toISOString();
+  return new Date(v).toISOString();
+}
+
+function normalizeDoctor(d: any): Doctor {
+  return {
+    ...d,
+    traits: d.traits ?? [],
+    objections: d.objections ?? [],
+    conversationHistory: d.conversationHistory ?? d.conversation_history ?? [],
+    prescriptionTendency: d.prescriptionTendency ?? d.prescription_tendency ?? '',
+    interestAreas: d.interestAreas ?? d.interest_areas ?? '',
+    createdAt: toISOStr(d.createdAt ?? d.created_at),
+    updatedAt: toISOStr(d.updatedAt ?? d.updated_at),
+  };
+}
+
+function normalizeVisitLog(v: any): VisitLog {
+  return {
+    ...v,
+    doctorId: v.doctorId ?? v.doctor_id ?? '',
+    visitDate: v.visitDate ?? v.visit_date ?? '',
+    rawNotes: v.rawNotes ?? v.raw_notes ?? '',
+    formattedLog: v.formattedLog ?? v.formatted_log ?? '',
+    nextStrategy: v.nextStrategy ?? v.next_strategy ?? '',
+    products: v.products ?? [],
+    createdAt: toISOStr(v.createdAt ?? v.created_at),
+  };
+}
+
+function normalizeSnippet(s: any): GoldenSnippet {
+  return {
+    ...s,
+    tags: s.tags ?? [],
+    createdAt: toISOStr(s.createdAt ?? s.created_at),
+  };
+}
+
+function normalizeHospital(h: any): HospitalProfile {
+  return {
+    ...h,
+    hospitalType: h.hospitalType ?? h.hospital_type ?? 'other',
+    keyDepartments: h.keyDepartments ?? h.key_departments ?? '',
+    competitorStrength: h.competitorStrength ?? h.competitor_strength ?? '',
+    updatedAt: toISOStr(h.updatedAt ?? h.updated_at),
+  };
+}
+
+function normalizeDepartment(d: any): DepartmentProfile {
+  return {
+    ...d,
+    hospitalId: d.hospitalId ?? d.hospital_id ?? '',
+    hospitalName: d.hospitalName ?? d.hospital_name ?? '',
+    departmentName: d.departmentName ?? d.department_name ?? '',
+    mainProducts: d.mainProducts ?? d.main_products ?? [],
+    competitorProducts: d.competitorProducts ?? d.competitor_products ?? '',
+    updatedAt: toISOStr(d.updatedAt ?? d.updated_at),
+  };
+}
+
+function normalizeManual(m: any): CompanyManual {
+  return {
+    ...m,
+    updatedAt: toISOStr(m.updatedAt ?? m.updated_at),
+  };
+}
+
+export async function initStorage(): Promise<void> {
+  if (cache.loaded) return;
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    return JSON.parse(raw) as T[];
-  } catch {
-    return [];
+    const [docs, logs, snips, hosps, depts, mans] = await Promise.all([
+      api('/doctors'),
+      api('/visit-logs'),
+      api('/snippets'),
+      api('/hospitals'),
+      api('/departments'),
+      api('/manuals'),
+    ]);
+    cache.doctors = (docs || []).map(normalizeDoctor);
+    cache.visitLogs = (logs || []).map(normalizeVisitLog);
+    cache.snippets = (snips || []).map(normalizeSnippet);
+    cache.hospitals = (hosps || []).map(normalizeHospital);
+    cache.departments = (depts || []).map(normalizeDepartment);
+    cache.manuals = (mans || []).map(normalizeManual);
+    cache.loaded = true;
+  } catch (e) {
+    console.error('Failed to load data from server, falling back to empty state:', e);
+    cache.loaded = true;
   }
 }
 
-function loadOne<T>(key: string): T | null {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-function saveAll<T>(key: string, data: T[]): void {
-  localStorage.setItem(key, JSON.stringify(data));
+export async function refreshCache(): Promise<void> {
+  cache.loaded = false;
+  await initStorage();
 }
 
 export const doctorStorage = {
   getAll(): Doctor[] {
-    return load<Doctor>(STORAGE_KEYS.DOCTORS).map((d) => ({
-      ...d,
-      conversationHistory: d.conversationHistory ?? [],
-    }));
+    return cache.doctors;
   },
   getById(id: string): Doctor | undefined {
-    return this.getAll().find((d) => d.id === id);
+    return cache.doctors.find((d) => d.id === id);
   },
   addConversationRecord(doctorId: string, record: ConversationRecord): void {
-    const all = this.getAll();
-    const idx = all.findIndex((d) => d.id === doctorId);
+    const idx = cache.doctors.findIndex((d) => d.id === doctorId);
     if (idx < 0) return;
-    all[idx].conversationHistory = [record, ...(all[idx].conversationHistory ?? [])];
-    all[idx].updatedAt = new Date().toISOString();
-    saveAll(STORAGE_KEYS.DOCTORS, all);
+    cache.doctors[idx].conversationHistory = [record, ...(cache.doctors[idx].conversationHistory ?? [])];
+    cache.doctors[idx].updatedAt = new Date().toISOString();
+    api('/doctors', 'POST', doctorToApi(cache.doctors[idx])).catch(console.error);
   },
   deleteConversationRecord(doctorId: string, recordId: string): void {
-    const all = this.getAll();
-    const idx = all.findIndex((d) => d.id === doctorId);
+    const idx = cache.doctors.findIndex((d) => d.id === doctorId);
     if (idx < 0) return;
-    all[idx].conversationHistory = (all[idx].conversationHistory ?? []).filter((r) => r.id !== recordId);
-    all[idx].updatedAt = new Date().toISOString();
-    saveAll(STORAGE_KEYS.DOCTORS, all);
+    cache.doctors[idx].conversationHistory = (cache.doctors[idx].conversationHistory ?? []).filter((r) => r.id !== recordId);
+    cache.doctors[idx].updatedAt = new Date().toISOString();
+    api('/doctors', 'POST', doctorToApi(cache.doctors[idx])).catch(console.error);
   },
   getByHospital(hospital: string): Doctor[] {
-    return this.getAll().filter((d) => d.hospital === hospital);
+    return cache.doctors.filter((d) => d.hospital === hospital);
   },
   getByDepartment(hospital: string, department: string): Doctor[] {
-    return this.getAll().filter((d) => d.hospital === hospital && d.department === department);
+    return cache.doctors.filter((d) => d.hospital === hospital && d.department === department);
   },
   save(doctor: Doctor): void {
-    const all = this.getAll();
-    const idx = all.findIndex((d) => d.id === doctor.id);
+    const idx = cache.doctors.findIndex((d) => d.id === doctor.id);
+    const now = new Date().toISOString();
     if (idx >= 0) {
-      all[idx] = { ...doctor, updatedAt: new Date().toISOString() };
+      cache.doctors[idx] = { ...doctor, updatedAt: now };
     } else {
-      all.push(doctor);
+      cache.doctors.push({ ...doctor, updatedAt: now });
     }
-    saveAll(STORAGE_KEYS.DOCTORS, all);
+    api('/doctors', 'POST', doctorToApi(doctor)).catch(console.error);
   },
   delete(id: string): void {
-    const all = this.getAll().filter((d) => d.id !== id);
-    saveAll(STORAGE_KEYS.DOCTORS, all);
+    cache.doctors = cache.doctors.filter((d) => d.id !== id);
+    api(`/doctors/${id}`, 'DELETE').catch(console.error);
   },
 };
 
+function doctorToApi(d: Doctor) {
+  return {
+    id: d.id,
+    name: d.name,
+    hospital: d.hospital || '',
+    department: d.department || '',
+    position: d.position || '교수',
+    traits: d.traits || [],
+    objections: d.objections || [],
+    notes: d.notes || '',
+    prescriptionTendency: d.prescriptionTendency || '',
+    interestAreas: d.interestAreas || '',
+    conversationHistory: d.conversationHistory || [],
+  };
+}
+
 export const visitLogStorage = {
   getAll(): VisitLog[] {
-    return load<VisitLog>(STORAGE_KEYS.VISIT_LOGS);
+    return cache.visitLogs;
   },
   getByDoctorId(doctorId: string): VisitLog[] {
-    return this.getAll()
+    return cache.visitLogs
       .filter((v) => v.doctorId === doctorId)
       .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
   },
   getByHospital(hospital: string, doctors: Doctor[]): VisitLog[] {
     const hospitalDoctorIds = new Set(doctors.filter(d => d.hospital === hospital).map(d => d.id));
-    return this.getAll()
+    return cache.visitLogs
       .filter((v) => hospitalDoctorIds.has(v.doctorId))
       .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
   },
   getRecent(limit = 10): VisitLog[] {
-    return this.getAll()
+    return [...cache.visitLogs]
       .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
       .slice(0, limit);
   },
   save(log: VisitLog): void {
-    const all = this.getAll();
-    const idx = all.findIndex((v) => v.id === log.id);
+    const idx = cache.visitLogs.findIndex((v) => v.id === log.id);
     if (idx >= 0) {
-      all[idx] = log;
+      cache.visitLogs[idx] = log;
     } else {
-      all.push(log);
+      cache.visitLogs.push(log);
     }
-    saveAll(STORAGE_KEYS.VISIT_LOGS, all);
+    api('/visit-logs', 'POST', {
+      id: log.id,
+      doctorId: log.doctorId,
+      visitDate: log.visitDate,
+      rawNotes: log.rawNotes,
+      formattedLog: log.formattedLog,
+      nextStrategy: log.nextStrategy,
+      products: log.products,
+    }).catch(console.error);
   },
   delete(id: string): void {
-    const all = this.getAll().filter((v) => v.id !== id);
-    saveAll(STORAGE_KEYS.VISIT_LOGS, all);
+    cache.visitLogs = cache.visitLogs.filter((v) => v.id !== id);
+    api(`/visit-logs/${id}`, 'DELETE').catch(console.error);
   },
 };
 
 export const snippetStorage = {
   getAll(): GoldenSnippet[] {
-    return load<GoldenSnippet>(STORAGE_KEYS.GOLDEN_SNIPPETS);
+    return cache.snippets;
   },
   getByProduct(product: string): GoldenSnippet[] {
-    return this.getAll().filter((s) => s.product === product);
+    return cache.snippets.filter((s) => s.product === product);
   },
   save(snippet: GoldenSnippet): void {
-    const all = this.getAll();
-    const idx = all.findIndex((s) => s.id === snippet.id);
+    const idx = cache.snippets.findIndex((s) => s.id === snippet.id);
     if (idx >= 0) {
-      all[idx] = snippet;
+      cache.snippets[idx] = snippet;
     } else {
-      all.push(snippet);
+      cache.snippets.push(snippet);
     }
-    saveAll(STORAGE_KEYS.GOLDEN_SNIPPETS, all);
+    api('/snippets', 'POST', {
+      id: snippet.id,
+      content: snippet.content,
+      context: snippet.context,
+      tags: snippet.tags,
+      product: snippet.product,
+      effectiveness: snippet.effectiveness,
+    }).catch(console.error);
   },
   delete(id: string): void {
-    const all = this.getAll().filter((s) => s.id !== id);
-    saveAll(STORAGE_KEYS.GOLDEN_SNIPPETS, all);
+    cache.snippets = cache.snippets.filter((s) => s.id !== id);
+    api(`/snippets/${id}`, 'DELETE').catch(console.error);
   },
 };
 
 export const hospitalStorage = {
   getAll(): HospitalProfile[] {
-    return load<HospitalProfile>(STORAGE_KEYS.HOSPITAL_PROFILES);
+    return cache.hospitals;
   },
   getById(id: string): HospitalProfile | undefined {
-    return this.getAll().find((h) => h.id === id);
+    return cache.hospitals.find((h) => h.id === id);
   },
   getByName(name: string): HospitalProfile | undefined {
-    return this.getAll().find((h) => h.name === name);
+    return cache.hospitals.find((h) => h.name === name);
   },
   save(profile: HospitalProfile): void {
-    const all = this.getAll();
-    const idx = all.findIndex((h) => h.id === profile.id);
+    const now = new Date().toISOString();
+    const idx = cache.hospitals.findIndex((h) => h.id === profile.id);
     if (idx >= 0) {
-      all[idx] = { ...profile, updatedAt: new Date().toISOString() };
+      cache.hospitals[idx] = { ...profile, updatedAt: now };
     } else {
-      all.push(profile);
+      cache.hospitals.push({ ...profile, updatedAt: now });
     }
-    saveAll(STORAGE_KEYS.HOSPITAL_PROFILES, all);
+    api('/hospitals', 'POST', {
+      id: profile.id,
+      name: profile.name,
+      region: profile.region,
+      hospitalType: profile.hospitalType,
+      characteristics: profile.characteristics,
+      keyDepartments: profile.keyDepartments,
+      competitorStrength: profile.competitorStrength,
+      notes: profile.notes,
+    }).catch(console.error);
   },
   delete(id: string): void {
-    const all = this.getAll().filter((h) => h.id !== id);
-    saveAll(STORAGE_KEYS.HOSPITAL_PROFILES, all);
+    cache.hospitals = cache.hospitals.filter((h) => h.id !== id);
+    api(`/hospitals/${id}`, 'DELETE').catch(console.error);
   },
 };
 
 export const departmentStorage = {
   getAll(): DepartmentProfile[] {
-    return load<DepartmentProfile>(STORAGE_KEYS.DEPARTMENT_PROFILES);
+    return cache.departments;
   },
   getByHospital(hospitalId: string): DepartmentProfile[] {
-    return this.getAll().filter((d) => d.hospitalId === hospitalId);
+    return cache.departments.filter((d) => d.hospitalId === hospitalId);
   },
   getByHospitalAndName(hospitalId: string, departmentName: string): DepartmentProfile | undefined {
-    return this.getAll().find((d) => d.hospitalId === hospitalId && d.departmentName === departmentName);
+    return cache.departments.find((d) => d.hospitalId === hospitalId && d.departmentName === departmentName);
   },
   save(profile: DepartmentProfile): void {
-    const all = this.getAll();
-    const idx = all.findIndex((d) => d.id === profile.id);
+    const now = new Date().toISOString();
+    const idx = cache.departments.findIndex((d) => d.id === profile.id);
     if (idx >= 0) {
-      all[idx] = { ...profile, updatedAt: new Date().toISOString() };
+      cache.departments[idx] = { ...profile, updatedAt: now };
     } else {
-      all.push(profile);
+      cache.departments.push({ ...profile, updatedAt: now });
     }
-    saveAll(STORAGE_KEYS.DEPARTMENT_PROFILES, all);
+    api('/departments', 'POST', {
+      id: profile.id,
+      hospitalId: profile.hospitalId,
+      hospitalName: profile.hospitalName,
+      departmentName: profile.departmentName,
+      characteristics: profile.characteristics,
+      mainProducts: profile.mainProducts,
+      competitorProducts: profile.competitorProducts,
+      notes: profile.notes,
+    }).catch(console.error);
   },
   delete(id: string): void {
-    const all = this.getAll().filter((d) => d.id !== id);
-    saveAll(STORAGE_KEYS.DEPARTMENT_PROFILES, all);
+    cache.departments = cache.departments.filter((d) => d.id !== id);
+    api(`/departments/${id}`, 'DELETE').catch(console.error);
   },
 };
 
 export const manualStorage = {
   getAll(): CompanyManual[] {
-    return load<CompanyManual>(STORAGE_KEYS.COMPANY_MANUALS);
+    return cache.manuals;
   },
   getByCategory(category: CompanyManual['category']): CompanyManual[] {
-    return this.getAll().filter((m) => m.category === category);
+    return cache.manuals.filter((m) => m.category === category);
   },
   getCombinedText(): string {
-    const all = this.getAll();
-    if (all.length === 0) return '';
-    return all.map((m) => `[${m.title}]\n${m.content}`).join('\n\n---\n\n');
+    if (cache.manuals.length === 0) return '';
+    return cache.manuals.map((m) => `[${m.title}]\n${m.content}`).join('\n\n---\n\n');
   },
   save(manual: CompanyManual): void {
-    const all = this.getAll();
-    const idx = all.findIndex((m) => m.id === manual.id);
+    const now = new Date().toISOString();
+    const idx = cache.manuals.findIndex((m) => m.id === manual.id);
     if (idx >= 0) {
-      all[idx] = { ...manual, updatedAt: new Date().toISOString() };
+      cache.manuals[idx] = { ...manual, updatedAt: now };
     } else {
-      all.push(manual);
+      cache.manuals.push({ ...manual, updatedAt: now });
     }
-    saveAll(STORAGE_KEYS.COMPANY_MANUALS, all);
+    api('/manuals', 'POST', {
+      id: manual.id,
+      title: manual.title,
+      content: manual.content,
+      category: manual.category,
+    }).catch(console.error);
   },
   delete(id: string): void {
-    const all = this.getAll().filter((m) => m.id !== id);
-    saveAll(STORAGE_KEYS.COMPANY_MANUALS, all);
+    cache.manuals = cache.manuals.filter((m) => m.id !== id);
+    api(`/manuals/${id}`, 'DELETE').catch(console.error);
   },
 };
 
@@ -314,28 +454,16 @@ export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function exportAllData(): string {
-  const data = {
-    doctors: doctorStorage.getAll(),
-    visitLogs: visitLogStorage.getAll(),
-    snippets: snippetStorage.getAll(),
-    hospitals: hospitalStorage.getAll(),
-    departments: departmentStorage.getAll(),
-    manuals: manualStorage.getAll(),
-    exportedAt: new Date().toISOString(),
-  };
+export async function exportAllData(): Promise<string> {
+  const data = await api('/export', 'POST');
   return JSON.stringify(data, null, 2);
 }
 
-export function importAllData(jsonText: string): { success: boolean; error?: string } {
+export async function importAllData(jsonText: string): Promise<{ success: boolean; error?: string }> {
   try {
     const data = JSON.parse(jsonText);
-    if (data.doctors) saveAll(STORAGE_KEYS.DOCTORS, data.doctors);
-    if (data.visitLogs) saveAll(STORAGE_KEYS.VISIT_LOGS, data.visitLogs);
-    if (data.snippets) saveAll(STORAGE_KEYS.GOLDEN_SNIPPETS, data.snippets);
-    if (data.hospitals) saveAll(STORAGE_KEYS.HOSPITAL_PROFILES, data.hospitals);
-    if (data.departments) saveAll(STORAGE_KEYS.DEPARTMENT_PROFILES, data.departments);
-    if (data.manuals) saveAll(STORAGE_KEYS.COMPANY_MANUALS, data.manuals);
+    await api('/import', 'POST', data);
+    await refreshCache();
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -457,7 +585,7 @@ const DEFAULT_PRODUCT_MANUALS: CompanyManual[] = [
   },
 ];
 
-export function initDefaultData(): void {
+export async function initDefaultData(): Promise<void> {
   const existing = manualStorage.getAll();
   const existingMap = new Map(existing.map((m) => [m.id, m]));
   let changed = false;
@@ -474,6 +602,15 @@ export function initDefaultData(): void {
   }
 
   if (changed) {
-    saveAll(STORAGE_KEYS.COMPANY_MANUALS, Array.from(existingMap.values()));
+    const newManuals = Array.from(existingMap.values());
+    cache.manuals = newManuals;
+    for (const m of DEFAULT_PRODUCT_MANUALS) {
+      await api('/manuals', 'POST', {
+        id: m.id,
+        title: m.title,
+        content: m.content,
+        category: m.category,
+      }).catch(console.error);
+    }
   }
 }

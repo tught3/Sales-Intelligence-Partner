@@ -1,6 +1,7 @@
+import { useState, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { initDefaultData } from "@/lib/storage";
+import { initStorage, initDefaultData } from "@/lib/storage";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -13,8 +14,6 @@ import DashboardPage from "@/pages/DashboardPage";
 import HospitalsPage from "@/pages/HospitalsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import BulkImportPage from "@/pages/BulkImportPage";
-
-initDefaultData();
 
 const queryClient = new QueryClient();
 
@@ -37,6 +36,23 @@ function Router() {
 }
 
 function App() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    initStorage().then(() => initDefaultData()).then(() => setReady(true)).catch(() => setReady(true));
+  }, []);
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-3">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">데이터 불러오는 중...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

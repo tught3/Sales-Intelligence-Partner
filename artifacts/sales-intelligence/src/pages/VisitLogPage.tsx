@@ -421,20 +421,20 @@ export default function VisitLogPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2">전문 영업 일지</p>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">반응근거</p>
                   <Textarea
                     value={result.formattedLog}
                     onChange={(e) => setResult({ ...result, formattedLog: e.target.value })}
-                    rows={8}
+                    rows={4}
                     className="text-sm resize-none bg-muted/20"
                   />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-primary mb-2">다음 방문 전략</p>
+                  <p className="text-xs font-semibold text-primary mb-2">다음방문계획</p>
                   <Textarea
                     value={result.nextStrategy}
                     onChange={(e) => setResult({ ...result, nextStrategy: e.target.value })}
-                    rows={6}
+                    rows={4}
                     className="text-sm resize-none bg-primary/5"
                   />
                 </div>

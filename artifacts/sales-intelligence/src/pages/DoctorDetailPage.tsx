@@ -280,7 +280,7 @@ export default function DoctorDetailPage() {
                           </div>
                           {log.nextStrategy && (
                             <div>
-                              <p className="text-xs font-semibold text-primary mb-1">다음 방문 전략</p>
+                              <p className="text-xs font-semibold text-primary mb-1">다음방문계획</p>
                               <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{log.nextStrategy}</p>
                             </div>
                           )}

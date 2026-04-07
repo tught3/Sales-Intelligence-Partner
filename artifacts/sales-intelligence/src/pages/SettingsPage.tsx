@@ -96,8 +96,8 @@ export default function SettingsPage() {
     toast({ title: "매뉴얼이 삭제되었습니다" });
   }
 
-  function handleExport() {
-    const data = exportAllData();
+  async function handleExport() {
+    const data = await exportAllData();
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -112,9 +112,9 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const text = ev.target?.result as string;
-      const result = importAllData(text);
+      const result = await importAllData(text);
       if (result.success) {
         setManuals(manualStorage.getAll());
         toast({ title: "데이터가 가져오기되었습니다. 페이지를 새로고침하세요." });
@@ -234,16 +234,14 @@ export default function SettingsPage() {
       </div>
 
       {/* Data persistence warning */}
-      <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+      <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
         <div className="flex items-start gap-3">
-          <span className="text-amber-600 text-lg leading-none mt-0.5">⚠️</span>
+          <span className="text-green-600 text-lg leading-none mt-0.5">✓</span>
           <div>
-            <p className="text-sm font-semibold text-amber-800 mb-1">데이터 저장 안내 (중요)</p>
-            <p className="text-xs text-amber-700 leading-relaxed">
-              현재 모든 데이터(교수 프로파일, 방문 기록, 매뉴얼 등)는 <strong>이 브라우저에만</strong> 저장됩니다.
-              다른 기기나 브라우저에서는 데이터가 보이지 않으며, 브라우저 캐시를 삭제하면 데이터가 사라질 수 있습니다.
-              <br />
-              <strong>→ 정기적으로 "전체 데이터 내보내기"로 JSON 백업을 받아두세요.</strong>
+            <p className="text-sm font-semibold text-green-800 mb-1">클라우드 데이터 저장</p>
+            <p className="text-xs text-green-700 leading-relaxed">
+              모든 데이터(교수 프로파일, 방문 기록, 매뉴얼 등)는 <strong>서버에 저장</strong>됩니다.
+              어떤 기기에서 접속해도 동일한 데이터를 볼 수 있습니다.
             </p>
           </div>
         </div>

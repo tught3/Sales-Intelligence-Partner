@@ -77,7 +77,7 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial, editM
 
   function handleSave() {
     if (!name.trim() || !hospital.trim() || !department.trim()) return;
-    onSave({ name: name.trim(), hospital: hospital.trim(), department: department.trim(), position: position.trim(), notes: notes.trim(), traits });
+    onSave({ name: name.trim(), hospital: hospital.trim(), department: department.trim(), position: position.trim(), notes: notes.trim(), traits, prescriptionTendency: "", interestAreas: "", conversationHistory: [] });
   }
 
   return (
