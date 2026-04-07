@@ -52,6 +52,7 @@ export default function SettingsPage() {
   const [content, setContent] = useState("");
   const [category, setCategory] = useState<CompanyManual["category"]>("rule");
   const [aiLoading, setAiLoading] = useState<"image" | "reformat" | null>(null);
+  const [imageProgress, setImageProgress] = useState<string>("");
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   function resetForm() {
@@ -60,6 +61,8 @@ export default function SettingsPage() {
     setCategory("rule");
     setEditingManual(null);
     setShowForm(false);
+    setAiLoading(null);
+    setImageProgress("");
   }
 
   function openEdit(manual: CompanyManual) {
@@ -137,28 +140,47 @@ export default function SettingsPage() {
     e.target.value = "";
   }
 
-  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const mimeType = file.type;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const base64 = dataUrl.split(",")[1];
-      setShowForm(true);
-      setAiLoading("image");
-      try {
+  function readFileAsBase64(file: File): Promise<{ base64: string; mimeType: string }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        resolve({ base64: dataUrl.split(",")[1], mimeType: file.type });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setShowForm(true);
+    setAiLoading("image");
+    const results: string[] = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setImageProgress(files.length > 1 ? `이미지 ${i + 1}/${files.length} 분석 중...` : "이미지 분석 중...");
+        const { base64, mimeType } = await readFileAsBase64(file);
         const extracted = await extractTextFromImage(base64, mimeType);
-        setContent(extracted);
-        if (!title) setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
-        toast({ title: "이미지에서 텍스트 추출 완료", description: "내용을 확인 후 저장하세요" });
-      } catch (err) {
-        toast({ title: "이미지 분석 실패", description: String(err), variant: "destructive" });
-      } finally {
-        setAiLoading(null);
+        results.push(extracted);
+        if (!title && i === 0) setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
       }
-    };
-    reader.readAsDataURL(file);
+      const combined = results.length === 1
+        ? results[0]
+        : results.map((r, i) => `[이미지 ${i + 1}]\n${r}`).join("\n\n---\n\n");
+      setContent(combined);
+      toast({
+        title: `이미지 ${files.length}장 분석 완료`,
+        description: files.length > 1 ? '"AI로 깔끔하게 재작성"을 눌러 하나의 매뉴얼로 정리하세요' : "내용을 확인 후 저장하세요",
+      });
+    } catch (err) {
+      toast({ title: "이미지 분석 실패", description: String(err), variant: "destructive" });
+    } finally {
+      setAiLoading(null);
+      setImageProgress("");
+    }
     e.target.value = "";
   }
 
@@ -257,11 +279,12 @@ export default function SettingsPage() {
                       </label>
                       <label className="text-xs text-primary cursor-pointer hover:underline flex items-center gap-1">
                         <Image className="w-3 h-3" />
-                        이미지 업로드
+                        이미지 업로드 (여러 장 가능)
                         <input
                           ref={imageInputRef}
                           type="file"
                           accept="image/*"
+                          multiple
                           className="hidden"
                           onChange={handleImageUpload}
                         />
@@ -272,7 +295,7 @@ export default function SettingsPage() {
                   {aiLoading === "image" && (
                     <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 rounded-md px-3 py-2">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      이미지에서 텍스트 추출 중...
+                      {imageProgress || "이미지 분석 중..."}
                     </div>
                   )}
 
