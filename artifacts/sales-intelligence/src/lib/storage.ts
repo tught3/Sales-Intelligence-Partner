@@ -375,6 +375,48 @@ const DEFAULT_PRODUCT_MANUALS: CompanyManual[] = [
 - 신장·간 기능 저하 환자 용량 조절 필요`,
   },
   {
+    id: 'default-winuf-aplus-001',
+    title: '위너프에이플러스 (Winuf A+) - 제품 정보',
+    category: 'product',
+    updatedAt: '2025-04-07T00:00:00.000Z',
+    content: `■ 제품명: 위너프에이플러스주 (Winuf A Plus Injection)
+■ 성분: 포도당 + 고함량 아미노산 + 지질 복합 영양수액 (3챔버 구조)
+■ 제형: 정맥주사제 (TPN - Total Parenteral Nutrition)
+■ 제조/판매: JW생명과학(제조) / JW중외제약(영업)
+■ 세대: 4세대 TPN (고함량 아미노산 TPN)
+■ 출시: 2024년 1월 4일
+
+【3세대(위너프) vs 4세대(위너프에이플러스) 차이】
+- 아미노산 함량: 기존 위너프 대비 25% 증가 (1L 기준)
+- 포도당 함량: 감소 (중증환자 혈당 관리에 유리)
+- 지질 조성: 오메가6:오메가3 비율 2.1:1 동일 유지
+- 음성질소균형(negative nitrogen balance) 환자에게 별도 아미노산 보충제 없이 처방 가능
+
+【적응증】
+경구 또는 위장관 영양공급이 불가능·불충분한 환자 중 특히:
+- 음성질소균형으로 체중 감소가 있는 중증 환자
+- 단백질 요구량이 높은 수술 후·외상·화상 환자
+- ICU(중환자실) 입원 환자
+
+【임상 근거】
+- 국내 최초 고함량 아미노산 TPN 국내 3상 임상 완료 (국내 제약사 최초)
+- ASPEN(미국 비경구영양학회) / ESPEN(유럽 임상영양대사학회) 가이드라인 충족
+- 음성질소균형 환자 대상 유효성·안전성 확인
+
+【영업 핵심 강조점】
+1. 위너프(3세대)의 업그레이드 → 기존 위너프 처방 교수 대상 Up-sell 가능
+2. 중증·고단백 요구 환자에게 별도 아미노산 제제 없이 원스톱 처방 → 편의성·경제성
+3. 국내 3상 임상 데이터 → 국산 제품 신뢰성
+4. 오메가3 유지 → 항염증 효과 그대로
+
+【영업 타겟 과】
+중환자의학과(ICU), 외과, 소화기내과, 종양혈액내과, 간담췌외과
+
+【주의사항】
+- 중심정맥 투여 (말초정맥용 제형도 있으나 중심정맥 권장)
+- 신장·간 기능 저하 환자 용량 조절 필요`,
+  },
+  {
     id: 'default-ferinject-001',
     title: '페린젝트 (Ferinject) - 제품 정보',
     category: 'product',
@@ -417,9 +459,8 @@ const DEFAULT_PRODUCT_MANUALS: CompanyManual[] = [
 
 export function initDefaultData(): void {
   const existing = manualStorage.getAll();
-  const hasDefault = existing.some((m) => m.id.startsWith('default-'));
-  if (!hasDefault) {
-    const all = [...existing, ...DEFAULT_PRODUCT_MANUALS];
-    saveAll(STORAGE_KEYS.COMPANY_MANUALS, all);
-  }
+  const defaultIds = new Set(DEFAULT_PRODUCT_MANUALS.map((m) => m.id));
+  const nonDefault = existing.filter((m) => !defaultIds.has(m.id));
+  const all = [...nonDefault, ...DEFAULT_PRODUCT_MANUALS];
+  saveAll(STORAGE_KEYS.COMPANY_MANUALS, all);
 }
