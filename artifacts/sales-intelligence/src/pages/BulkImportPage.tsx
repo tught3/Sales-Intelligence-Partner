@@ -31,68 +31,71 @@ interface ImportResult {
 function parseBulkInput(text: string): ParsedDoctor[] {
   const doctors: ParsedDoctor[] = [];
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = normalized.split("\n");
+  const lines = normalized.split("\n").map((l) => l.trim());
 
+  // 진료과 판별: 과/내과/외과 등 키워드 포함, / 없음
+  function isDept(line: string): boolean {
+    if (!line || line.includes("/")) return false;
+    const keywords = ["내과", "외과", "과", "센터", "병동", "의학", "약제"];
+    return keywords.some((k) => line.includes(k));
+  }
+
+  // 교수 이름 판별: 순수 한글 2~4자, 공백/숫자/특수문자 없음
+  function isName(line: string): boolean {
+    if (!line || line.includes("/") || line.includes(" ")) return false;
+    if (line.length < 2 || line.length > 4) return false;
+    return /^[\uAC00-\uD7A3]+$/.test(line);
+  }
+
+  let currentDept = "";
   let i = 0;
 
-  function isLikelyDepartment(line: string): boolean {
-    if (!line || line.includes("/") || line.length > 30) return false;
-    const deptKeywords = ["과", "실", "부", "센터", "내과", "외과", "의학", "약제"];
-    return deptKeywords.some((k) => line.includes(k));
-  }
-
-  function isLikelyName(line: string): boolean {
-    if (!line || line.includes("/") || line.length > 12) return false;
-    const korean = /[\uAC00-\uD7A3]/;
-    const digit = /\d/;
-    return korean.test(line) && !digit.test(line);
-  }
-
   while (i < lines.length) {
-    const dept = lines[i].trim();
-    if (!isLikelyDepartment(dept)) {
+    const line = lines[i];
+
+    if (!line) { i++; continue; }
+
+    // 진료과 먼저 체크 (isName보다 우선)
+    if (isDept(line)) {
+      currentDept = line;
       i++;
       continue;
     }
 
-    let j = i + 1;
-    while (j < lines.length && lines[j].trim() === "") j++;
-    if (j >= lines.length) break;
-
-    const name = lines[j].trim();
-    if (!isLikelyName(name)) {
+    // 교수 이름이면 새 교수 블록 시작
+    if (isName(line)) {
+      const name = line;
+      const dept = currentDept;
       i++;
-      continue;
-    }
 
-    let k = j + 1;
-    const contentLines: string[] = [];
-    while (k < lines.length) {
-      const line = lines[k].trim();
-      if (isLikelyDepartment(line)) {
-        let peek = k + 1;
-        while (peek < lines.length && lines[peek].trim() === "") peek++;
-        if (peek < lines.length && isLikelyName(lines[peek].trim())) break;
+      // 다음 isName 또는 isDept 줄 전까지 내용 수집
+      const contentLines: string[] = [];
+      while (i < lines.length) {
+        const cl = lines[i];
+        if (!cl) { i++; continue; }           // 빈줄은 건너뜀
+        if (isDept(cl) || isName(cl)) break;   // 다음 과 또는 다음 교수
+        contentLines.push(cl);
+        i++;
       }
-      if (line) contentLines.push(line);
-      k++;
+
+      const rawContent = contentLines.join(" ");
+      const visits = rawContent
+        .split("/")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 5);
+
+      if (visits.length > 0) {
+        doctors.push({
+          department: dept,
+          name,
+          visits: visits.map((content, idx) => ({ index: idx, content })),
+        });
+      }
+      continue;
     }
 
-    const rawContent = contentLines.join(" ");
-    const rawVisits = rawContent
-      .split("/")
-      .map((v) => v.trim())
-      .filter((v) => v.length > 5);
-
-    if (name && rawVisits.length > 0) {
-      doctors.push({
-        department: dept,
-        name,
-        visits: rawVisits.map((content, idx) => ({ index: idx, content })),
-      });
-    }
-
-    i = k;
+    // 진료과도 이름도 아니면 그냥 넘김
+    i++;
   }
 
   return doctors;
