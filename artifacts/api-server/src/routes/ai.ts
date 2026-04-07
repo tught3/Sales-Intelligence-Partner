@@ -68,8 +68,14 @@ function isAllowedOrigin(origin: string): boolean {
     return true;
   }
 
+  // Replit dev 환경 도메인
   const replDomain = process.env["REPLIT_DEV_DOMAIN"] ?? "";
   if (replDomain && originHost.endsWith(replDomain)) {
+    return true;
+  }
+
+  // Replit 배포(published) 환경 도메인
+  if (originHost.endsWith(".replit.app") || originHost.endsWith(".replit.dev")) {
     return true;
   }
 
