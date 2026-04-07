@@ -459,8 +459,21 @@ const DEFAULT_PRODUCT_MANUALS: CompanyManual[] = [
 
 export function initDefaultData(): void {
   const existing = manualStorage.getAll();
-  const defaultIds = new Set(DEFAULT_PRODUCT_MANUALS.map((m) => m.id));
-  const nonDefault = existing.filter((m) => !defaultIds.has(m.id));
-  const all = [...nonDefault, ...DEFAULT_PRODUCT_MANUALS];
-  saveAll(STORAGE_KEYS.COMPANY_MANUALS, all);
+  const existingMap = new Map(existing.map((m) => [m.id, m]));
+  let changed = false;
+
+  for (const def of DEFAULT_PRODUCT_MANUALS) {
+    const stored = existingMap.get(def.id);
+    if (!stored) {
+      existingMap.set(def.id, def);
+      changed = true;
+    } else if (stored.updatedAt < def.updatedAt) {
+      existingMap.set(def.id, def);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveAll(STORAGE_KEYS.COMPANY_MANUALS, Array.from(existingMap.values()));
+  }
 }
