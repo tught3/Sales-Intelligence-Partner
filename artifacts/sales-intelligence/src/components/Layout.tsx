@@ -10,6 +10,7 @@ import {
   Building2,
   Settings,
   Brain,
+  FolderInput,
 } from "lucide-react";
 
 const navGroups = [
@@ -18,6 +19,7 @@ const navGroups = [
     items: [
       { href: "/", label: "대시보드", icon: LayoutDashboard },
       { href: "/visit-log", label: "영업 일지 작성", icon: FileText },
+      { href: "/bulk-import", label: "교수 파일 일괄 입력", icon: FolderInput },
     ],
   },
   {

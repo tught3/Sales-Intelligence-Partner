@@ -12,6 +12,7 @@ import SnippetsPage from "@/pages/SnippetsPage";
 import DashboardPage from "@/pages/DashboardPage";
 import HospitalsPage from "@/pages/HospitalsPage";
 import SettingsPage from "@/pages/SettingsPage";
+import BulkImportPage from "@/pages/BulkImportPage";
 
 initDefaultData();
 
@@ -28,6 +29,7 @@ function Router() {
         <Route path="/hospitals" component={HospitalsPage} />
         <Route path="/snippets" component={SnippetsPage} />
         <Route path="/settings" component={SettingsPage} />
+        <Route path="/bulk-import" component={BulkImportPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
