@@ -198,13 +198,9 @@ export default function SettingsPage() {
         description: files.length > 1 ? '"AI로 깔끔하게 재작성"을 눌러 하나의 매뉴얼로 정리하세요' : "내용을 확인 후 저장하세요",
       });
     } catch (err) {
-      const msg = String(err);
-      const isQuota = msg.toLowerCase().includes("exhausted") || msg.includes("429") || msg.includes("quota");
       toast({
         title: "이미지 분석 실패",
-        description: isQuota
-          ? "AI 사용량 한도에 도달했습니다. 잠시 후 다시 시도해주세요."
-          : msg,
+        description: String(err),
         variant: "destructive",
       });
     } finally {

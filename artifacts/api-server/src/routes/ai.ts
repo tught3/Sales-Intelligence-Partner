@@ -173,35 +173,59 @@ router.post("/ai/chat", async (req, res) => {
     anthropicBody["system"] = systemPrompt;
   }
 
-  try {
-    const response = await fetch(`${baseUrl}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(anthropicBody),
-    });
+  const bodyStr = JSON.stringify(anthropicBody);
+  const MAX_RETRIES = 3;
 
-    const data = await response.json() as {
-      content?: Array<{ type: string; text?: string }>;
-      error?: { message: string };
-    };
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: bodyStr,
+      });
 
-    if (!response.ok) {
-      res.status(response.status).json({ error: data.error?.message ?? "AI request failed" });
+      const rawText = await response.text();
+      let data: { content?: Array<{ type: string; text?: string }>; error?: { type?: string; message: string } };
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = { error: { message: rawText } };
+      }
+
+      // 일시적 과부하(529) 또는 레이트리밋(429) → 재시도
+      if ((response.status === 529 || response.status === 429) && attempt < MAX_RETRIES - 1) {
+        const delay = (attempt + 1) * 3000;
+        console.log(`[ai] status ${response.status}, retry in ${delay}ms (attempt ${attempt + 1})`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      if (!response.ok) {
+        const errMsg = data.error?.message ?? rawText;
+        console.error(`[ai] Anthropic error ${response.status}:`, errMsg);
+        res.status(response.status).json({ error: errMsg });
+        return;
+      }
+
+      const textBlock = data.content?.find((b) => b.type === "text");
+      const text = textBlock?.text ?? "";
+
+      res.json({
+        choices: [{ message: { role: "assistant", content: text } }],
+      });
+      return;
+    } catch (err) {
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 3000));
+        continue;
+      }
+      res.status(500).json({ error: "AI request failed", detail: String(err) });
       return;
     }
-
-    const textBlock = data.content?.find((b) => b.type === "text");
-    const text = textBlock?.text ?? "";
-
-    res.json({
-      choices: [{ message: { role: "assistant", content: text } }],
-    });
-  } catch (err) {
-    res.status(500).json({ error: "AI request failed", detail: String(err) });
   }
 });
 
