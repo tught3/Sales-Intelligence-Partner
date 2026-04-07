@@ -3,6 +3,7 @@ import {
   manualStorage,
   exportAllData,
   importAllData,
+  refreshCache,
   generateId,
   type CompanyManual,
 } from "@/lib/storage";
@@ -54,6 +55,60 @@ export default function SettingsPage() {
   const [aiLoading, setAiLoading] = useState<"image" | "reformat" | null>(null);
   const [imageProgress, setImageProgress] = useState<string>("");
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [localDataExists, setLocalDataExists] = useState(() => {
+    try {
+      const keys = ['jw_doctors', 'jw_visit_logs', 'jw_golden_snippets', 'jw_hospital_profiles', 'jw_department_profiles', 'jw_company_manuals'];
+      return keys.some(k => {
+        const raw = localStorage.getItem(k);
+        if (!raw) return false;
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) && arr.length > 0;
+      });
+    } catch { return false; }
+  });
+
+  async function handleMigrateLocalData() {
+    setMigrating(true);
+    try {
+      const data: Record<string, any> = {};
+      const keyMap: Record<string, string> = {
+        jw_doctors: 'doctors',
+        jw_visit_logs: 'visitLogs',
+        jw_golden_snippets: 'snippets',
+        jw_hospital_profiles: 'hospitals',
+        jw_department_profiles: 'departments',
+        jw_company_manuals: 'manuals',
+      };
+      let totalCount = 0;
+      for (const [lsKey, jsonKey] of Object.entries(keyMap)) {
+        const raw = localStorage.getItem(lsKey);
+        if (raw) {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr) && arr.length > 0) {
+            data[jsonKey] = arr;
+            totalCount += arr.length;
+          }
+        }
+      }
+      if (totalCount === 0) {
+        toast({ title: "복구할 데이터가 없습니다", variant: "destructive" });
+        setMigrating(false);
+        return;
+      }
+      const result = await importAllData(JSON.stringify(data));
+      if (result.success) {
+        setManuals(manualStorage.getAll());
+        setLocalDataExists(false);
+        toast({ title: `${totalCount}건의 데이터가 서버로 복구되었습니다!` });
+      } else {
+        toast({ title: "복구 실패", description: result.error, variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "복구 중 오류", description: String(e), variant: "destructive" });
+    }
+    setMigrating(false);
+  }
 
   function resetForm() {
     setTitle("");
@@ -427,6 +482,37 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-4">
+          {localDataExists && (
+            <Card className="border-orange-300 bg-orange-50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm text-orange-800">이전 브라우저 데이터 발견!</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-orange-700">
+                  이 브라우저에 이전에 저장했던 교수 프로파일, 방문 기록 등이 남아 있습니다.
+                  아래 버튼을 누르면 서버 DB로 자동 복구됩니다.
+                </p>
+                <Button
+                  onClick={handleMigrateLocalData}
+                  disabled={migrating}
+                  className="w-full gap-2 bg-orange-600 hover:bg-orange-700"
+                >
+                  {migrating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      복구 중...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      기존 데이터 서버로 복구하기
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">데이터 백업 / 복원</CardTitle>
