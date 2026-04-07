@@ -140,8 +140,8 @@ export default function SettingsPage() {
     e.target.value = "";
   }
 
-  // 이미지를 최대 1200px로 리사이즈 후 base64 반환 (토큰 절약)
-  function resizeAndEncodeImage(file: File, maxPx = 1200): Promise<{ base64: string; mimeType: string }> {
+  // 이미지를 최대 800px로 리사이즈 후 base64 반환 (토큰 절약)
+  function resizeAndEncodeImage(file: File, maxPx = 800): Promise<{ base64: string; mimeType: string }> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = reject;

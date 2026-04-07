@@ -29,7 +29,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-haiku-4-5',  // OCR은 Haiku로도 충분 (토큰 비용 대폭 절감)
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -40,7 +40,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
           ],
         },
       ],
-      max_completion_tokens: 4096,
+      max_completion_tokens: 2000,
     }),
   });
   if (!res.ok) {
