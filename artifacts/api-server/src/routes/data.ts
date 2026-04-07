@@ -13,6 +13,93 @@ function wrap(fn: (req: Request, res: Response) => Promise<void>) {
   };
 }
 
+function toDate(v: any): Date {
+  if (v instanceof Date) return v;
+  if (typeof v === "string" || typeof v === "number") return new Date(v);
+  return new Date();
+}
+
+function prepDoctor(d: any) {
+  return {
+    id: d.id,
+    name: d.name || "",
+    hospital: d.hospital || "",
+    department: d.department || "",
+    position: d.position || "교수",
+    traits: d.traits || [],
+    objections: d.objections || [],
+    notes: d.notes || "",
+    prescriptionTendency: d.prescriptionTendency ?? d.prescription_tendency ?? "",
+    interestAreas: d.interestAreas ?? d.interest_areas ?? "",
+    conversationHistory: d.conversationHistory ?? d.conversation_history ?? [],
+    createdAt: toDate(d.createdAt ?? d.created_at),
+    updatedAt: toDate(d.updatedAt ?? d.updated_at),
+  };
+}
+
+function prepVisitLog(v: any) {
+  return {
+    id: v.id,
+    doctorId: v.doctorId ?? v.doctor_id ?? "",
+    visitDate: v.visitDate ?? v.visit_date ?? "",
+    rawNotes: v.rawNotes ?? v.raw_notes ?? "",
+    formattedLog: v.formattedLog ?? v.formatted_log ?? "",
+    nextStrategy: v.nextStrategy ?? v.next_strategy ?? "",
+    products: v.products || [],
+    createdAt: toDate(v.createdAt ?? v.created_at),
+  };
+}
+
+function prepSnippet(s: any) {
+  return {
+    id: s.id,
+    content: s.content || "",
+    context: s.context || "",
+    tags: s.tags || [],
+    product: s.product || "",
+    effectiveness: s.effectiveness ?? 5,
+    createdAt: toDate(s.createdAt ?? s.created_at),
+  };
+}
+
+function prepHospital(h: any) {
+  return {
+    id: h.id,
+    name: h.name || "",
+    region: h.region || "",
+    hospitalType: h.hospitalType ?? h.hospital_type ?? "other",
+    characteristics: h.characteristics || "",
+    keyDepartments: h.keyDepartments ?? h.key_departments ?? "",
+    competitorStrength: h.competitorStrength ?? h.competitor_strength ?? "",
+    notes: h.notes || "",
+    updatedAt: toDate(h.updatedAt ?? h.updated_at),
+  };
+}
+
+function prepDepartment(d: any) {
+  return {
+    id: d.id,
+    hospitalId: d.hospitalId ?? d.hospital_id ?? "",
+    hospitalName: d.hospitalName ?? d.hospital_name ?? "",
+    departmentName: d.departmentName ?? d.department_name ?? "",
+    characteristics: d.characteristics || "",
+    mainProducts: d.mainProducts ?? d.main_products ?? [],
+    competitorProducts: d.competitorProducts ?? d.competitor_products ?? "",
+    notes: d.notes || "",
+    updatedAt: toDate(d.updatedAt ?? d.updated_at),
+  };
+}
+
+function prepManual(m: any) {
+  return {
+    id: m.id,
+    title: m.title || "",
+    content: m.content || "",
+    category: m.category || "other",
+    updatedAt: toDate(m.updatedAt ?? m.updated_at),
+  };
+}
+
 router.get("/doctors", wrap(async (_req, res) => {
   const all = await db.select().from(doctors);
   res.json(all);
@@ -25,7 +112,7 @@ router.get("/doctors/:id", wrap(async (req, res) => {
 }));
 
 router.post("/doctors", wrap(async (req, res) => {
-  const data = req.body;
+  const data = prepDoctor(req.body);
   await db.insert(doctors).values(data).onConflictDoUpdate({
     target: doctors.id,
     set: { ...data, updatedAt: new Date() },
@@ -44,7 +131,7 @@ router.get("/visit-logs", wrap(async (_req, res) => {
 }));
 
 router.post("/visit-logs", wrap(async (req, res) => {
-  const data = req.body;
+  const data = prepVisitLog(req.body);
   await db.insert(visitLogs).values(data).onConflictDoUpdate({
     target: visitLogs.id,
     set: data,
@@ -63,7 +150,7 @@ router.get("/snippets", wrap(async (_req, res) => {
 }));
 
 router.post("/snippets", wrap(async (req, res) => {
-  const data = req.body;
+  const data = prepSnippet(req.body);
   await db.insert(goldenSnippets).values(data).onConflictDoUpdate({
     target: goldenSnippets.id,
     set: data,
@@ -82,7 +169,7 @@ router.get("/hospitals", wrap(async (_req, res) => {
 }));
 
 router.post("/hospitals", wrap(async (req, res) => {
-  const data = req.body;
+  const data = prepHospital(req.body);
   await db.insert(hospitalProfiles).values(data).onConflictDoUpdate({
     target: hospitalProfiles.id,
     set: { ...data, updatedAt: new Date() },
@@ -101,7 +188,7 @@ router.get("/departments", wrap(async (_req, res) => {
 }));
 
 router.post("/departments", wrap(async (req, res) => {
-  const data = req.body;
+  const data = prepDepartment(req.body);
   await db.insert(departmentProfiles).values(data).onConflictDoUpdate({
     target: departmentProfiles.id,
     set: { ...data, updatedAt: new Date() },
@@ -120,7 +207,7 @@ router.get("/manuals", wrap(async (_req, res) => {
 }));
 
 router.post("/manuals", wrap(async (req, res) => {
-  const data = req.body;
+  const data = prepManual(req.body);
   await db.insert(companyManuals).values(data).onConflictDoUpdate({
     target: companyManuals.id,
     set: { ...data, updatedAt: new Date() },
@@ -157,32 +244,38 @@ router.post("/import", wrap(async (req, res) => {
   const data = req.body;
   if (data.doctors) {
     for (const d of data.doctors) {
-      await db.insert(doctors).values(d).onConflictDoUpdate({ target: doctors.id, set: { ...d, updatedAt: new Date() } });
+      const row = prepDoctor(d);
+      await db.insert(doctors).values(row).onConflictDoUpdate({ target: doctors.id, set: { ...row, updatedAt: new Date() } });
     }
   }
   if (data.visitLogs) {
     for (const v of data.visitLogs) {
-      await db.insert(visitLogs).values(v).onConflictDoUpdate({ target: visitLogs.id, set: v });
+      const row = prepVisitLog(v);
+      await db.insert(visitLogs).values(row).onConflictDoUpdate({ target: visitLogs.id, set: row });
     }
   }
   if (data.snippets) {
     for (const s of data.snippets) {
-      await db.insert(goldenSnippets).values(s).onConflictDoUpdate({ target: goldenSnippets.id, set: s });
+      const row = prepSnippet(s);
+      await db.insert(goldenSnippets).values(row).onConflictDoUpdate({ target: goldenSnippets.id, set: row });
     }
   }
   if (data.hospitals) {
     for (const h of data.hospitals) {
-      await db.insert(hospitalProfiles).values(h).onConflictDoUpdate({ target: hospitalProfiles.id, set: { ...h, updatedAt: new Date() } });
+      const row = prepHospital(h);
+      await db.insert(hospitalProfiles).values(row).onConflictDoUpdate({ target: hospitalProfiles.id, set: { ...row, updatedAt: new Date() } });
     }
   }
   if (data.departments) {
     for (const d of data.departments) {
-      await db.insert(departmentProfiles).values(d).onConflictDoUpdate({ target: departmentProfiles.id, set: { ...d, updatedAt: new Date() } });
+      const row = prepDepartment(d);
+      await db.insert(departmentProfiles).values(row).onConflictDoUpdate({ target: departmentProfiles.id, set: { ...row, updatedAt: new Date() } });
     }
   }
   if (data.manuals) {
     for (const m of data.manuals) {
-      await db.insert(companyManuals).values(m).onConflictDoUpdate({ target: companyManuals.id, set: { ...m, updatedAt: new Date() } });
+      const row = prepManual(m);
+      await db.insert(companyManuals).values(row).onConflictDoUpdate({ target: companyManuals.id, set: { ...row, updatedAt: new Date() } });
     }
   }
   res.json({ ok: true });
