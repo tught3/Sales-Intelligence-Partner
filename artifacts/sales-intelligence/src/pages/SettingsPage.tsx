@@ -134,11 +134,27 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">설정 & 회사 매뉴얼</h1>
         <p className="text-muted-foreground mt-1">
           AI가 영업 일지를 생성할 때 항상 참고하는 회사 가이드라인과 제품 정보를 관리하세요
         </p>
+      </div>
+
+      {/* Data persistence warning */}
+      <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+        <div className="flex items-start gap-3">
+          <span className="text-amber-600 text-lg leading-none mt-0.5">⚠️</span>
+          <div>
+            <p className="text-sm font-semibold text-amber-800 mb-1">데이터 저장 안내 (중요)</p>
+            <p className="text-xs text-amber-700 leading-relaxed">
+              현재 모든 데이터(교수 프로파일, 방문 기록, 매뉴얼 등)는 <strong>이 브라우저에만</strong> 저장됩니다.
+              다른 기기나 브라우저에서는 데이터가 보이지 않으며, 브라우저 캐시를 삭제하면 데이터가 사라질 수 있습니다.
+              <br />
+              <strong>→ 정기적으로 "전체 데이터 내보내기"로 JSON 백업을 받아두세요.</strong>
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -341,3 +341,85 @@ export function importAllData(jsonText: string): { success: boolean; error?: str
     return { success: false, error: String(e) };
   }
 }
+
+const DEFAULT_PRODUCT_MANUALS: CompanyManual[] = [
+  {
+    id: 'default-winuf-001',
+    title: '위너프 (Winuf) - 제품 정보',
+    category: 'product',
+    updatedAt: '2025-04-07T00:00:00.000Z',
+    content: `■ 제품명: 위너프페리주 (Winuf Peri Inj.) / 위너프페리주(3C)
+■ 성분: 포도당 + 아미노산 + 지질 복합 영양수액 (3챔버 구조)
+■ 제형: 정맥주사제 (TPN - Total Parenteral Nutrition)
+■ 제조사: JW중외제약 / JW생명과학
+
+【적응증】
+경구 또는 위장관 영양공급이 불가능·불충분·제한된 환자에게 수분, 전해질, 아미노산, 칼로리, 필수지방산 및 오메가-3 지방산 보급
+- 수술 전후 금식 환자
+- 소화기관 기능 저하로 위장관 영양 불가 환자
+- 외래·항암 치료 환자
+- 간질환·중증 환자
+
+【제품 특징 (영업 강조점)】
+- 3세대 3챔버 구조: 포도당/아미노산/지질을 분리 보관 → 사용 시 혼합
+- 국내 최초 3챔버 TPN 출시 (2003년)
+- 오메가-3 지방산 포함으로 염증 억제 효과
+- 다양한 용량(654mL, 1085mL 등) 선택 가능
+- 2024년 매출 789억원 (전년비 +2.6% 성장)
+
+【영업 타겟 과】
+외과, 소화기내과, 중환자의학과, 종양혈액내과, 간담췌외과
+
+【주의사항】
+- 정맥 투여만 가능 (경구/근육 투여 불가)
+- 신장·간 기능 저하 환자 용량 조절 필요`,
+  },
+  {
+    id: 'default-ferinject-001',
+    title: '페린젝트 (Ferinject) - 제품 정보',
+    category: 'product',
+    updatedAt: '2025-04-07T00:00:00.000Z',
+    content: `■ 제품명: 페린젝트주 (Ferinject Inj.)
+■ 성분: 카르복시말토오스수산화제이철착염 (Ferric Carboxymaltose, FCM)
+■ 농도: 1mL당 철 50mg
+■ 규격: 2mL(100mg Fe), 10mL(500mg Fe), 20mL(1,000mg Fe)
+■ 제형: 정맥주사제 (IV)
+■ 제조/판매: JW중외제약 (스위스 Vifor Pharma 도입)
+■ 건강보험 급여: 2024년 5월 1일부터 적용 (2011년 출시 후 약 13년 만)
+
+【적응증】
+경구용 철분제 효과가 불충분하거나 복용이 불가능한 철 결핍 환자
+(철 결핍성 빈혈, 수술 전후, 만성신부전, IBD, 산후 빈혈 등)
+
+【투여 방법】
+- 최대 1일 투여량: 1,000mg
+- 단회 15분 투여 가능 (기존 IV 철 제제 대비 획기적 단축)
+- 정맥(IV)으로만 투여 가능 (피하·근육주사 불가)
+- 체중·Hb 기준으로 누적 필요량 계산
+
+【제품 핵심 강조점 (영업)】
+1. 1회 1,000mg 고용량 단회 투여 가능 → 내원 횟수 감소
+2. 15분 이내 빠른 투여 → 외래 효율성
+3. 2024년 5월 급여 적용 → 환자 부담 대폭 감소
+4. 빠른 Hb 회복 (1~2주 내 유의미한 상승)
+5. 아나필락시스 위험 낮음 (시험투여 불필요)
+6. Ganzoni 공식 또는 간편법으로 총 필요량 계산
+
+【경쟁 우위】
+- 기존 철 덱스트란 대비 안전성 우수
+- 1회 고용량 투여 가능한 국내 유일 FCM 제제
+- 2024년 급여로 가격 경쟁력 확보
+
+【영업 타겟 과】
+산부인과, 소화기내과(IBD), 신장내과, 혈액종양내과, 외과(수술 전처치)`,
+  },
+];
+
+export function initDefaultData(): void {
+  const existing = manualStorage.getAll();
+  const hasDefault = existing.some((m) => m.id.startsWith('default-'));
+  if (!hasDefault) {
+    const all = [...existing, ...DEFAULT_PRODUCT_MANUALS];
+    saveAll(STORAGE_KEYS.COMPANY_MANUALS, all);
+  }
+}
