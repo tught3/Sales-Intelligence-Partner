@@ -140,14 +140,36 @@ export default function SettingsPage() {
     e.target.value = "";
   }
 
-  function readFileAsBase64(file: File): Promise<{ base64: string; mimeType: string }> {
+  // 이미지를 최대 1200px로 리사이즈 후 base64 반환 (토큰 절약)
+  function resizeAndEncodeImage(file: File, maxPx = 1200): Promise<{ base64: string; mimeType: string }> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        resolve({ base64: dataUrl.split(",")[1], mimeType: file.type });
-      };
       reader.onerror = reject;
+      reader.onload = (ev) => {
+        const img = new window.Image();
+        img.onerror = reject;
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxPx || height > maxPx) {
+            if (width >= height) {
+              height = Math.round((height * maxPx) / width);
+              width = maxPx;
+            } else {
+              width = Math.round((width * maxPx) / height);
+              height = maxPx;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { reject(new Error("canvas ctx 없음")); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          resolve({ base64: dataUrl.split(",")[1], mimeType: "image/jpeg" });
+        };
+        img.src = ev.target?.result as string;
+      };
       reader.readAsDataURL(file);
     });
   }
@@ -162,7 +184,7 @@ export default function SettingsPage() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         setImageProgress(files.length > 1 ? `이미지 ${i + 1}/${files.length} 분석 중...` : "이미지 분석 중...");
-        const { base64, mimeType } = await readFileAsBase64(file);
+        const { base64, mimeType } = await resizeAndEncodeImage(file);
         const extracted = await extractTextFromImage(base64, mimeType);
         results.push(extracted);
         if (!title && i === 0) setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
@@ -176,7 +198,15 @@ export default function SettingsPage() {
         description: files.length > 1 ? '"AI로 깔끔하게 재작성"을 눌러 하나의 매뉴얼로 정리하세요' : "내용을 확인 후 저장하세요",
       });
     } catch (err) {
-      toast({ title: "이미지 분석 실패", description: String(err), variant: "destructive" });
+      const msg = String(err);
+      const isQuota = msg.toLowerCase().includes("exhausted") || msg.includes("429") || msg.includes("quota");
+      toast({
+        title: "이미지 분석 실패",
+        description: isQuota
+          ? "AI 사용량 한도에 도달했습니다. 잠시 후 다시 시도해주세요."
+          : msg,
+        variant: "destructive",
+      });
     } finally {
       setAiLoading(null);
       setImageProgress("");
