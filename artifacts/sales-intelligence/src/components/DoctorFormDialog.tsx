@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,19 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial, editM
   const [traits, setTraits] = useState<DoctorTrait[]>(initial?.traits ?? []);
   const [customTrait, setCustomTrait] = useState("");
   const [selectedColor, setSelectedColor] = useState<DoctorTrait['color']>("blue");
+
+  useEffect(() => {
+    if (open) {
+      setName(initial?.name ?? "");
+      setHospital(initial?.hospital ?? "");
+      setDepartment(initial?.department ?? "");
+      setPosition(initial?.position ?? "교수");
+      setNotes(initial?.notes ?? "");
+      setTraits(initial?.traits ?? []);
+      setCustomTrait("");
+      setSelectedColor("blue");
+    }
+  }, [open]);
 
   function addPresetTrait(preset: { label: string; color: DoctorTrait['color'] }) {
     if (traits.find((t) => t.label === preset.label)) return;

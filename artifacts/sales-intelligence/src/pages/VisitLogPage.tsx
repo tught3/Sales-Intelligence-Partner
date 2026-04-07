@@ -153,13 +153,35 @@ export default function VisitLogPage() {
                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 </div>
                 {selectedDoctor && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded p-2">
-                    <span className="font-medium text-foreground">{selectedDoctor.name} 교수님</span>
-                    {selectedDoctor.traits.slice(0, 3).map((t) => (
-                      <Badge key={t.id} variant="secondary" className="text-xs py-0">{t.label}</Badge>
-                    ))}
-                    {pastLogs.length > 0 && (
-                      <span className="ml-auto">방문 {pastLogs.length}회 기록</span>
+                  <div className="text-xs bg-muted/50 rounded p-3 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-foreground">{selectedDoctor.name} 교수님</span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className="text-muted-foreground">{selectedDoctor.hospital} · {selectedDoctor.department}</span>
+                      <span className="ml-auto text-muted-foreground">방문 {pastLogs.length}회</span>
+                    </div>
+                    {selectedDoctor.traits.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {selectedDoctor.traits.map((t) => (
+                          <Badge key={t.id} variant="secondary" className="text-xs py-0">{t.label}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {selectedDoctor.objections.length > 0 && (
+                      <div className="border-t pt-2 mt-1">
+                        <p className="text-xs font-semibold text-muted-foreground mb-1">자주 하시는 반박</p>
+                        <ul className="space-y-0.5">
+                          {selectedDoctor.objections.slice(0, 3).map((obj) => (
+                            <li key={obj.id} className="text-muted-foreground">· {obj.content}</li>
+                          ))}
+                          {selectedDoctor.objections.length > 3 && (
+                            <li className="text-muted-foreground/60">+ {selectedDoctor.objections.length - 3}개 더...</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedDoctor.notes && (
+                      <p className="text-muted-foreground border-t pt-2 italic">{selectedDoctor.notes}</p>
                     )}
                   </div>
                 )}
