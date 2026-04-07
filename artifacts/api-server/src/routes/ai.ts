@@ -47,33 +47,31 @@ function isRateLimited(ip: string): boolean {
 
 router.post("/ai/chat", async (req, res) => {
   const origin = req.headers.origin;
+  const host = req.headers.host ?? "";
 
-  if (origin) {
-    const allowedOrigins = [
-      req.headers.host,
-      process.env["REPLIT_DEV_DOMAIN"],
-      process.env["REPL_SLUG"],
-    ].filter(Boolean);
-
-    let originHost: string;
-    try {
-      originHost = new URL(origin).host;
-    } catch {
-      res.status(403).json({ error: "Invalid origin" });
-      return;
-    }
-
-    const isAllowed = allowedOrigins.some(
-      (allowed) => allowed && (originHost === allowed || originHost.endsWith(`.${allowed}`))
-    );
-
-    if (!isAllowed && req.headers.host && originHost !== req.headers.host) {
-      res.status(403).json({ error: "Cross-origin requests are not allowed" });
-      return;
-    }
+  if (!origin) {
+    res.status(403).json({ error: "Origin header is required" });
+    return;
   }
 
-  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    res.status(403).json({ error: "Invalid origin" });
+    return;
+  }
+
+  if (originHost !== host) {
+    res.status(403).json({ error: "Cross-origin requests are not allowed" });
+    return;
+  }
+
+  const clientIp =
+    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ??
+    req.socket.remoteAddress ??
+    "unknown";
+
   if (isRateLimited(clientIp)) {
     res.status(429).json({ error: "Too many requests — please wait before retrying" });
     return;
