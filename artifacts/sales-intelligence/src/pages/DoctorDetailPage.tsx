@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
-import { doctorStorage, visitLogStorage, snippetStorage, generateId, type Objection } from "@/lib/storage";
+import { doctorStorage, visitLogStorage, snippetStorage, generateId, type Doctor, type DoctorTrait, type Objection } from "@/lib/storage";
 import { generateObjectionResponse, generateNextVisitStrategy } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import DoctorFormDialog from "@/components/DoctorFormDialog";
 import {
   ArrowLeft,
   Building2,
@@ -21,6 +22,7 @@ import {
   ChevronUp,
   Loader2,
   Shield,
+  Pencil,
 } from "lucide-react";
 
 const TRAIT_COLORS: Record<string, string> = {
@@ -47,6 +49,7 @@ export default function DoctorDetailPage() {
   const [generatingStrategy, setGeneratingStrategy] = useState(false);
   const [strategy, setStrategy] = useState<string | null>(null);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [showEditForm, setShowEditForm] = useState(false);
 
   if (!doctor) {
     return (
@@ -107,6 +110,19 @@ export default function DoctorDetailPage() {
     }
   }
 
+  function handleEditSave(data: Omit<Doctor, "id" | "createdAt" | "updatedAt" | "objections"> & { traits: DoctorTrait[] }) {
+    if (!doctor) return;
+    const updated: Doctor = {
+      ...doctor,
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    doctorStorage.save(updated);
+    setDoctor(doctorStorage.getById(id));
+    setShowEditForm(false);
+    toast({ title: "프로파일이 수정되었습니다" });
+  }
+
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-6">
@@ -125,10 +141,21 @@ export default function DoctorDetailPage() {
               <span>{doctor.hospital} · {doctor.department}</span>
             </div>
           </div>
-          <Button onClick={handleGenerateStrategy} disabled={generatingStrategy} variant="outline" className="gap-2">
-            {generatingStrategy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
-            다음 방문 전략 생성
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowEditForm(true)}
+              className="gap-1.5"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              프로파일 편집
+            </Button>
+            <Button onClick={handleGenerateStrategy} disabled={generatingStrategy} variant="outline" className="gap-2">
+              {generatingStrategy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+              다음 방문 전략 생성
+            </Button>
+          </div>
         </div>
         {doctor.traits.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-3">
@@ -301,6 +328,17 @@ export default function DoctorDetailPage() {
           </Card>
         </div>
       </div>
+
+      {showEditForm && doctor && (
+        <DoctorFormDialog
+          key={`edit-detail-${doctor.id}`}
+          open={showEditForm}
+          onClose={() => setShowEditForm(false)}
+          onSave={handleEditSave}
+          initial={doctor}
+          editMode
+        />
+      )}
     </div>
   );
 }

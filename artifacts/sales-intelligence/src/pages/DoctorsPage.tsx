@@ -4,7 +4,6 @@ import { doctorStorage, visitLogStorage, generateId, type Doctor, type DoctorTra
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import DoctorFormDialog from "@/components/DoctorFormDialog";
 import {
@@ -15,6 +14,7 @@ import {
   ChevronRight,
   FileText,
   Trash2,
+  Pencil,
 } from "lucide-react";
 
 const traitColorMap: Record<string, string> = {
@@ -31,6 +31,7 @@ export default function DoctorsPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>(() => doctorStorage.getAll());
   const logs = useMemo(() => visitLogStorage.getAll(), []);
 
@@ -45,7 +46,7 @@ export default function DoctorsPage() {
     [doctors, search]
   );
 
-  function handleSave(data: Omit<Doctor, "id" | "createdAt" | "updatedAt" | "objections"> & { traits: DoctorTrait[] }) {
+  function handleAddSave(data: Omit<Doctor, "id" | "createdAt" | "updatedAt" | "objections"> & { traits: DoctorTrait[] }) {
     const now = new Date().toISOString();
     const doctor: Doctor = {
       id: generateId(),
@@ -58,6 +59,19 @@ export default function DoctorsPage() {
     setDoctors(doctorStorage.getAll());
     setShowForm(false);
     toast({ title: "교수 프로파일이 추가되었습니다" });
+  }
+
+  function handleEditSave(data: Omit<Doctor, "id" | "createdAt" | "updatedAt" | "objections"> & { traits: DoctorTrait[] }) {
+    if (!editingDoctor) return;
+    const updated: Doctor = {
+      ...editingDoctor,
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    doctorStorage.save(updated);
+    setDoctors(doctorStorage.getAll());
+    setEditingDoctor(null);
+    toast({ title: "프로파일이 수정되었습니다" });
   }
 
   function handleDelete(id: string, name: string) {
@@ -123,12 +137,22 @@ export default function DoctorsPage() {
                         <span>{doctor.department}</span>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleDelete(doctor.id, doctor.name)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <button
+                        onClick={() => setEditingDoctor(doctor)}
+                        className="p-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
+                        title="편집"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(doctor.id, doctor.name)}
+                        className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                        title="삭제"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {doctor.traits.length > 0 && (
@@ -165,10 +189,22 @@ export default function DoctorsPage() {
       )}
 
       <DoctorFormDialog
+        key="add-doctor"
         open={showForm}
         onClose={() => setShowForm(false)}
-        onSave={handleSave}
+        onSave={handleAddSave}
       />
+
+      {editingDoctor && (
+        <DoctorFormDialog
+          key={`edit-${editingDoctor.id}`}
+          open={!!editingDoctor}
+          onClose={() => setEditingDoctor(null)}
+          onSave={handleEditSave}
+          initial={editingDoctor}
+          editMode
+        />
+      )}
     </div>
   );
 }

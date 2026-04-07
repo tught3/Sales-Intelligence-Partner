@@ -34,9 +34,10 @@ interface Props {
   onClose: () => void;
   onSave: (data: Omit<Doctor, "id" | "createdAt" | "updatedAt" | "objections"> & { traits: DoctorTrait[] }) => void;
   initial?: Partial<Doctor>;
+  editMode?: boolean;
 }
 
-export default function DoctorFormDialog({ open, onClose, onSave, initial }: Props) {
+export default function DoctorFormDialog({ open, onClose, onSave, initial, editMode }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [hospital, setHospital] = useState(initial?.hospital ?? "");
   const [department, setDepartment] = useState(initial?.department ?? "");
@@ -70,7 +71,7 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial }: Pro
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>교수 프로파일 추가</DialogTitle>
+          <DialogTitle>{editMode ? "교수 프로파일 편집" : "교수 프로파일 추가"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-3">
@@ -163,7 +164,7 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial }: Pro
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>취소</Button>
           <Button onClick={handleSave} disabled={!name.trim() || !hospital.trim() || !department.trim()}>
-            저장
+            {editMode ? "수정 저장" : "저장"}
           </Button>
         </DialogFooter>
       </DialogContent>
