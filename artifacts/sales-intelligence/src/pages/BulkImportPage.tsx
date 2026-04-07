@@ -14,6 +14,7 @@ interface ParsedVisit {
 }
 
 interface ParsedDoctor {
+  hospital: string;
   department: string;
   name: string;
   visits: ParsedVisit[];
@@ -42,6 +43,20 @@ function parseBulkInput(text: string): ParsedDoctor[] {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.split("\n").map((l) => l.trim());
 
+  // 병원명 판별: 병원 관련 키워드 포함
+  function isHospital(line: string): boolean {
+    if (!line || line.includes("/")) return false;
+    const keywords = [
+      "병원", "의원", "의료원", "아산", "세브란스", "삼성", "신촌", "보훈",
+      "한림", "인하", "차병원", "길병원", "을지", "명지", "고대", "연대",
+      "서울대", "가톨릭", "카톨릭", "원자력", "화순", "인제", "고신", "동아",
+      "계명", "영남", "조선", "전북대", "경북대", "충남대", "충북대", "강원대",
+      "제주대", "부산대", "경상대", "전남대", "강남", "강동", "강서", "강북",
+      "건국대", "경희대", "한양대", "중앙대", "이대", "순천향", "단국대",
+    ];
+    return keywords.some((k) => line.includes(k));
+  }
+
   // 진료과 판별: 과/내과/외과 등 키워드 포함, / 없음
   function isDept(line: string): boolean {
     if (!line || line.includes("/")) return false;
@@ -49,13 +64,16 @@ function parseBulkInput(text: string): ParsedDoctor[] {
     return keywords.some((k) => line.includes(k));
   }
 
-  // 교수 이름 판별: 순수 한글 2~4자, 공백/숫자/특수문자 없음
+  // 교수 이름 판별: 순수 한글 2~4자, 공백/숫자/특수문자 없음, 병원명/과 아님
   function isName(line: string): boolean {
     if (!line || line.includes("/") || line.includes(" ")) return false;
     if (line.length < 2 || line.length > 4) return false;
-    return /^[\uAC00-\uD7A3]+$/.test(line);
+    if (!(/^[\uAC00-\uD7A3]+$/.test(line))) return false;
+    if (isHospital(line) || isDept(line)) return false;
+    return true;
   }
 
+  let currentHospital = "";
   let currentDept = "";
   let i = 0;
 
@@ -67,7 +85,14 @@ function parseBulkInput(text: string): ParsedDoctor[] {
     // 괄호 제거한 버전으로 판별
     const stripped = stripParentheses(line);
 
-    // 진료과 먼저 체크 (isName보다 우선)
+    // 병원명 먼저 체크
+    if (isHospital(stripped)) {
+      currentHospital = stripped;
+      i++;
+      continue;
+    }
+
+    // 진료과 체크 (병원명보다 후순위)
     if (isDept(stripped)) {
       currentDept = stripped;
       i++;
@@ -78,16 +103,17 @@ function parseBulkInput(text: string): ParsedDoctor[] {
     if (isName(stripped)) {
       const name = stripped;
       const dept = currentDept;
+      const hospital = currentHospital;
       i++;
 
-      // 다음 isName 또는 isDept 줄 전까지 내용 수집
+      // 다음 isHospital / isDept / isName 줄 전까지 내용 수집
       const contentLines: string[] = [];
       while (i < lines.length) {
         const cl = lines[i];
-        if (!cl) { i++; continue; }                           // 빈줄은 건너뜀
+        if (!cl) { i++; continue; }
         const cls = stripParentheses(cl);
-        if (isDept(cls) || isName(cls)) break;                // 다음 과 또는 다음 교수
-        contentLines.push(cl);                                // 원본 그대로 수집 (stripParentheses는 visit 분리 후 처리)
+        if (isHospital(cls) || isDept(cls) || isName(cls)) break;
+        contentLines.push(cl);
         i++;
       }
 
@@ -99,6 +125,7 @@ function parseBulkInput(text: string): ParsedDoctor[] {
 
       if (visits.length > 0) {
         doctors.push({
+          hospital,
           department: dept,
           name,
           visits: visits.map((content, idx) => ({ index: idx, content })),
@@ -107,7 +134,7 @@ function parseBulkInput(text: string): ParsedDoctor[] {
       continue;
     }
 
-    // 진료과도 이름도 아니면 그냥 넘김
+    // 아무것도 아니면 넘김
     i++;
   }
 
@@ -161,7 +188,7 @@ export default function BulkImportPage() {
           doctor = {
             id: `doc-${Date.now()}-${idx}`,
             name: p.name,
-            hospital: "",
+            hospital: p.hospital,
             department: p.department,
             position: "교수",
             traits: [],
@@ -174,6 +201,9 @@ export default function BulkImportPage() {
             updatedAt: new Date().toISOString(),
           };
           doctorStorage.save(doctor);
+        } else if (p.hospital && !doctor.hospital) {
+          // 기존 교수인데 병원명이 없었으면 업데이트
+          doctorStorage.save({ ...doctor, hospital: p.hospital, updatedAt: new Date().toISOString() });
         }
 
         const allVisitsText = p.visits.map((v, i) => `[방문 ${i + 1}]\n${v.content}`).join("\n\n");
@@ -262,21 +292,21 @@ export default function BulkImportPage() {
             <CardContent className="p-4">
               <p className="text-sm font-semibold text-primary mb-2">입력 형식</p>
               <div className="bg-white/60 rounded-md p-3 font-mono text-xs text-muted-foreground space-y-0.5">
-                <p className="text-foreground font-semibold">대장항문외과</p>
-                <p className="text-foreground font-semibold">권혜연</p>
-                <p>방문내용 첫번째 / 방문내용 두번째 / 방문내용 세번째</p>
-                <p className="mt-2 text-foreground font-semibold">소화기내과</p>
-                <p className="text-foreground font-semibold">홍길동</p>
+                <p className="text-blue-600 font-semibold">강릉아산</p>
+                <p className="text-foreground font-semibold">산부인과</p>
+                <p className="text-foreground font-semibold">주다혜</p>
+                <p>방문내용 첫번째 / 방문내용 두번째</p>
+                <p className="text-foreground font-semibold mt-1">이상수</p>
                 <p>방문내용 첫번째 / 방문내용 두번째</p>
               </div>
               <ul className="mt-3 space-y-1">
                 {[
-                  "첫 줄: 진료과명",
-                  "둘째 줄: 교수 이름",
-                  "셋째 줄: 방문 내역 (/ 로 각 방문 구분)",
+                  "병원명 (선택): 강릉아산, 세브란스, 삼성서울병원 등",
+                  "진료과명: 산부인과, 소화기내과 등",
+                  "교수 이름 (2~4자 한글)",
+                  "방문 내역 (/ 로 각 방문 구분)",
                   "괄호 () [ ] 안 내용은 자동으로 무시됩니다",
-                  "여러 명을 한 번에 붙여넣기 가능",
-                  "이미 등록된 교수면 방문 기록만 추가됨",
+                  "병원명·과명은 아래 교수 전체에 적용됩니다",
                 ].map((t) => (
                   <li key={t} className="text-xs text-muted-foreground flex items-start gap-1.5">
                     <span className="text-primary mt-0.5">•</span>
@@ -350,8 +380,13 @@ export default function BulkImportPage() {
               <Card key={idx} className={p.existingDoctor ? "border-blue-200" : "border-green-200"}>
                 <CardHeader className="pb-2 pt-4 px-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-foreground">{p.name}</span>
+                      {p.hospital && (
+                        <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
+                          {p.hospital}
+                        </Badge>
+                      )}
                       <Badge variant="secondary" className="text-xs">
                         {p.department}
                       </Badge>
