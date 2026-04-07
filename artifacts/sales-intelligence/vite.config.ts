@@ -9,14 +9,6 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
-  define: {
-    'import.meta.env.VITE_AI_INTEGRATIONS_OPENAI_BASE_URL': JSON.stringify(
-      process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? ''
-    ),
-    'import.meta.env.VITE_AI_INTEGRATIONS_OPENAI_API_KEY': JSON.stringify(
-      process.env.AI_INTEGRATIONS_OPENAI_API_KEY ?? ''
-    ),
-  },
   plugins: [
     react(),
     tailwindcss(),
@@ -54,6 +46,12 @@ export default defineConfig({
     fs: {
       strict: true,
       deny: ["**/.*"],
+    },
+    proxy: {
+      "/api": {
+        target: `http://localhost:${process.env.API_SERVER_PORT ?? 8080}`,
+        changeOrigin: true,
+      },
     },
   },
   preview: {

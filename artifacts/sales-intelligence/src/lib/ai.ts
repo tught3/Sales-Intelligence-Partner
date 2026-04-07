@@ -1,15 +1,11 @@
 import type { Doctor, VisitLog, GoldenSnippet } from './storage';
 
-const BASE_URL = import.meta.env.VITE_AI_INTEGRATIONS_OPENAI_BASE_URL;
-const API_KEY = import.meta.env.VITE_AI_INTEGRATIONS_OPENAI_API_KEY;
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
+  const res = await fetch(`${API_BASE}/api/ai/chat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${API_KEY}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'gpt-5',
       messages: [
