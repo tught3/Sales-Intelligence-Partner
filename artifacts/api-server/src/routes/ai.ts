@@ -45,25 +45,36 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
+function isAllowedOrigin(origin: string): boolean {
+  let originHost: string;
+  try {
+    originHost = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+
+  if (originHost === "localhost" || originHost === "127.0.0.1") {
+    return true;
+  }
+
+  const replDomain = process.env["REPLIT_DEV_DOMAIN"] ?? "";
+  if (replDomain && originHost.endsWith(replDomain)) {
+    return true;
+  }
+
+  return false;
+}
+
 router.post("/ai/chat", async (req, res) => {
   const origin = req.headers.origin;
-  const host = req.headers.host ?? "";
 
   if (!origin) {
     res.status(403).json({ error: "Origin header is required" });
     return;
   }
 
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    res.status(403).json({ error: "Invalid origin" });
-    return;
-  }
-
-  if (originHost !== host) {
-    res.status(403).json({ error: "Cross-origin requests are not allowed" });
+  if (!isAllowedOrigin(origin)) {
+    res.status(403).json({ error: "Origin not allowed" });
     return;
   }
 
