@@ -94,7 +94,8 @@ JW중외제약의 주요 제품:
 - 영업사원이 실제로 쓰는 말투와 표현을 유지할 것
 - 교수/의사의 성향, 병원 특성, 과 특성, 과거 대화 맥락을 반드시 반영
 - 회사 규칙과 가이드라인 내에서 내용을 정리할 것
-- JW중외제약 제품 강점은 자연스럽게 녹여낼 것`;
+- JW중외제약 제품 강점은 자연스럽게 녹여낼 것
+- ★ 절대로 큰따옴표(")를 사용하지 말 것. 강조가 필요하면 작은따옴표(')나 다른 표현을 사용할 것`;
 
   if (manualText) {
     return `${base}
@@ -168,6 +169,26 @@ function buildContextSection(
   return context;
 }
 
+async function trimToLimit(systemPrompt: string, text: string, limit: number): Promise<string> {
+  const prompt = `아래 영업일지가 ${text.length}자입니다. ${limit}자 이내로 줄여주세요.
+
+규칙:
+- 핵심 내용과 의미를 최대한 보존
+- 말투와 톤을 그대로 유지
+- 큰따옴표(") 사용 금지
+- 줄인 일지 본문만 출력. 설명이나 글자수 표기 등 절대 붙이지 말 것
+
+원문:
+${text}`;
+
+  const result = await callAI(systemPrompt, prompt);
+  let trimmed = result.replace(/^===.*===\s*/gm, '').replace(/"/g, "'").trim();
+  if (trimmed.length > limit) {
+    trimmed = trimmed.slice(0, limit);
+  }
+  return trimmed;
+}
+
 export async function convertToVisitLog(
   rawNotes: string,
   doctor: Doctor,
@@ -195,12 +216,18 @@ ${rawNotes}
 - 앞부분에 오늘 방문의 반응근거(교수가 보인 반응의 해석), 뒷부분에 다음방문계획(다음에 뭘 들고 갈지/어떤 말을 꺼낼지)을 자연스럽게 이어서 작성
 - 반응근거와 다음방문계획 사이에 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것
 
-★ 절대 규칙: 반응근거 + 다음방문계획을 합쳐서 반드시 230자(한글 기준) 이내로 작성할 것. 230자를 초과하면 안 됨.
+★ 절대 규칙:
+1. 반응근거 + 다음방문계획을 합쳐서 반드시 230자(한글 기준) 이내로 작성할 것. 230자를 초과하면 안 됨.
+2. 큰따옴표(")를 절대 사용하지 말 것. 강조가 필요하면 작은따옴표(')를 사용할 것.
 
 응답은 영업일지 본문만 출력하세요. 제목, 구분선, 라벨 등은 절대 붙이지 마세요.`;
 
   const response = await callAI(systemPrompt, prompt);
-  const cleaned = response.replace(/^===.*===\s*/gm, '').trim();
+  let cleaned = response.replace(/^===.*===\s*/gm, '').replace(/"/g, "'").trim();
+
+  if (cleaned.length > 230) {
+    cleaned = await trimToLimit(systemPrompt, cleaned, 230);
+  }
 
   return {
     formattedLog: cleaned,
@@ -244,7 +271,7 @@ export async function autoGenerateVisitLog(
 (위너프 또는 페린젝트 또는 두 제품 모두, 쉼표 구분)
 
 ===영업일지===
-(실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것. 반드시 230자 이내)`;
+(실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것. 반드시 230자 이내. 큰따옴표 사용 금지, 작은따옴표만 허용)`;
 
   const response = await callAI(systemPrompt, prompt);
 
@@ -261,6 +288,12 @@ export async function autoGenerateVisitLog(
   let fullLog = logMatch ? logMatch[1].trim() : response.replace(/===제품===[\s\S]*?(?=\n\n|$)/, '').trim();
   if (strategyMatch) {
     fullLog = fullLog + '\n\n' + strategyMatch[1].trim();
+  }
+
+  fullLog = fullLog.replace(/"/g, "'");
+
+  if (fullLog.length > 230) {
+    fullLog = await trimToLimit(buildSystemPrompt(), fullLog, 230);
   }
 
   return {
@@ -297,7 +330,9 @@ ${relevantSnippets || '없음'}
 2. 핵심 메시지 (제품 강점 포인트 2-3개, 과거 대화 연속성 반영)
 3. 예상 반박 시나리오와 준비된 대응책 (과거 반박 패턴 기반)
 4. 클로징 전략
-5. 다음 방문 전 준비사항 (자료, 데이터 등)`;
+5. 다음 방문 전 준비사항 (자료, 데이터 등)
+
+★ 큰따옴표(") 사용 금지. 강조 시 작은따옴표(')만 사용할 것.`;
 
   return callAI(systemPrompt, prompt);
 }
@@ -320,7 +355,8 @@ ${objection}
 - 교수 성향을 고려한 접근법
 - 임상 데이터/근거 기반 답변
 - JW중외제약 제품(위너프/페린젝트) 강점 연결
-- 2-3가지 대응 방안 제시`;
+- 2-3가지 대응 방안 제시
+- 큰따옴표(") 사용 금지`;
 
   return callAI(systemPrompt, prompt);
 }
@@ -338,7 +374,8 @@ ${content}
 1. 효과적인 이유
 2. 어떤 성향의 교수에게 특히 효과적인지
 3. 개선 제안
-4. 변형 멘트 1-2개`;
+4. 변형 멘트 1-2개
+- 큰따옴표(") 사용 금지`;
 
   return callAI(systemPrompt, prompt);
 }
@@ -423,7 +460,9 @@ ${rawText.slice(0, 4000)}
 성향을 나타내는 태그를 쉼표로 구분해서 5개 이내로 작성 (예: 데이터중시, 바쁨, 경쟁사충성도높음, 임상관심많음, 가격민감)
 
 ===다음방문전략===
-지금까지의 대화를 바탕으로 다음에 어떤 방식으로 접근하면 좋을지 구체적으로 제안해주세요. 어떤 자료를 가져갈지, 어떤 말을 꺼낼지, 어떤 것을 피해야 할지 포함.`;
+지금까지의 대화를 바탕으로 다음에 어떤 방식으로 접근하면 좋을지 구체적으로 제안해주세요. 어떤 자료를 가져갈지, 어떤 말을 꺼낼지, 어떤 것을 피해야 할지 포함.
+
+★ 큰따옴표(") 사용 금지. 강조 시 작은따옴표(')만 사용할 것.`;
 
   const response = await callAI(systemPrompt, prompt);
 
