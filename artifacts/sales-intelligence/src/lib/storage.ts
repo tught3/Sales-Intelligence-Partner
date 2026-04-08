@@ -219,7 +219,7 @@ export async function refreshCache(): Promise<void> {
 
 export const doctorStorage = {
   getAll(): Doctor[] {
-    return cache.doctors;
+    return [...cache.doctors];
   },
   getById(id: string): Doctor | undefined {
     return cache.doctors.find((d) => d.id === id);
@@ -278,7 +278,7 @@ function doctorToApi(d: Doctor) {
 
 export const visitLogStorage = {
   getAll(): VisitLog[] {
-    return cache.visitLogs;
+    return [...cache.visitLogs];
   },
   getByDoctorId(doctorId: string): VisitLog[] {
     return cache.visitLogs
@@ -321,7 +321,7 @@ export const visitLogStorage = {
 
 export const snippetStorage = {
   getAll(): GoldenSnippet[] {
-    return cache.snippets;
+    return [...cache.snippets];
   },
   getByProduct(product: string): GoldenSnippet[] {
     return cache.snippets.filter((s) => s.product === product);
@@ -350,7 +350,7 @@ export const snippetStorage = {
 
 export const hospitalStorage = {
   getAll(): HospitalProfile[] {
-    return cache.hospitals;
+    return [...cache.hospitals];
   },
   getById(id: string): HospitalProfile | undefined {
     return cache.hospitals.find((h) => h.id === id);
@@ -385,7 +385,7 @@ export const hospitalStorage = {
 
 export const departmentStorage = {
   getAll(): DepartmentProfile[] {
-    return cache.departments;
+    return [...cache.departments];
   },
   getByHospital(hospitalId: string): DepartmentProfile[] {
     return cache.departments.filter((d) => d.hospitalId === hospitalId);
@@ -420,7 +420,7 @@ export const departmentStorage = {
 
 export const manualStorage = {
   getAll(): CompanyManual[] {
-    return cache.manuals;
+    return [...cache.manuals];
   },
   getByCategory(category: CompanyManual['category']): CompanyManual[] {
     return cache.manuals.filter((m) => m.category === category);
