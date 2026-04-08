@@ -1,5 +1,5 @@
 import type { Doctor, VisitLog, GoldenSnippet, HospitalProfile, DepartmentProfile } from './storage';
-import { manualStorage, hospitalStorage, departmentStorage } from './storage';
+import { manualStorage, hospitalStorage, departmentStorage, snippetStorage } from './storage';
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -202,8 +202,15 @@ export async function convertToVisitLog(
   const systemPrompt = buildSystemPrompt();
   const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
 
-  const prompt = `${contextSection}
+  const allSnippets = snippetStorage.getAll();
+  const relevantSnippets = allSnippets
+    .sort((a, b) => b.effectiveness - a.effectiveness)
+    .slice(0, 8)
+    .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
+    .join('\n');
 
+  const prompt = `${contextSection}
+${relevantSnippets ? `\n활용 가능한 핵심 멘트:\n${relevantSnippets}\n` : ''}
 오늘 방문 메모 (날것):
 ${rawNotes}
 
@@ -213,6 +220,7 @@ ${rawNotes}
 - 입력된 메모의 말투와 톤을 그대로 유지할 것. 보고서 형식으로 바꾸지 말 것
 - 내용을 과도하게 부풀리거나 없는 내용을 추가하지 말 것
 - 교수 성향과 과거 방문 맥락을 반영
+- 위에 제공된 핵심 멘트가 있다면, 메모 내용과 관련된 멘트의 화법이나 포인트를 자연스럽게 반영할 것 (멘트 원문을 그대로 복붙하지 말고 맥락에 맞게 녹여낼 것)
 - 앞부분에 오늘 방문의 반응근거(교수가 보인 반응의 해석), 뒷부분에 다음방문계획(다음에 뭘 들고 갈지/어떤 말을 꺼낼지)을 자연스럽게 이어서 작성
 - 반응근거와 다음방문계획 사이에 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것
 
@@ -247,12 +255,19 @@ export async function autoGenerateVisitLog(
   const systemPrompt = buildSystemPrompt();
   const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
 
+  const allSnippets = snippetStorage.getAll();
+  const relevantSnippets = allSnippets
+    .sort((a, b) => b.effectiveness - a.effectiveness)
+    .slice(0, 8)
+    .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
+    .join('\n');
+
   const today = new Date().toISOString().split('T')[0];
   const lastVisitDate = pastLogs[0]?.visitDate ?? '기록 없음';
   const visitCount = pastLogs.length;
 
   const prompt = `${contextSection}
-
+${relevantSnippets ? `\n활용 가능한 핵심 멘트:\n${relevantSnippets}\n` : ''}
 오늘 날짜: ${today}
 마지막 방문일: ${lastVisitDate}
 총 방문 횟수: ${visitCount}회
@@ -261,6 +276,7 @@ export async function autoGenerateVisitLog(
 
 생성 기준:
 - 교수의 성향, 처방 경향, 과거 방문 패턴을 반드시 반영할 것
+- 위에 제공된 핵심 멘트가 있다면, 관련된 멘트의 화법이나 포인트를 자연스럽게 반영할 것 (원문 복붙 금지, 맥락에 맞게 녹여낼 것)
 - 과거 반박 패턴이 있다면 그것이 자연스럽게 나올 것
 - 병원/과 특성에 맞는 현실적 대화 내용
 - 전 방문 전략이 있다면 그것을 실행한 방문으로 구성
