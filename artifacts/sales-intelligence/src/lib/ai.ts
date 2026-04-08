@@ -380,6 +380,55 @@ ${content}
   return callAI(systemPrompt, prompt);
 }
 
+export async function generateSnippetsFromManuals(): Promise<Array<{
+  content: string;
+  context: string;
+  product: string;
+  tags: string[];
+}>> {
+  const systemPrompt = buildSystemPrompt();
+
+  const prompt = `당신은 JW중외제약 MR의 영업 코치입니다.
+시스템 프롬프트에 포함된 제품 정보와 회사 매뉴얼을 모두 읽고, 영업 현장에서 실제로 교수/의사에게 말할 수 있는 핵심 세일즈 멘트를 생성해주세요.
+
+생성 규칙:
+- 제품별로 최소 3개씩, 총 10개 이상의 멘트 생성
+- 각 멘트는 영업사원이 교수 앞에서 바로 말할 수 있는 자연스러운 화법으로
+- 너무 길지 않게, 1~2문장으로 간결하게
+- 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필, 편의성 강조 등)을 커버할 것
+- 큰따옴표(") 사용 금지
+
+응답 형식 (반드시 이 JSON 배열 형식만 출력, 다른 텍스트 없이):
+[
+  {
+    'content': '멘트 내용',
+    'context': '활용 상황 (예: 첫 처방 유도, 가격 반박 시)',
+    'product': '위너프' 또는 '페린젝트' 또는 '공통',
+    'tags': ['태그1', '태그2']
+  }
+]`;
+
+  const response = await callAI(systemPrompt, prompt);
+
+  const jsonMatch = response.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error('AI 응답에서 멘트 데이터를 추출할 수 없습니다');
+
+  const cleaned = jsonMatch[0].replace(/'/g, '"');
+  const parsed = JSON.parse(cleaned) as Array<{
+    content: string;
+    context: string;
+    product: string;
+    tags: string[];
+  }>;
+
+  return parsed.map(item => ({
+    content: (item.content || '').replace(/"/g, "'"),
+    context: (item.context || '').replace(/"/g, "'"),
+    product: ['위너프', '페린젝트', '공통'].includes(item.product) ? item.product : '공통',
+    tags: Array.isArray(item.tags) ? item.tags : [],
+  }));
+}
+
 export async function analyzeHospitalContext(
   hospitalName: string,
   doctors: Doctor[],

@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { snippetStorage, generateId, type GoldenSnippet } from "@/lib/storage";
-import { analyzeSnippetEffectiveness } from "@/lib/ai";
+import { analyzeSnippetEffectiveness, generateSnippetsFromManuals } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import {
   TrendingUp,
   ChevronDown,
   Lightbulb,
+  Wand2,
 } from "lucide-react";
 
 const PRODUCTS = ["위너프", "페린젝트", "공통"];
@@ -62,6 +63,7 @@ export default function SnippetsPage() {
   const [filterProduct, setFilterProduct] = useState("");
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<Record<string, string>>({});
+  const [generating, setGenerating] = useState(false);
 
   const filtered = useMemo(() => {
     return snippets
@@ -111,6 +113,33 @@ export default function SnippetsPage() {
     toast({ title: "삭제되었습니다" });
   }
 
+  async function handleAutoGenerate() {
+    setGenerating(true);
+    try {
+      const items = await generateSnippetsFromManuals();
+      let count = 0;
+      for (const item of items) {
+        const snippet: GoldenSnippet = {
+          id: generateId(),
+          content: item.content,
+          context: item.context,
+          tags: item.tags,
+          product: item.product,
+          effectiveness: 4,
+          createdAt: new Date().toISOString(),
+        };
+        snippetStorage.save(snippet);
+        count++;
+      }
+      setSnippets(snippetStorage.getAll());
+      toast({ title: `${count}개 핵심 멘트가 자동 생성되었습니다` });
+    } catch (e) {
+      toast({ title: "자동 생성 실패", description: String(e), variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   async function handleAnalyze(snippet: GoldenSnippet) {
     setAnalyzing(snippet.id);
     try {
@@ -141,10 +170,16 @@ export default function SnippetsPage() {
           <h1 className="text-2xl font-bold text-foreground">핵심 멘트 라이브러리</h1>
           <p className="text-muted-foreground mt-1">효과적인 영업 멘트를 저장하고 AI 분석으로 활용도를 높이세요</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} className="gap-2">
-          <Plus className="w-4 h-4" />
-          멘트 추가
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handleAutoGenerate} disabled={generating} variant="outline" className="gap-2">
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+            {generating ? "생성 중..." : "AI 자동 생성"}
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            멘트 추가
+          </Button>
+        </div>
       </div>
 
       {/* Add form */}
