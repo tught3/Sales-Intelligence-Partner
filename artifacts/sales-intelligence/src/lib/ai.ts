@@ -57,7 +57,7 @@ export async function extractTextFromImage(imageBase64: string, mimeType: string
   const prompt = `이 이미지에서 텍스트를 모두 추출하고, 내용을 잘 읽히게 정리해주세요.
 - 원본 내용을 최대한 그대로 보존
 - 표나 리스트가 있으면 그 구조 유지
-- 추출한 텍스트만 출력 (설명이나 "이미지에서 추출한 내용:" 같은 말 붙이지 말 것)`;
+- 추출한 텍스트만 출력 (설명이나 이미지에서 추출한 내용: 같은 말 붙이지 말 것)`;
   return callAIWithImage(system, prompt, imageBase64, mimeType);
 }
 
@@ -113,7 +113,7 @@ function buildContextSection(
 ): string {
   const traitText = doctor.traits.map((t) => t.label).join(', ');
   const objectionText = doctor.objections
-    .map((o) => `  - 반박: "${o.content}" → 대응: "${o.response}"`)
+    .map((o) => `  - 반박: ${o.content} → 대응: ${o.response}`)
     .join('\n');
 
   const pastContext = pastLogs
@@ -284,7 +284,7 @@ export async function generateNextVisitStrategy(
   const systemPrompt = buildSystemPrompt();
   const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
 
-  const relevantSnippets = snippets.slice(0, 5).map((s) => `"${s.content}" (${s.product})`).join('\n');
+  const relevantSnippets = snippets.slice(0, 5).map((s) => `${s.content} (${s.product})`).join('\n');
 
   const prompt = `${contextSection}
 
@@ -314,7 +314,7 @@ export async function generateObjectionResponse(
 처방 경향: ${doctor.prescriptionTendency || '미기록'}
 
 교수의 반박:
-"${objection}"
+${objection}
 
 이 반박에 대한 효과적인 대응책을 작성해주세요:
 - 교수 성향을 고려한 접근법
@@ -331,7 +331,7 @@ export async function analyzeSnippetEffectiveness(
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt();
   const prompt = `다음 영업 멘트를 분석해주세요:
-"${content}"
+${content}
 제품: ${product}
 
 분석:

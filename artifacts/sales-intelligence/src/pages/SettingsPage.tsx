@@ -250,7 +250,7 @@ export default function SettingsPage() {
       setContent(combined);
       toast({
         title: `이미지 ${files.length}장 분석 완료`,
-        description: files.length > 1 ? '"AI로 깔끔하게 재작성"을 눌러 하나의 매뉴얼로 정리하세요' : "내용을 확인 후 저장하세요",
+        description: files.length > 1 ? 'AI로 깔끔하게 재작성 버튼을 눌러 하나의 매뉴얼로 정리하세요' : '내용을 확인 후 저장하세요',
       });
     } catch (err) {
       toast({
@@ -280,7 +280,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">설정 & 회사 매뉴얼</h1>
         <p className="text-muted-foreground mt-1">
@@ -302,7 +302,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 space-y-5">
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="p-4">
@@ -325,7 +325,7 @@ export default function SettingsPage() {
                 <CardTitle className="text-base">{editingManual ? "매뉴얼 편집" : "새 매뉴얼 추가"}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>제목 *</Label>
                     <Input

@@ -62,7 +62,7 @@ export default function DoctorDetailPage() {
 
   if (!doctor) {
     return (
-      <div className="p-8 text-center">
+      <div className="p-4 sm:p-6 lg:p-8 text-center">
         <p className="text-muted-foreground mb-4">교수 프로파일을 찾을 수 없습니다</p>
         <Button variant="outline" onClick={() => setLocation("/doctors")}>목록으로 돌아가기</Button>
       </div>
@@ -172,7 +172,7 @@ export default function DoctorDetailPage() {
   }
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl">
       <div className="mb-6">
         <button
           onClick={() => setLocation("/doctors")}
@@ -181,15 +181,15 @@ export default function DoctorDetailPage() {
           <ArrowLeft className="w-4 h-4" />
           교수 목록
         </button>
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{doctor.name} {doctor.position}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">{doctor.name} {doctor.position}</h1>
             <div className="flex items-center gap-1.5 text-muted-foreground mt-1">
               <Building2 className="w-4 h-4" />
               <span>{doctor.hospital} · {doctor.department}</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               variant="outline"
               size="sm"
@@ -197,11 +197,11 @@ export default function DoctorDetailPage() {
               className="gap-1.5"
             >
               <Pencil className="w-3.5 h-3.5" />
-              프로파일 편집
+              편집
             </Button>
-            <Button onClick={handleGenerateStrategy} disabled={generatingStrategy} variant="outline" className="gap-2">
-              {generatingStrategy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
-              다음 방문 전략 생성
+            <Button onClick={handleGenerateStrategy} disabled={generatingStrategy} variant="outline" size="sm" className="gap-1.5">
+              {generatingStrategy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+              전략 생성
             </Button>
           </div>
         </div>
@@ -361,7 +361,7 @@ export default function DoctorDetailPage() {
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
-                      <p className="text-xs font-medium text-foreground mb-1.5 pr-6">"{obj.content}"</p>
+                      <p className="text-xs font-medium text-foreground mb-1.5 pr-6">{obj.content}</p>
                       {obj.response && (
                         <div className="bg-primary/5 rounded p-2">
                           <p className="text-xs text-muted-foreground font-medium mb-0.5">대응책</p>

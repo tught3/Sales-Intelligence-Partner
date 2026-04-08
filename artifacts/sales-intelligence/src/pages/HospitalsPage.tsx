@@ -152,8 +152,8 @@ export default function HospitalsPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 sm:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-foreground">병원 & 과 특성 관리</h1>
           <p className="text-muted-foreground mt-1">병원별, 과별 특성을 저장하면 AI가 더 정확한 영업 전략을 제안합니다</p>
@@ -170,7 +170,7 @@ export default function HospitalsPage() {
             <CardTitle className="text-base">{editingHospital ? "병원 정보 편집" : "새 병원 등록"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5 col-span-2">
                 <Label>병원명 *</Label>
                 <Input placeholder="서울대학교병원" value={hName} onChange={(e) => setHName(e.target.value)} />
@@ -188,7 +188,7 @@ export default function HospitalsPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>지역</Label>
                 <Input placeholder="서울 종로구" value={hRegion} onChange={(e) => setHRegion(e.target.value)} />
@@ -338,7 +338,7 @@ export default function HospitalsPage() {
                           <p className="text-xs font-semibold text-muted-foreground">
                             {editingDept ? "과 정보 편집" : "새 과 등록"}
                           </p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <div>
                               <Label className="text-xs">과 이름 *</Label>
                               <Input

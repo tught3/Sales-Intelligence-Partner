@@ -111,7 +111,7 @@ export default function VisitLogHistoryPage() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">방문 일지 기록</h1>
         <p className="text-muted-foreground mt-1">병원별, 과별로 영업 일지를 조회하고 수정합니다</p>

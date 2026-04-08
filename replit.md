@@ -57,11 +57,12 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 
 ### Key Features
 1. **교수 프로파일 DB** — 교수별 성향 태그, 반박 패턴, 방문 이력 관리
-2. **AI 영업 일지 변환기** — 날것 메모 → 반응근거 + 다음방문계획 (250자 이내, 입력 말투 유지)
+2. **AI 영업 일지 변환기** — 날것 메모 → 반응근거 + 다음방문계획 (230자 이내, 입력 말투 유지)
 3. **반박 핸들링** — 교수별 반박 패턴 학습 + AI 대응책 생성
 4. **핵심 멘트 라이브러리** — Golden Snippets 저장/태깅/AI 분석
 5. **교수 파일 일괄 입력** — 병원명/과명/교수명 자동 파싱 + AI 성향 분석
 6. **대시보드** — 영업 현황 한눈에 보기
+7. **모바일 반응형** — 햄버거 메뉴 + 오버레이 사이드바, 반응형 패딩/그리드 (모바일/태블릿/데스크톱)
 
 ### Key Files
 - `artifacts/sales-intelligence/src/lib/storage.ts` — API-backed 데이터 레이어 (캐시 + 서버 동기화)

@@ -226,15 +226,15 @@ export default function VisitLogPage() {
     }`;
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">영업 일지 작성</h1>
-        <p className="text-muted-foreground mt-1">과거 방문 맥락과 교수 성향을 자동으로 참고합니다</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground">영업 일지 작성</h1>
+        <p className="text-sm text-muted-foreground mt-1">과거 방문 맥락과 교수 성향을 자동으로 참고합니다</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
         <div className="lg:col-span-3 space-y-4">
-          <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+          <div className="flex gap-1 p-1 bg-muted rounded-lg w-full sm:w-fit overflow-x-auto">
             <button className={tabClass('manual')} onClick={() => setActiveTab('manual')}>
               <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> 메모 변환</span>
             </button>
@@ -339,7 +339,7 @@ export default function VisitLogPage() {
                         <span className="font-medium text-foreground">{selectedDoctor.name} 교수님</span>
                         <span className="text-muted-foreground">|</span>
                         <span className="text-muted-foreground">{selectedDoctor.hospital} · {selectedDoctor.department}</span>
-                        <span className="ml-auto text-muted-foreground">
+                        <span className="sm:ml-auto text-muted-foreground">
                           방문 {pastLogs.length}회
                           {pastLogs[0] && ` | 최근: ${pastLogs[0].visitDate}`}
                         </span>
@@ -412,7 +412,7 @@ export default function VisitLogPage() {
                         날것의 방문 메모 *
                       </Label>
                       <Textarea
-                        placeholder={`구어체로 자유롭게 적어주세요. 예:\n"오늘 홍교수 만남. 페린젝트 얘기했는데 가격 비싸다고 함. IV 편의성 강조하니 관심 있어함. 다음엔 임상 데이터 가져가야겠음."`}
+                        placeholder={`구어체로 자유롭게 적어주세요. 예:\n오늘 홍교수 만남. 페린젝트 얘기했는데 가격 비싸다고 함. IV 편의성 강조하니 관심 있어함. 다음엔 임상 데이터 가져가야겠음.`}
                         value={rawNotes}
                         onChange={(e) => setRawNotes(e.target.value)}
                         rows={6}

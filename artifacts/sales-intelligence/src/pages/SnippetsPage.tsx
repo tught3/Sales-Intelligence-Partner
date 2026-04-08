@@ -135,8 +135,8 @@ export default function SnippetsPage() {
   }, [snippets]);
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 sm:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-foreground">핵심 멘트 라이브러리</h1>
           <p className="text-muted-foreground mt-1">효과적인 영업 멘트를 저장하고 AI 분석으로 활용도를 높이세요</p>
@@ -160,14 +160,14 @@ export default function SnippetsPage() {
             <div className="space-y-1.5">
               <Label>멘트 내용 *</Label>
               <Textarea
-                placeholder='예: "페린젝트는 단 한 번의 주사로 체내 철분을 충분히 보충할 수 있어, 경구 철분제 복용이 어려운 환자에게 특히 효과적입니다."'
+                placeholder='예: 페린젝트는 단 한 번의 주사로 체내 철분을 충분히 보충할 수 있어, 경구 철분제 복용이 어려운 환자에게 특히 효과적입니다.'
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 rows={3}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>활용 상황/맥락</Label>
                 <Input
@@ -257,7 +257,7 @@ export default function SnippetsPage() {
       )}
 
       {/* Search & filter */}
-      <div className="flex gap-3 mb-5">
+      <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -325,7 +325,7 @@ export default function SnippetsPage() {
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <blockquote className="text-sm font-medium text-foreground mb-2 border-l-2 border-primary pl-3">
-                      "{snippet.content}"
+                      {snippet.content}
                     </blockquote>
 
                     <div className="flex flex-wrap items-center gap-2 mb-2">

@@ -85,8 +85,8 @@ export default function DoctorsPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 sm:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-foreground">교수 프로파일</h1>
           <p className="text-muted-foreground mt-1">담당 교수님들의 성향과 방문 이력을 관리하세요</p>

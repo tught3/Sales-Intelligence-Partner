@@ -278,7 +278,7 @@ export default function BulkImportPage() {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-foreground">교수 파일 일괄 입력</h1>
         <p className="text-muted-foreground mt-1">

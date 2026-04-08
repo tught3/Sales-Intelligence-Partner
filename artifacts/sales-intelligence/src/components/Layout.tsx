@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
@@ -12,6 +13,8 @@ import {
   Brain,
   FolderInput,
   ClipboardList,
+  Menu,
+  X,
 } from "lucide-react";
 
 const navGroups = [
@@ -42,11 +45,29 @@ const navGroups = [
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location]);
 
   return (
     <div className="flex min-h-screen">
-      <aside className="w-64 bg-sidebar text-sidebar-foreground flex flex-col fixed inset-y-0 left-0 z-40">
-        <div className="p-5 border-b border-sidebar-border">
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={cn(
+          "w-64 bg-sidebar text-sidebar-foreground flex flex-col fixed inset-y-0 left-0 z-50 transition-transform duration-200",
+          "lg:translate-x-0",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="p-5 border-b border-sidebar-border flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0">
               <Stethoscope className="w-4 h-4 text-white" />
@@ -56,6 +77,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <p className="text-sm font-bold text-sidebar-foreground leading-tight">영업 AI 비서</p>
             </div>
           </div>
+          <button
+            className="lg:hidden p-1 rounded-md hover:bg-sidebar-accent"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X className="w-5 h-5 text-sidebar-foreground/70" />
+          </button>
         </div>
 
         <nav className="flex-1 p-3 space-y-5 overflow-y-auto">
@@ -103,7 +130,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 ml-64 min-h-screen bg-background">
+      <main className="flex-1 lg:ml-64 min-h-screen bg-background">
+        <div className="lg:hidden sticky top-0 z-30 bg-background border-b px-4 py-3 flex items-center gap-3">
+          <button onClick={() => setSidebarOpen(true)} className="p-1">
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
+              <Stethoscope className="w-3 h-3 text-white" />
+            </div>
+            <span className="text-sm font-bold">JW 영업 AI 비서</span>
+          </div>
+        </div>
         {children}
       </main>
     </div>
