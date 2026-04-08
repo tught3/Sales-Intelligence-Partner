@@ -110,7 +110,7 @@ export default function DoctorDetailPage() {
     setGeneratingStrategy(true);
     setStrategy(null);
     try {
-      const s = await generateNextVisitStrategy(doctor, logs, snippets);
+      const s = await generateNextVisitStrategy(doctor, logs);
       setStrategy(s);
     } catch (e) {
       toast({ title: "전략 생성 실패", description: String(e), variant: "destructive" });

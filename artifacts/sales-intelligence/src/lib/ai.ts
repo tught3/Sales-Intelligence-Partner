@@ -1,5 +1,5 @@
-import type { Doctor, VisitLog, GoldenSnippet, HospitalProfile, DepartmentProfile } from './storage';
-import { manualStorage, hospitalStorage, departmentStorage, snippetStorage } from './storage';
+import type { Doctor, VisitLog, HospitalProfile, DepartmentProfile } from './storage';
+import { manualStorage, hospitalStorage, departmentStorage, snippetStorage, doctorStorage, visitLogStorage } from './storage';
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -29,7 +29,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',  // OCR은 Haiku로도 충분 (토큰 비용 대폭 절감)
+      model: 'claude-haiku-4-5',
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -97,13 +97,26 @@ JW중외제약의 주요 제품:
 - JW중외제약 제품 강점은 자연스럽게 녹여낼 것
 - ★ 절대로 큰따옴표(")를 사용하지 말 것. 강조가 필요하면 작은따옴표(')나 다른 표현을 사용할 것`;
 
-  if (manualText) {
-    return `${base}
+  let prompt = base;
 
-===회사 매뉴얼 및 가이드라인===
-${manualText}`;
+  if (manualText) {
+    prompt += `\n\n===회사 매뉴얼 및 가이드라인===\n${manualText}`;
   }
-  return base;
+
+  return prompt;
+}
+
+function buildSnippetContext(): string {
+  const allSnippets = snippetStorage.getAll();
+  if (allSnippets.length === 0) return '';
+
+  const sorted = allSnippets
+    .sort((a, b) => b.effectiveness - a.effectiveness)
+    .slice(0, 10);
+  const lines = sorted
+    .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
+    .join('\n');
+  return `\n활용 가능한 핵심 멘트:\n${lines}\n`;
 }
 
 function buildContextSection(
@@ -166,7 +179,22 @@ function buildContextSection(
 이전 전략 제안: ${latestConv.nextSuggestions.slice(0, 300)}`;
   }
 
+  const snippetContext = buildSnippetContext();
+  if (snippetContext) {
+    context += `\n${snippetContext}`;
+  }
+
   return context;
+}
+
+function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt: string; contextSection: string } {
+  const hospital = hospitalStorage.getByName(doctor.hospital);
+  const deptProfile = hospital
+    ? departmentStorage.getByHospitalAndName(hospital.id, doctor.department)
+    : undefined;
+  const systemPrompt = buildSystemPrompt();
+  const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
+  return { systemPrompt, contextSection };
 }
 
 async function trimToLimit(systemPrompt: string, text: string, limit: number): Promise<string> {
@@ -194,23 +222,10 @@ export async function convertToVisitLog(
   doctor: Doctor,
   pastLogs: VisitLog[]
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
-  const hospital = hospitalStorage.getByName(doctor.hospital);
-  const deptProfile = hospital
-    ? departmentStorage.getByHospitalAndName(hospital.id, doctor.department)
-    : undefined;
-
-  const systemPrompt = buildSystemPrompt();
-  const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
-
-  const allSnippets = snippetStorage.getAll();
-  const relevantSnippets = allSnippets
-    .sort((a, b) => b.effectiveness - a.effectiveness)
-    .slice(0, 8)
-    .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
-    .join('\n');
+  const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
 
   const prompt = `${contextSection}
-${relevantSnippets ? `\n활용 가능한 핵심 멘트:\n${relevantSnippets}\n` : ''}
+
 오늘 방문 메모 (날것):
 ${rawNotes}
 
@@ -247,27 +262,14 @@ export async function autoGenerateVisitLog(
   doctor: Doctor,
   pastLogs: VisitLog[]
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
-  const hospital = hospitalStorage.getByName(doctor.hospital);
-  const deptProfile = hospital
-    ? departmentStorage.getByHospitalAndName(hospital.id, doctor.department)
-    : undefined;
-
-  const systemPrompt = buildSystemPrompt();
-  const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
-
-  const allSnippets = snippetStorage.getAll();
-  const relevantSnippets = allSnippets
-    .sort((a, b) => b.effectiveness - a.effectiveness)
-    .slice(0, 8)
-    .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
-    .join('\n');
+  const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
 
   const today = new Date().toISOString().split('T')[0];
   const lastVisitDate = pastLogs[0]?.visitDate ?? '기록 없음';
   const visitCount = pastLogs.length;
 
   const prompt = `${contextSection}
-${relevantSnippets ? `\n활용 가능한 핵심 멘트:\n${relevantSnippets}\n` : ''}
+
 오늘 날짜: ${today}
 마지막 방문일: ${lastVisitDate}
 총 방문 횟수: ${visitCount}회
@@ -322,23 +324,11 @@ ${relevantSnippets ? `\n활용 가능한 핵심 멘트:\n${relevantSnippets}\n` 
 
 export async function generateNextVisitStrategy(
   doctor: Doctor,
-  pastLogs: VisitLog[],
-  snippets: GoldenSnippet[]
+  pastLogs: VisitLog[]
 ): Promise<string> {
-  const hospital = hospitalStorage.getByName(doctor.hospital);
-  const deptProfile = hospital
-    ? departmentStorage.getByHospitalAndName(hospital.id, doctor.department)
-    : undefined;
-
-  const systemPrompt = buildSystemPrompt();
-  const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
-
-  const relevantSnippets = snippets.slice(0, 5).map((s) => `${s.content} (${s.product})`).join('\n');
+  const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
 
   const prompt = `${contextSection}
-
-활용 가능한 핵심 멘트:
-${relevantSnippets || '없음'}
 
 위 모든 맥락을 종합하여 다음 방문을 위한 상세 시나리오를 작성해주세요:
 
@@ -357,19 +347,18 @@ export async function generateObjectionResponse(
   objection: string,
   doctor: Doctor
 ): Promise<string> {
-  const systemPrompt = buildSystemPrompt();
-  const traitText = doctor.traits.map((t) => t.label).join(', ');
+  const pastLogs = visitLogStorage.getByDoctorId(doctor.id);
+  const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
 
-  const prompt = `교수: ${doctor.name} (${doctor.hospital} ${doctor.department})
-교수 성향: ${traitText || '미기록'}
-처방 경향: ${doctor.prescriptionTendency || '미기록'}
+  const prompt = `${contextSection}
 
 교수의 반박:
 ${objection}
 
 이 반박에 대한 효과적인 대응책을 작성해주세요:
-- 교수 성향을 고려한 접근법
+- 교수 성향과 과거 방문 맥락을 고려한 접근법
 - 임상 데이터/근거 기반 답변
+- 핵심 멘트 중 활용할 수 있는 포인트 반영
 - JW중외제약 제품(위너프/페린젝트) 강점 연결
 - 2-3가지 대응 방안 제시
 - 큰따옴표(") 사용 금지`;
@@ -382,13 +371,24 @@ export async function analyzeSnippetEffectiveness(
   product: string
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt();
-  const prompt = `다음 영업 멘트를 분석해주세요:
+  const snippetContext = buildSnippetContext();
+
+  const allDoctors = doctorStorage.getAll();
+  const doctorSummary = allDoctors.length > 0
+    ? allDoctors.slice(0, 10).map(d => `- ${d.name} (${d.hospital} ${d.department}): 성향=${d.traits.map(t => t.label).join(',') || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}`).join('\n')
+    : '등록된 교수 없음';
+
+  const prompt = `현재 담당 교수 현황:
+${doctorSummary}
+${snippetContext}
+
+분석 대상 멘트:
 ${content}
 제품: ${product}
 
-분석:
+위 멘트를 현재 담당 교수들의 성향과 맥락을 고려해서 분석해주세요:
 1. 효과적인 이유
-2. 어떤 성향의 교수에게 특히 효과적인지
+2. 어떤 성향의 교수에게 특히 효과적인지 (현재 담당 교수 중 누구에게 잘 먹힐지)
 3. 개선 제안
 4. 변형 멘트 1-2개
 - 큰따옴표(") 사용 금지`;
@@ -403,15 +403,23 @@ export async function generateSnippetsFromManuals(): Promise<Array<{
   tags: string[];
 }>> {
   const systemPrompt = buildSystemPrompt();
+  const snippetContext = buildSnippetContext();
+
+  const allDoctors = doctorStorage.getAll();
+  const traitSummary = [...new Set(allDoctors.flatMap(d => d.traits.map(t => t.label)))].join(', ');
 
   const prompt = `당신은 JW중외제약 MR의 영업 코치입니다.
 시스템 프롬프트에 포함된 제품 정보와 회사 매뉴얼을 모두 읽고, 영업 현장에서 실제로 교수/의사에게 말할 수 있는 핵심 세일즈 멘트를 생성해주세요.
+
+현재 담당 교수들의 주요 성향: ${traitSummary || '아직 파악 안 됨'}
+${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트들과 중복되지 않는 새로운 멘트를 생성해주세요.\n` : ''}
 
 생성 규칙:
 - 제품별로 최소 3개씩, 총 10개 이상의 멘트 생성
 - 각 멘트는 영업사원이 교수 앞에서 바로 말할 수 있는 자연스러운 화법으로
 - 너무 길지 않게, 1~2문장으로 간결하게
 - 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필, 편의성 강조 등)을 커버할 것
+- 담당 교수들의 성향을 고려한 멘트도 포함할 것
 - 큰따옴표(") 사용 금지
 
 응답 형식 (반드시 이 JSON 배열 형식만 출력, 다른 텍스트 없이):
@@ -452,39 +460,181 @@ export async function analyzeHospitalContext(
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt();
   const hospitalProfile = hospitalStorage.getByName(hospitalName);
-  const deptNames = [...new Set(doctors.map((d) => d.department))].join(', ');
-  const recentLogs = logs.slice(0, 5);
+  const hospital = hospitalProfile;
+  const deptNames = [...new Set(doctors.map((d) => d.department))];
+  const recentLogs = logs.slice(0, 10);
+  const snippetContext = buildSnippetContext();
+
+  const deptDetails = deptNames.map(deptName => {
+    const dept = hospital ? departmentStorage.getByHospitalAndName(hospital.id, deptName) : undefined;
+    const deptDoctors = doctors.filter(d => d.department === deptName);
+    return `  - ${deptName}: ${dept?.characteristics || '특성 미입력'} / 교수 ${deptDoctors.length}명 (${deptDoctors.map(d => d.name).join(', ')})`;
+  }).join('\n');
+
+  const doctorDetails = doctors.map(d => {
+    const traits = d.traits.map(t => t.label).join(', ');
+    return `- ${d.name} (${d.department}, ${d.position}): 성향=${traits || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}`;
+  }).join('\n');
 
   const prompt = `병원: ${hospitalName}
 병원 특성: ${hospitalProfile?.characteristics || '미입력'}
+경쟁사 강도: ${hospitalProfile?.competitorStrength || '미입력'}
 담당 교수 수: ${doctors.length}명
-담당 과: ${deptNames || '없음'}
+과별 현황:
+${deptDetails}
 
-최근 방문 요약:
+교수별 정보:
+${doctorDetails}
+${snippetContext}
+최근 방문 기록:
 ${recentLogs.map((l) => {
   const doc = doctors.find((d) => d.id === l.doctorId);
-  return `- ${l.visitDate} ${doc?.name ?? ''} 교수: ${l.formattedLog.slice(0, 100)}...`;
+  return `- ${l.visitDate} ${doc?.name ?? ''} 교수: ${l.formattedLog.slice(0, 150)}`;
 }).join('\n')}
 
 위 병원에 대한 종합 영업 전략 분석을 작성해주세요:
 1. 병원 내 JW 제품 현황 및 기회
 2. 과별 우선순위 전략
 3. 경쟁사 대응 방안
-4. 3개월 내 실행 계획`;
+4. 3개월 내 실행 계획
+- 큰따옴표(") 사용 금지`;
 
   return callAI(systemPrompt, prompt);
 }
 
+export async function autoInferHospitalProfile(
+  hospitalName: string
+): Promise<{ characteristics: string; competitorStrength: string }> {
+  const systemPrompt = buildSystemPrompt();
+  const allDoctors = doctorStorage.getAll().filter(d => d.hospital === hospitalName);
+  const allLogs = visitLogStorage.getAll();
+  const hospitalLogs = allLogs.filter(l => allDoctors.some(d => d.id === l.doctorId));
+  const snippetContext = buildSnippetContext();
+
+  const deptNames = [...new Set(allDoctors.map(d => d.department))];
+
+  const doctorInfo = allDoctors.map(d => {
+    const traits = d.traits.map(t => t.label).join(', ');
+    const objections = d.objections.map(o => `반박: ${o.content}`).join('; ');
+    return `- ${d.name} (${d.department}, ${d.position}): 성향=${traits || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}, 관심분야=${d.interestAreas || '미기록'}${objections ? `, 반박패턴: ${objections}` : ''}`;
+  }).join('\n');
+
+  const recentLogs = hospitalLogs
+    .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
+    .slice(0, 10);
+
+  const logInfo = recentLogs.map(l => {
+    const doc = allDoctors.find(d => d.id === l.doctorId);
+    return `- ${l.visitDate} ${doc?.name ?? ''} (${doc?.department ?? ''}): ${l.formattedLog.slice(0, 200)}`;
+  }).join('\n');
+
+  const prompt = `병원명: ${hospitalName}
+소속 과: ${deptNames.join(', ') || '정보 없음'}
+담당 교수 ${allDoctors.length}명:
+${doctorInfo || '등록된 교수 없음'}
+${snippetContext}
+최근 방문 기록:
+${logInfo || '방문 기록 없음'}
+
+위 정보를 종합하여 이 병원의 특성을 유추해주세요.
+
+응답 형식:
+===병원특성===
+(이 병원의 영업 관점에서의 특성. 예: 어떤 제품에 관심이 높은지, 교수들의 전반적 성향, 처방 환경, 영업 접근 시 유의사항 등. 3-5줄로 간결하게)
+
+===경쟁사강도===
+(상/중/하 중 하나. 방문 기록과 교수 반응에서 경쟁사 언급 빈도를 기반으로 판단)
+
+★ 큰따옴표(") 사용 금지.`;
+
+  const response = await callAI(systemPrompt, prompt);
+
+  const charMatch = response.match(/===병원특성===\s*([\s\S]*?)(?:===경쟁사강도===|$)/);
+  const compMatch = response.match(/===경쟁사강도===\s*([\s\S]*?)$/);
+
+  const characteristics = charMatch ? charMatch[1].replace(/"/g, "'").trim() : '';
+  const rawStrength = compMatch ? compMatch[1].trim() : '중';
+  const competitorStrength = rawStrength.includes('상') ? '상' : rawStrength.includes('하') ? '하' : '중';
+
+  return { characteristics, competitorStrength };
+}
+
+export async function autoInferDepartmentProfile(
+  hospitalName: string,
+  departmentName: string
+): Promise<{ characteristics: string; competitorProducts: string }> {
+  const systemPrompt = buildSystemPrompt();
+  const allDoctors = doctorStorage.getAll().filter(d => d.hospital === hospitalName && d.department === departmentName);
+  const allLogs = visitLogStorage.getAll();
+  const deptLogs = allLogs.filter(l => allDoctors.some(d => d.id === l.doctorId));
+  const snippetContext = buildSnippetContext();
+
+  const doctorInfo = allDoctors.map(d => {
+    const traits = d.traits.map(t => t.label).join(', ');
+    const objections = d.objections.map(o => `반박: ${o.content} → 대응: ${o.response}`).join('; ');
+    return `- ${d.name} (${d.position}): 성향=${traits || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}, 관심분야=${d.interestAreas || '미기록'}${objections ? `, 반박패턴: ${objections}` : ''}`;
+  }).join('\n');
+
+  const recentLogs = deptLogs
+    .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
+    .slice(0, 10);
+
+  const logInfo = recentLogs.map(l => {
+    const doc = allDoctors.find(d => d.id === l.doctorId);
+    return `- ${l.visitDate} ${doc?.name ?? ''}: ${l.formattedLog.slice(0, 200)}`;
+  }).join('\n');
+
+  const prompt = `병원: ${hospitalName}
+과: ${departmentName}
+소속 교수 ${allDoctors.length}명:
+${doctorInfo || '등록된 교수 없음'}
+${snippetContext}
+최근 방문 기록:
+${logInfo || '방문 기록 없음'}
+
+위 정보를 종합하여 이 과의 영업 관련 특성을 유추해주세요.
+
+응답 형식:
+===과특성===
+(이 과의 영업 관점에서의 특성. 예: 주로 어떤 환자를 보는지, TPN/FCM 수요가 있는지, 교수들의 공통 성향, 영업 포인트 등. 3-5줄로 간결하게)
+
+===경쟁제품===
+(이 과에서 경쟁하는 제품명이 있다면 쉼표로 구분. 방문 기록에서 언급된 경쟁사/경쟁 제품 기반. 없으면 '없음')
+
+★ 큰따옴표(") 사용 금지.`;
+
+  const response = await callAI(systemPrompt, prompt);
+
+  const charMatch = response.match(/===과특성===\s*([\s\S]*?)(?:===경쟁제품===|$)/);
+  const compMatch = response.match(/===경쟁제품===\s*([\s\S]*?)$/);
+
+  const characteristics = charMatch ? charMatch[1].replace(/"/g, "'").trim() : '';
+  const competitorProducts = compMatch ? compMatch[1].replace(/"/g, "'").trim() : '없음';
+
+  return { characteristics, competitorProducts };
+}
+
 export async function processImportedRecords(text: string): Promise<string> {
   const systemPrompt = buildSystemPrompt();
-  const prompt = `다음은 과거 영업 방문 기록입니다. 이 데이터를 분석하고 구조화된 인사이트를 제공해주세요:
+  const snippetContext = buildSnippetContext();
+
+  const allDoctors = doctorStorage.getAll();
+  const doctorSummary = allDoctors.length > 0
+    ? `현재 담당 교수: ${allDoctors.map(d => `${d.name}(${d.hospital} ${d.department})`).join(', ')}`
+    : '';
+
+  const prompt = `${doctorSummary}
+${snippetContext}
+
+다음은 과거 영업 방문 기록입니다. 이 데이터를 분석하고 구조화된 인사이트를 제공해주세요:
 
 ${text.slice(0, 3000)}
 
 분석해주세요:
 1. 방문 패턴 요약
 2. 각 교수/제품별 주요 인사이트
-3. 앞으로의 영업 전략 제안`;
+3. 앞으로의 영업 전략 제안
+- 큰따옴표(") 사용 금지`;
 
   return callAI(systemPrompt, prompt);
 }
@@ -494,21 +644,10 @@ export async function analyzePastConversations(
   doctor: Doctor,
   period: string
 ): Promise<{ analysis: string; detectedTraits: string[]; nextSuggestions: string }> {
-  const hospital = hospitalStorage.getByName(doctor.hospital);
-  const deptProfile = hospital
-    ? departmentStorage.getByHospitalAndName(hospital.id, doctor.department)
-    : undefined;
+  const pastLogs = visitLogStorage.getByDoctorId(doctor.id);
+  const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
 
-  const systemPrompt = buildSystemPrompt();
-  const traitText = doctor.traits.map((t) => t.label).join(', ');
-
-  const prompt = `교수 정보:
-- 이름: ${doctor.name} (${doctor.position})
-- 병원: ${doctor.hospital} / 과: ${doctor.department}
-- 기존 파악된 성향: ${traitText || '없음'}
-- 처방 경향: ${doctor.prescriptionTendency || '미기록'}
-${hospital ? `- 병원 특성: ${hospital.characteristics}` : ''}
-${deptProfile ? `- 과 특성: ${deptProfile.characteristics}` : ''}
+  const prompt = `${contextSection}
 
 아래는 ${period} 동안의 이 교수와의 방문/대화 기록입니다:
 ---

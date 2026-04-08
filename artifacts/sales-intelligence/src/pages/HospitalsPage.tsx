@@ -8,7 +8,7 @@ import {
   type HospitalProfile,
   type DepartmentProfile,
 } from "@/lib/storage";
-import { analyzeHospitalContext } from "@/lib/ai";
+import { analyzeHospitalContext, autoInferHospitalProfile, autoInferDepartmentProfile } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,8 @@ export default function HospitalsPage() {
   const [editingDept, setEditingDept] = useState<DepartmentProfile | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [analysisResults, setAnalysisResults] = useState<Record<string, string>>({});
+  const [inferringHospital, setInferringHospital] = useState(false);
+  const [inferringDept, setInferringDept] = useState(false);
 
   const [hName, setHName] = useState("");
   const [hRegion, setHRegion] = useState("");
@@ -151,6 +153,52 @@ export default function HospitalsPage() {
     }
   }
 
+  async function handleInferHospital() {
+    if (!hName.trim()) {
+      toast({ title: "병원명을 먼저 입력해주세요", variant: "destructive" });
+      return;
+    }
+    const doctors = allDoctors.filter(d => d.hospital === hName.trim());
+    if (doctors.length === 0) {
+      toast({ title: "이 병원에 등록된 교수가 없어서 AI 유추가 어렵습니다", variant: "destructive" });
+      return;
+    }
+    setInferringHospital(true);
+    try {
+      const result = await autoInferHospitalProfile(hName.trim());
+      setHCharacteristics(result.characteristics);
+      setHCompetitor(result.competitorStrength);
+      toast({ title: "AI가 병원 특성을 분석했습니다" });
+    } catch (e) {
+      toast({ title: "AI 분석 실패", description: String(e), variant: "destructive" });
+    } finally {
+      setInferringHospital(false);
+    }
+  }
+
+  async function handleInferDept(hospitalName: string) {
+    if (!dName.trim()) {
+      toast({ title: "과 이름을 먼저 입력해주세요", variant: "destructive" });
+      return;
+    }
+    const doctors = allDoctors.filter(d => d.hospital === hospitalName && d.department === dName.trim());
+    if (doctors.length === 0) {
+      toast({ title: "이 과에 등록된 교수가 없어서 AI 유추가 어렵습니다", variant: "destructive" });
+      return;
+    }
+    setInferringDept(true);
+    try {
+      const result = await autoInferDepartmentProfile(hospitalName, dName.trim());
+      setDCharacteristics(result.characteristics);
+      setDCompetitor(result.competitorProducts);
+      toast({ title: "AI가 과 특성을 분석했습니다" });
+    } catch (e) {
+      toast({ title: "AI 분석 실패", description: String(e), variant: "destructive" });
+    } finally {
+      setInferringDept(false);
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 sm:mb-8">
@@ -199,7 +247,20 @@ export default function HospitalsPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>병원 특성 (분위기, 처방 패턴 등)</Label>
+              <div className="flex items-center justify-between">
+                <Label>병원 특성 (분위기, 처방 패턴 등)</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleInferHospital}
+                  disabled={inferringHospital || !hName.trim()}
+                  className="gap-1 text-xs h-7"
+                >
+                  {inferringHospital ? <Loader2 className="w-3 h-3 animate-spin" /> : <Brain className="w-3 h-3" />}
+                  AI 자동 분석
+                </Button>
+              </div>
               <Textarea
                 placeholder="예: 교수진이 데이터 중심적, 경쟁사 A 제품 사용률 높음, 학술적 접근 선호..."
                 value={hCharacteristics}
@@ -359,7 +420,20 @@ export default function HospitalsPage() {
                             </div>
                           </div>
                           <div>
-                            <Label className="text-xs">과 특성</Label>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs">과 특성</Label>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleInferDept(hospital.name)}
+                                disabled={inferringDept || !dName.trim()}
+                                className="gap-1 text-xs h-6"
+                              >
+                                {inferringDept ? <Loader2 className="w-3 h-3 animate-spin" /> : <Brain className="w-3 h-3" />}
+                                AI 자동 분석
+                              </Button>
+                            </div>
                             <Textarea
                               placeholder="예: 철결핍 환자 많음, 데이터 중시, 원내 처방 의존도 높음..."
                               value={dCharacteristics}

@@ -63,6 +63,8 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 5. **교수 파일 일괄 입력** — 병원명/과명/교수명 자동 파싱 + AI 성향 분석
 6. **대시보드** — 영업 현황 한눈에 보기
 7. **모바일 반응형** — 햄버거 메뉴 + 오버레이 사이드바, 반응형 패딩/그리드 (모바일/태블릿/데스크톱)
+8. **통합 AI 컨텍스트** — 모든 AI 기능에서 교수/병원/과/멘트/방문기록/매뉴얼 전체 데이터 참조
+9. **병원/과 특성 AI 자동 유추** — 등록된 교수 정보와 방문 기록으로부터 병원·과 특성을 AI가 자동 분석
 
 ### Key Files
 - `artifacts/sales-intelligence/src/lib/storage.ts` — API-backed 데이터 레이어 (캐시 + 서버 동기화)
