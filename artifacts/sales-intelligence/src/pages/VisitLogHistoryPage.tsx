@@ -80,6 +80,7 @@ export default function VisitLogHistoryPage() {
   }, [allLogs, doctors, selectedHospital, selectedDept]);
 
   function handleDelete(id: string) {
+    if (!confirm("이 일지를 삭제하시겠습니까?")) return;
     visitLogStorage.delete(id);
     setAllLogs(visitLogStorage.getAll());
     if (editingId === id) setEditingId(null);
@@ -222,10 +223,10 @@ export default function VisitLogHistoryPage() {
                       </span>
                       {!isEditing && (
                         <>
-                          <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <Pencil className="w-3 h-3 text-muted-foreground opacity-50 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" />
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDelete(log.id); }}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-all rounded"
+                            className="opacity-50 lg:opacity-0 lg:group-hover:opacity-100 p-1 hover:text-destructive transition-all rounded"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
