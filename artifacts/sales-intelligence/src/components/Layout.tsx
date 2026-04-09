@@ -126,7 +126,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <Brain className="w-3 h-3 text-sidebar-primary" />
             <p className="text-xs text-sidebar-foreground/50">AI 맥락 학습 활성</p>
           </div>
-          <p className="text-xs text-sidebar-foreground/30 text-center mt-0.5">위너프 · 페린젝트</p>
+          <p className="text-xs text-sidebar-foreground/30 text-center mt-0.5">위너프, 페린젝트</p>
         </div>
       </aside>
 
