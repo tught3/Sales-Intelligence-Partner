@@ -338,7 +338,7 @@ export default function VisitLogPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-foreground">{selectedDoctor.name} 교수님</span>
                         <span className="text-muted-foreground">|</span>
-                        <span className="text-muted-foreground">{selectedDoctor.hospital} · {selectedDoctor.department}</span>
+                        <span className="text-muted-foreground">{selectedDoctor.hospital}, {selectedDoctor.department}</span>
                         <span className="sm:ml-auto text-muted-foreground">
                           방문 {pastLogs.length}회
                           {pastLogs[0] && ` | 최근: ${pastLogs[0].visitDate}`}
@@ -358,7 +358,7 @@ export default function VisitLogPage() {
                         <div className="border-t pt-2">
                           <p className="text-xs font-semibold text-muted-foreground mb-1">자주 하시는 반박</p>
                           {selectedDoctor.objections.slice(0, 3).map((obj) => (
-                            <p key={obj.id} className="text-muted-foreground">· {obj.content}</p>
+                            <p key={obj.id} className="text-muted-foreground">- {obj.content}</p>
                           ))}
                         </div>
                       )}

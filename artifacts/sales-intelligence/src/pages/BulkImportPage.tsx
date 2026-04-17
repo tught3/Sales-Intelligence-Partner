@@ -43,9 +43,18 @@ function parseBulkInput(text: string): ParsedDoctor[] {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.split("\n").map((l) => l.trim());
 
-  // 병원명 판별: 병원 관련 키워드 포함
+  // 병원/과/이름은 모두 짧은 한 단어 라인이어야 함 (본문 오인식 방지)
+  // 길이 12자 이하, 공백 없음, /·,()숫자영문 없음
+  function isShortToken(line: string): boolean {
+    if (!line) return false;
+    if (line.length > 12) return false;
+    if (/[\s\/·,.\(\)\[\]0-9A-Za-z~\-→><:;'"%@#$&*+=?!]/.test(line)) return false;
+    return /^[\uAC00-\uD7A3]+$/.test(line);
+  }
+
+  // 병원명 판별: 짧은 한 단어 + 병원 관련 키워드
   function isHospital(line: string): boolean {
-    if (!line || line.includes("/")) return false;
+    if (!isShortToken(line)) return false;
     const keywords = [
       "병원", "의원", "의료원", "아산", "세브란스", "삼성", "신촌", "보훈",
       "한림", "인하", "차병원", "길병원", "을지", "명지", "고대", "연대",
@@ -57,14 +66,15 @@ function parseBulkInput(text: string): ParsedDoctor[] {
     return keywords.some((k) => line.includes(k));
   }
 
-  // 진료과 판별: 과/내과/외과 등 키워드 포함, / 없음
+  // 진료과 판별: 짧은 한 단어 + 과 관련 키워드 (본문에 신경외과 등 등장해도 길어서 제외)
   function isDept(line: string): boolean {
-    if (!line || line.includes("/")) return false;
-    const keywords = ["내과", "외과", "과", "센터", "병동", "의학", "약제"];
-    return keywords.some((k) => line.includes(k));
+    if (!isShortToken(line)) return false;
+    // "과"로 끝나거나 특정 키워드 포함
+    if (/(과|센터|병동|의학|약제부)$/.test(line)) return true;
+    return false;
   }
 
-  // 교수 이름 판별: 순수 한글 2~4자, 공백/숫자/특수문자 없음, 병원명/과 아님
+  // 교수 이름 판별: 순수 한글 2~4자, 병원명/과 아님
   function isName(line: string): boolean {
     if (!line || line.includes("/") || line.includes(" ")) return false;
     if (line.length < 2 || line.length > 4) return false;
@@ -306,7 +316,7 @@ export default function BulkImportPage() {
                   "교수 이름 (2~4자 한글)",
                   "방문 내역 (/ 로 각 방문 구분)",
                   "괄호 () [ ] 안 내용은 자동으로 무시됩니다",
-                  "병원명·과명은 아래 교수 전체에 적용됩니다",
+                  "병원명, 과명은 아래 교수 전체에 적용됩니다",
                 ].map((t) => (
                   <li key={t} className="text-xs text-muted-foreground flex items-start gap-1.5">
                     <span className="text-primary mt-0.5">•</span>

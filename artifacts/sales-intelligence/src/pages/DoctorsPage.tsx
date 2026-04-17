@@ -135,8 +135,7 @@ export default function DoctorsPage() {
                       </div>
                       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         <Building2 className="w-3.5 h-3.5" />
-                        <span>{doctor.hospital}</span>
-                        <span>·</span>
+                        <span>{doctor.hospital},</span>
                         <span>{doctor.department}</span>
                       </div>
                     </div>

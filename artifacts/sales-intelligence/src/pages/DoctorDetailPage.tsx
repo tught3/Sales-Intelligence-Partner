@@ -186,7 +186,7 @@ export default function DoctorDetailPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">{doctor.name} {doctor.position}</h1>
             <div className="flex items-center gap-1.5 text-muted-foreground mt-1">
               <Building2 className="w-4 h-4" />
-              <span>{doctor.hospital} · {doctor.department}</span>
+              <span>{doctor.hospital}, {doctor.department}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
