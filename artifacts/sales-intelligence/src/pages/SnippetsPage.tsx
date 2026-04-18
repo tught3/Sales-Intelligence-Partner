@@ -24,7 +24,7 @@ import {
   Wand2,
 } from "lucide-react";
 
-const PRODUCTS = ["위너프", "페린젝트", "공통"];
+const PRODUCTS = ["위너프", "위너프에이플러스", "페린젝트", "공통"];
 const TAG_SUGGESTIONS = [
   "학구적 교수", "편의성 강조", "비용 이슈", "경쟁사 반박",
   "임상 데이터", "환자 경험", "초기 처방", "용량 조절",

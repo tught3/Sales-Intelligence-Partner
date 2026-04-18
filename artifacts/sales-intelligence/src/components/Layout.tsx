@@ -13,6 +13,7 @@ import {
   Brain,
   FolderInput,
   ClipboardList,
+  Package,
   Menu,
   X,
 } from "lucide-react";
@@ -32,6 +33,7 @@ const navGroups = [
     items: [
       { href: "/doctors", label: "교수 프로파일", icon: Users },
       { href: "/hospitals", label: "병원 & 과 특성", icon: Building2 },
+      { href: "/products", label: "제품 정보 & 특장점", icon: Package },
       { href: "/snippets", label: "핵심 멘트 라이브러리", icon: BookOpen },
     ],
   },

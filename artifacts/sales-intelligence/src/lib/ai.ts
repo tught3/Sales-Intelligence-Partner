@@ -464,6 +464,94 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
   }));
 }
 
+export async function generateSnippetsForProduct(productName: string): Promise<Array<{
+  content: string;
+  context: string;
+  product: string;
+  tags: string[];
+}>> {
+  const systemPrompt = buildSystemPrompt();
+  const allManuals = manualStorage.getAll();
+
+  const detectKey = (title: string): string => {
+    if (title.includes('위너프에이플러스') || title.includes('Winuf A')) return '위너프에이플러스';
+    if (title.includes('위너프') || title.includes('Winuf')) return '위너프';
+    if (title.includes('페린젝트') || title.includes('Ferinject')) return '페린젝트';
+    return '기타';
+  };
+
+  const productManuals = allManuals.filter(
+    (m) => m.category === 'product' && detectKey(m.title) === productName
+  );
+
+  if (productManuals.length === 0) {
+    throw new Error(`${productName} 제품 정보가 등록되어 있지 않습니다. 먼저 제품 정보를 추가해주세요.`);
+  }
+
+  const productContext = productManuals
+    .map((m) => `[${m.title}]\n${m.content}`)
+    .join('\n\n---\n\n');
+
+  const allDoctors = doctorStorage.getAll();
+  const traitSummary = [
+    ...new Set(allDoctors.flatMap((d) => d.traits.map((t) => t.label))),
+  ].join(', ');
+
+  const existingForProduct = snippetStorage
+    .getAll()
+    .filter((s) => s.product === productName)
+    .slice(0, 10)
+    .map((s) => `- ${s.content}`)
+    .join('\n');
+
+  const prompt = `당신은 JW중외제약 MR의 영업 코치입니다.
+아래 [${productName}] 제품 정보와 특장점만 집중적으로 참고해서, 영업 현장에서 교수/의사에게 바로 말할 수 있는 핵심 세일즈 멘트를 생성해주세요.
+
+[${productName} 제품 정보]
+${productContext}
+
+현재 담당 교수들의 주요 성향: ${traitSummary || '아직 파악 안 됨'}
+${existingForProduct ? `\n[이미 등록된 ${productName} 멘트 (중복 금지)]\n${existingForProduct}\n` : ''}
+
+생성 규칙:
+- ${productName}에 특화된 멘트만 5~8개 생성 (다른 제품 언급 최소화)
+- 각 멘트는 영업사원이 교수 앞에서 자연스럽게 말할 수 있는 화법
+- 1~2문장으로 간결하게
+- 제품의 특장점, 임상 데이터, 차별점, 편의성 등 다양한 각도에서 커버
+- 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필 등) 포함
+- 멘트 본문(content)에는 큰따옴표("), 작은따옴표(') 모두 사용 금지
+
+응답 형식 (반드시 이 JSON 배열 형식만 출력, 다른 텍스트 없이):
+[
+  {
+    'content': '멘트 내용',
+    'context': '활용 상황',
+    'product': '${productName}',
+    'tags': ['태그1', '태그2']
+  }
+]`;
+
+  const response = await callAI(systemPrompt, prompt);
+
+  const jsonMatch = response.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error('AI 응답에서 멘트 데이터를 추출할 수 없습니다');
+
+  const cleaned = jsonMatch[0].replace(/'/g, '"');
+  const parsed = JSON.parse(cleaned) as Array<{
+    content: string;
+    context: string;
+    product: string;
+    tags: string[];
+  }>;
+
+  return parsed.map((item) => ({
+    content: (item.content || '').replace(/['"]/g, ''),
+    context: (item.context || '').replace(/['"]/g, ''),
+    product: productName,
+    tags: Array.isArray(item.tags) ? item.tags : [],
+  }));
+}
+
 export async function analyzeHospitalContext(
   hospitalName: string,
   doctors: Doctor[],
