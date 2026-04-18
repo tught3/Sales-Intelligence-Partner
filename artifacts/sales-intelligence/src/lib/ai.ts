@@ -29,7 +29,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',
+      model: 'claude-sonnet-4-6',
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -40,7 +40,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
           ],
         },
       ],
-      max_completion_tokens: 2000,
+      max_completion_tokens: 8192,
     }),
   });
   if (!res.ok) {
@@ -52,12 +52,19 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
 }
 
 export async function extractTextFromImage(imageBase64: string, mimeType: string): Promise<string> {
-  const system = `당신은 JW중외제약 MR 영업 비서 시스템의 문서 분석 AI입니다.
-이미지에서 텍스트를 추출하고, 영업 매뉴얼/규칙으로 정리해줍니다.`;
-  const prompt = `이 이미지에서 텍스트를 모두 추출하고, 내용을 잘 읽히게 정리해주세요.
-- 원본 내용을 최대한 그대로 보존
-- 표나 리스트가 있으면 그 구조 유지
-- 추출한 텍스트만 출력 (설명이나 이미지에서 추출한 내용: 같은 말 붙이지 말 것)`;
+  const system = `당신은 JW중외제약 MR 영업 비서 시스템의 한국어 문서 분석 AI입니다.
+한국어 의약품/임상 자료 이미지에서 텍스트를 정확하게 추출합니다.
+한글 한 글자도 임의로 변형하지 말 것.`;
+  const prompt = `이 이미지를 매우 신중하게 읽고, 한국어 텍스트를 정확하게 추출해주세요.
+
+★ 절대 규칙:
+1. 한글을 절대로 임의로 추측/변형하지 말 것 (예: "혈장보다"를 "혈장염"으로 바꾸면 안 됨)
+2. 의학 용어, 제품명, 화학 기호(Acetate, Lactate, Ca2+, Na+, pH 등)는 원문 그대로 보존
+3. 글자가 불확실하면 추측하지 말고 [?] 로 표시할 것
+4. 분류 라벨/카테고리 태그가 [대괄호] 안에 있으면 그 라벨은 출력에서 제거하고, 본문 내용만 추출할 것 (예: "[NS 대비] 플라주OP는..." → "플라주OP는...")
+5. 같은 카테고리 라벨이 여러 줄에 반복되면 한 번만 카테고리 소제목으로 정리하거나 아예 빼고 본문만 정리
+6. 표/리스트 구조는 그대로 유지
+7. 추출한 텍스트 본문만 출력 (서두 설명, "다음과 같이 추출했습니다" 같은 말 일절 금지)`;
   return callAIWithImage(system, prompt, imageBase64, mimeType);
 }
 
@@ -108,7 +115,9 @@ ${additionalNotes}
 6. 중복되는 내용은 추가 입력 표현을 살리는 방향으로 통합 (같은 말 반복 금지)
 7. 추가 입력의 사실 정보를 임의로 변형/축소/일반화하지 말 것
 8. 영업사원이 즉시 활용 가능한 명확하고 구체적인 문장으로
-9. 통합된 매뉴얼 본문만 출력 (서두 설명, 마무리 멘트 없이)`;
+9. 추가 입력 텍스트 안의 [대괄호 안 분류 라벨/카테고리 태그] 형태(예: [NS 대비], [하트만 스위칭 콜플랜], [혈장 유사 조성])는 그대로 옮겨 적지 말 것. 같은 카테고리 라벨이 반복되면 한 번만 소제목으로 정리하거나, 본문 내용만 자연스럽게 풀어서 통합할 것
+10. OCR 추출 텍스트라서 깨진 글자/오탈자가 있을 수 있음. 의학적으로/맥락상 명백히 말이 안 되는 경우는 추가 입력에 의존하지 말고, 기존 매뉴얼의 정확한 표현을 우선 신뢰할 것 (단 추측해서 새로 만들지는 말 것)
+11. 통합된 매뉴얼 본문만 출력 (서두 설명, 마무리 멘트 없이)`;
 
   return callAI(system, prompt);
 }

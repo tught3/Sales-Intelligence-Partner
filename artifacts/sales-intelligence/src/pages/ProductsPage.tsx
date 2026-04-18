@@ -31,6 +31,7 @@ import {
   Loader2,
   Sparkles,
   Pencil,
+  Clipboard,
 } from "lucide-react";
 
 const PRODUCT_TABS = [
@@ -382,6 +383,54 @@ export default function ProductsPage() {
     await processMergeImageFiles(imageFiles, m);
   }
 
+  async function handleClipboardPaste(m: CompanyManual) {
+    if (mergingId === m.id) return;
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      toast({
+        title: "이 브라우저는 클립보드 직접 읽기를 지원하지 않습니다",
+        description: "텍스트박스를 클릭한 뒤 Ctrl+V (⌘+V)로 붙여넣어 주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      const imageFiles: File[] = [];
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith("image/")) {
+            const blob = await item.getType(type);
+            const ext = type.split("/")[1] || "png";
+            imageFiles.push(new File([blob], `clipboard.${ext}`, { type }));
+          }
+        }
+      }
+      if (imageFiles.length === 0) {
+        toast({
+          title: "클립보드에 이미지가 없습니다",
+          description: "스크린샷을 먼저 복사한 뒤 다시 시도해주세요",
+          variant: "destructive",
+        });
+        return;
+      }
+      setMergeImageProgress((prev) => ({
+        ...prev,
+        [m.id]: `클립보드 이미지 ${imageFiles.length}장 감지됨, 분석 시작...`,
+      }));
+      toast({
+        title: `클립보드 이미지 ${imageFiles.length}장 분석 시작`,
+        description: "AI가 자동으로 매뉴얼에 통합합니다",
+      });
+      await processMergeImageFiles(imageFiles, m);
+    } catch (err) {
+      toast({
+        title: "클립보드 읽기 실패",
+        description: err instanceof Error ? err.message : "브라우저가 권한을 거부했을 수 있습니다",
+        variant: "destructive",
+      });
+    }
+  }
+
   async function handleGenerateSnippets(productName: string) {
     setGeneratingFor(productName);
     try {
@@ -650,18 +699,29 @@ export default function ProductsPage() {
                       </div>
                     </div>
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <label className={`text-xs cursor-pointer flex items-center gap-1 px-2.5 py-1.5 rounded-md border-2 border-purple-300 bg-white text-purple-700 hover:bg-purple-100 transition-colors ${mergingId === m.id ? 'opacity-50 pointer-events-none' : ''}`}>
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        사진 올리기 → 자동 분석/저장 (여러 장 가능)
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => handleMergeImageUpload(e, m)}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className={`text-xs cursor-pointer flex items-center gap-1 px-2.5 py-1.5 rounded-md border-2 border-purple-300 bg-white text-purple-700 hover:bg-purple-100 transition-colors ${mergingId === m.id ? 'opacity-50 pointer-events-none' : ''}`}>
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          사진 올리기 (여러 장)
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => handleMergeImageUpload(e, m)}
+                            disabled={mergingId === m.id}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => handleClipboardPaste(m)}
                           disabled={mergingId === m.id}
-                        />
-                      </label>
+                          className="text-xs flex items-center gap-1 px-2.5 py-1.5 rounded-md border-2 border-purple-300 bg-white text-purple-700 hover:bg-purple-100 transition-colors disabled:opacity-50"
+                        >
+                          <Clipboard className="w-3.5 h-3.5" />
+                          📋 클립보드에서 붙여넣기
+                        </button>
+                      </div>
                       {mergeImageProgress[m.id] && (
                         <div className="flex items-center gap-1.5 text-xs text-purple-700 bg-white rounded-md px-2 py-1 border border-purple-200">
                           <Loader2 className="w-3 h-3 animate-spin" />
