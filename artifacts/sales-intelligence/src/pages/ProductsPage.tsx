@@ -10,6 +10,7 @@ import {
   extractTextFromImage,
   reformatAsCompanyRule,
   generateSnippetsForProduct,
+  mergeAdditionalFeatures,
 } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,8 @@ export default function ProductsPage() {
   const [aiLoading, setAiLoading] = useState<"image" | "reformat" | null>(null);
   const [imageProgress, setImageProgress] = useState("");
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
+  const [mergeNotes, setMergeNotes] = useState<Record<string, string>>({});
+  const [mergingId, setMergingId] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const visibleManuals = manuals.filter((m) => categorizeProduct(m.title) === activeTab);
@@ -221,6 +224,39 @@ export default function ProductsPage() {
       toast({ title: "AI 재작성 실패", description: String(err), variant: "destructive" });
     } finally {
       setAiLoading(null);
+    }
+  }
+
+  async function handleMergeFeatures(m: CompanyManual) {
+    const notes = (mergeNotes[m.id] ?? "").trim();
+    if (!notes) {
+      toast({ title: "추가할 특장점을 입력해주세요", variant: "destructive" });
+      return;
+    }
+    setMergingId(m.id);
+    try {
+      const productName = categorizeProduct(m.title);
+      const merged = await mergeAdditionalFeatures(m.content, notes, productName);
+      const updated: CompanyManual = {
+        ...m,
+        content: merged.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      manualStorage.save(updated);
+      setMergeNotes((prev) => ({ ...prev, [m.id]: "" }));
+      refresh();
+      toast({
+        title: "특장점이 통합되었습니다",
+        description: "AI가 기존 매뉴얼에 새 내용을 자연스럽게 녹여냈습니다",
+      });
+    } catch (e: any) {
+      toast({
+        title: "통합 실패",
+        description: e?.message ?? String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setMergingId(null);
     }
   }
 
@@ -475,10 +511,55 @@ export default function ProductsPage() {
                 </div>
               </div>
               {expandedId === m.id && (
-                <div className="px-4 pb-4 border-t">
+                <div className="px-4 pb-4 border-t space-y-3">
                   <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed mt-3 bg-muted/30 rounded p-3">
                     {m.content}
                   </pre>
+
+                  <div className="rounded-lg border-2 border-dashed border-purple-300 bg-purple-50/40 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <Wand2 className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-xs">
+                        <p className="font-semibold text-purple-700 mb-0.5">특장점 추가 입력 → AI가 위 매뉴얼에 통합</p>
+                        <p className="text-[11px] text-purple-700/70 leading-relaxed">
+                          현장에서 알게 된 추가 특장점, 임상 데이터, 경쟁사 비교, 화법 등을 편하게 적어주세요.
+                          AI가 위 매뉴얼의 구조를 유지하면서 자연스럽게 녹여 다시 저장합니다 (기존 내용 보존).
+                        </p>
+                      </div>
+                    </div>
+                    <Textarea
+                      placeholder={`예:
+- 최근 ○○병원 △△교수가 위너프 처방시 □□ 부분 특히 만족
+- ESPEN 2024 가이드라인에서 4세대 TPN 권고 등급 상향
+- 경쟁사 ◇◇ 대비 가격 약 10% 저렴
+- "환자 회복 속도가 눈에 띄게 빠릅니다" 어필 효과 좋음`}
+                      value={mergeNotes[m.id] ?? ""}
+                      onChange={(e) => setMergeNotes((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                      rows={6}
+                      className="text-xs resize-none bg-white"
+                      disabled={mergingId === m.id}
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => handleMergeFeatures(m)}
+                        disabled={mergingId === m.id || !(mergeNotes[m.id] ?? "").trim()}
+                        className="gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        {mergingId === m.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            AI 통합 중...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            AI로 매뉴얼에 통합 저장
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </Card>

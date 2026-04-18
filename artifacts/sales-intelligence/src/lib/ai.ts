@@ -61,6 +61,47 @@ export async function extractTextFromImage(imageBase64: string, mimeType: string
   return callAIWithImage(system, prompt, imageBase64, mimeType);
 }
 
+export async function mergeAdditionalFeatures(
+  existingContent: string,
+  additionalNotes: string,
+  productName: string,
+): Promise<string> {
+  const system = `당신은 JW중외제약 MR 영업 비서 시스템의 제품 정보 통합 AI입니다.
+영업사원이 추가로 입력한 특장점/메모를 기존 제품 정보 매뉴얼에 자연스럽게 통합하여
+실무에서 바로 활용할 수 있는 깔끔한 매뉴얼로 재작성합니다.`;
+
+  const prompt = `[제품명]: ${productName}
+
+다음은 ${productName}의 기존 제품 정보 매뉴얼입니다:
+==== 기존 매뉴얼 시작 ====
+${existingContent}
+==== 기존 매뉴얼 끝 ====
+
+다음은 영업사원이 추가로 입력한 새로운 특장점/메모/현장 정보입니다 (구조 없는 raw text):
+==== 추가 입력 시작 ====
+${additionalNotes}
+==== 추가 입력 끝 ====
+
+위 두 자료를 통합하여 하나의 깔끔한 제품 정보 매뉴얼로 재작성해주세요.
+
+반드시 지킬 규칙:
+1. 기존 매뉴얼의 구조(■ 섹션 헤더, 【】 소제목 형태)를 그대로 유지할 것
+2. 기존 매뉴얼의 모든 핵심 정보를 절대 누락하지 말 것 (정보 손실 금지)
+3. 추가 입력의 새 내용을 적절한 섹션에 자연스럽게 녹여낼 것
+   - 특장점성 내용 → 【제품 핵심 강조점】 섹션에 항목 추가
+   - 임상 데이터/논문 → 【임상 근거】 또는 【임상 데이터】 섹션
+   - 경쟁사 비교 → 【경쟁 우위】 섹션
+   - 영업 화법/현장 팁 → 【핵심 어필 화법】 또는 【주요 처방 시나리오】
+   - 주의사항 → 【주의사항】
+   - 적합한 섹션이 없으면 새 섹션을 추가해도 됨
+4. 중복되는 내용은 자연스럽게 통합 (같은 말 반복 금지)
+5. 추가 입력의 사실 정보를 임의로 변형/과장하지 말 것
+6. 영업사원이 즉시 활용 가능한 명확하고 구체적인 문장으로
+7. 통합된 매뉴얼 본문만 출력 (서두 설명, 마무리 멘트 없이)`;
+
+  return callAI(system, prompt);
+}
+
 export async function reformatAsCompanyRule(rawText: string, category: string): Promise<string> {
   const categoryLabel = category === 'rule' ? '회사 규칙/영업 지침' : category === 'product' ? '제품 정보' : '기타 매뉴얼';
   const system = `당신은 JW중외제약 MR 영업 비서 시스템의 문서 정리 AI입니다.
