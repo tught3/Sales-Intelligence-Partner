@@ -333,19 +333,48 @@ export default function ProductsPage() {
     e: React.ClipboardEvent<HTMLTextAreaElement>,
     m: CompanyManual,
   ) {
-    const items = e.clipboardData?.items;
-    if (!items) return;
+    const cd = e.clipboardData;
+    if (!cd) return;
+
     const imageFiles: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind === "file" && item.type.startsWith("image/")) {
-        const file = item.getAsFile();
-        if (file) imageFiles.push(file);
+
+    if (cd.files && cd.files.length > 0) {
+      for (let i = 0; i < cd.files.length; i++) {
+        const f = cd.files[i];
+        if (f && f.type && f.type.startsWith("image/")) {
+          imageFiles.push(f);
+        }
       }
     }
-    if (imageFiles.length === 0) return;
+
+    if (imageFiles.length === 0 && cd.items) {
+      for (let i = 0; i < cd.items.length; i++) {
+        const item = cd.items[i];
+        if (item && item.type && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+    }
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
     e.preventDefault();
-    if (mergingId === m.id) return;
+    if (mergingId === m.id) {
+      toast({
+        title: "이미 처리 중입니다",
+        description: "현재 통합 작업이 끝난 후 다시 시도해주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setMergeImageProgress((prev) => ({
+      ...prev,
+      [m.id]: `붙여넣은 이미지 ${imageFiles.length}장 감지됨, 분석 시작...`,
+    }));
     toast({
       title: `붙여넣은 이미지 ${imageFiles.length}장 분석 시작`,
       description: "AI가 자동으로 매뉴얼에 통합합니다",
