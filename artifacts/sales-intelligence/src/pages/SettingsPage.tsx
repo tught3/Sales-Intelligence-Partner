@@ -28,6 +28,7 @@ import {
   Image,
   Wand2,
   Loader2,
+  Clipboard,
 } from "lucide-react";
 
 const CATEGORY_LABELS: Record<CompanyManual["category"], string> = {
@@ -229,8 +230,7 @@ export default function SettingsPage() {
     });
   }
 
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  async function processImageFiles(files: File[]) {
     if (files.length === 0) return;
     setShowForm(true);
     setAiLoading("image");
@@ -242,12 +242,14 @@ export default function SettingsPage() {
         const { base64, mimeType } = await resizeAndEncodeImage(file);
         const extracted = await extractTextFromImage(base64, mimeType);
         results.push(extracted);
-        if (!title && i === 0) setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
+        if (!title && i === 0 && file.name && !file.name.startsWith("clipboard")) {
+          setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
+        }
       }
-      const combined = results.length === 1
+      const newText = results.length === 1
         ? results[0]
         : results.map((r, i) => `[이미지 ${i + 1}]\n${r}`).join("\n\n---\n\n");
-      setContent(combined);
+      setContent((prev) => prev.trim() ? `${prev}\n\n${newText}` : newText);
       toast({
         title: `이미지 ${files.length}장 분석 완료`,
         description: files.length > 1 ? 'AI로 깔끔하게 재작성 버튼을 눌러 하나의 매뉴얼로 정리하세요' : '내용을 확인 후 저장하세요',
@@ -262,7 +264,86 @@ export default function SettingsPage() {
       setAiLoading(null);
       setImageProgress("");
     }
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
+    await processImageFiles(files);
+  }
+
+  async function handleContentPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const imageFiles: File[] = [];
+    if (cd.files && cd.files.length > 0) {
+      for (let i = 0; i < cd.files.length; i++) {
+        const f = cd.files[i];
+        if (f && f.type && f.type.startsWith("image/")) imageFiles.push(f);
+      }
+    }
+    if (imageFiles.length === 0 && cd.items) {
+      for (let i = 0; i < cd.items.length; i++) {
+        const item = cd.items[i];
+        if (item && item.type && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+    }
+    if (imageFiles.length === 0) return;
+    e.preventDefault();
+    if (aiLoading === "image") return;
+    setImageProgress(`붙여넣은 이미지 ${imageFiles.length}장 감지됨, 분석 시작...`);
+    toast({
+      title: `붙여넣은 이미지 ${imageFiles.length}장 분석 시작`,
+      description: "AI가 자동으로 텍스트를 추출합니다",
+    });
+    await processImageFiles(imageFiles);
+  }
+
+  async function handleClipboardButton() {
+    if (aiLoading === "image") return;
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      toast({
+        title: "이 브라우저는 클립보드 직접 읽기를 지원하지 않습니다",
+        description: "내용 입력란을 클릭한 뒤 Ctrl+V (⌘+V)로 붙여넣어 주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      const imageFiles: File[] = [];
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith("image/")) {
+            const blob = await item.getType(type);
+            const ext = type.split("/")[1] || "png";
+            imageFiles.push(new File([blob], `clipboard.${ext}`, { type }));
+          }
+        }
+      }
+      if (imageFiles.length === 0) {
+        toast({
+          title: "클립보드에 이미지가 없습니다",
+          description: "스크린샷을 먼저 복사한 뒤 다시 시도해주세요",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: `클립보드 이미지 ${imageFiles.length}장 분석 시작`,
+        description: "AI가 자동으로 텍스트를 추출합니다",
+      });
+      await processImageFiles(imageFiles);
+    } catch (err) {
+      toast({
+        title: "클립보드 읽기 실패",
+        description: err instanceof Error ? err.message : "브라우저가 권한을 거부했을 수 있습니다",
+        variant: "destructive",
+      });
+    }
   }
 
   async function handleReformat() {
@@ -356,9 +437,9 @@ export default function SettingsPage() {
                         텍스트 파일
                         <input type="file" accept=".txt,.md,.csv" className="hidden" onChange={handleTextFileImport} />
                       </label>
-                      <label className="text-xs text-primary cursor-pointer hover:underline flex items-center gap-1">
+                      <label className="text-xs cursor-pointer flex items-center gap-1 px-2 py-1 rounded border border-purple-300 bg-white text-purple-700 hover:bg-purple-50">
                         <Image className="w-3 h-3" />
-                        이미지 업로드 (여러 장 가능)
+                        이미지 업로드 (여러 장)
                         <input
                           ref={imageInputRef}
                           type="file"
@@ -368,8 +449,20 @@ export default function SettingsPage() {
                           onChange={handleImageUpload}
                         />
                       </label>
+                      <button
+                        type="button"
+                        onClick={handleClipboardButton}
+                        disabled={aiLoading === "image"}
+                        className="text-xs flex items-center gap-1 px-2 py-1 rounded border border-purple-300 bg-white text-purple-700 hover:bg-purple-50 disabled:opacity-50"
+                      >
+                        <Clipboard className="w-3 h-3" />
+                        📋 클립보드에서 붙여넣기
+                      </button>
                     </div>
                   </div>
+                  <p className="text-[11px] text-muted-foreground -mt-1">
+                    💡 아래 입력란에 캡처를 바로 Ctrl+V (⌘+V)로 붙여넣어도 자동 분석됩니다
+                  </p>
 
                   {aiLoading === "image" && (
                     <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 rounded-md px-3 py-2">
@@ -379,9 +472,10 @@ export default function SettingsPage() {
                   )}
 
                   <Textarea
-                    placeholder={`직접 입력하거나, 이미지를 업로드하면 AI가 자동으로 텍스트를 추출합니다.\n\n예시:\n- 경쟁사 제품명 직접 언급 금지\n- 임상 데이터 인용시 출처 명시 필수`}
+                    placeholder={`직접 입력하거나, 이미지를 업로드하면 AI가 자동으로 텍스트를 추출합니다.\n💡 캡처/스샷을 Ctrl+V (⌘+V)로 바로 붙여넣어도 됩니다.\n\n예시:\n- 경쟁사 제품명 직접 언급 금지\n- 임상 데이터 인용시 출처 명시 필수`}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
+                    onPaste={handleContentPaste}
                     rows={10}
                     className="text-sm resize-none font-mono"
                     disabled={aiLoading === "image"}
