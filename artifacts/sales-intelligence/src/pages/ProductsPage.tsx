@@ -91,6 +91,7 @@ export default function ProductsPage() {
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [mergeNotes, setMergeNotes] = useState<Record<string, string>>({});
   const [mergingId, setMergingId] = useState<string | null>(null);
+  const [mergeImageProgress, setMergeImageProgress] = useState<Record<string, string>>({});
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const visibleManuals = manuals.filter((m) => categorizeProduct(m.title) === activeTab);
@@ -227,8 +228,8 @@ export default function ProductsPage() {
     }
   }
 
-  async function handleMergeFeatures(m: CompanyManual) {
-    const notes = (mergeNotes[m.id] ?? "").trim();
+  async function handleMergeFeatures(m: CompanyManual, overrideNotes?: string) {
+    const notes = (overrideNotes ?? mergeNotes[m.id] ?? "").trim();
     if (!notes) {
       toast({ title: "추가할 특장점을 입력해주세요", variant: "destructive" });
       return;
@@ -257,6 +258,71 @@ export default function ProductsPage() {
       });
     } finally {
       setMergingId(null);
+    }
+  }
+
+  async function handleMergeImageUpload(
+    e: React.ChangeEvent<HTMLInputElement>,
+    m: CompanyManual,
+  ) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    setMergingId(m.id);
+    const results: string[] = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setMergeImageProgress((prev) => ({
+          ...prev,
+          [m.id]: files.length > 1
+            ? `이미지 ${i + 1}/${files.length} 분석 중...`
+            : "이미지 분석 중...",
+        }));
+        const { base64, mimeType } = await resizeAndEncodeImage(file);
+        const extracted = await extractTextFromImage(base64, mimeType);
+        results.push(extracted);
+      }
+
+      const combinedNotes = results.length === 1
+        ? results[0]
+        : results.map((r, i) => `[이미지 ${i + 1}]\n${r}`).join("\n\n---\n\n");
+
+      const existingNotes = (mergeNotes[m.id] ?? "").trim();
+      const finalNotes = existingNotes
+        ? `${existingNotes}\n\n[추가 이미지에서 추출]\n${combinedNotes}`
+        : combinedNotes;
+
+      setMergeImageProgress((prev) => ({ ...prev, [m.id]: "AI가 매뉴얼에 통합 중..." }));
+
+      const productName = categorizeProduct(m.title);
+      const merged = await mergeAdditionalFeatures(m.content, finalNotes, productName);
+      const updated: CompanyManual = {
+        ...m,
+        content: merged.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      manualStorage.save(updated);
+      setMergeNotes((prev) => ({ ...prev, [m.id]: "" }));
+      refresh();
+      toast({
+        title: `이미지 ${files.length}장 분석 → 매뉴얼 통합 완료`,
+        description: "AI가 사진 내용을 특장점으로 자동 저장했습니다",
+      });
+    } catch (err: any) {
+      toast({
+        title: "이미지 분석/통합 실패",
+        description: err?.message ?? String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setMergingId(null);
+      setMergeImageProgress((prev) => {
+        const next = { ...prev };
+        delete next[m.id];
+        return next;
+      });
     }
   }
 
@@ -527,8 +593,30 @@ export default function ProductsPage() {
                         </p>
                       </div>
                     </div>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <label className={`text-xs cursor-pointer flex items-center gap-1 px-2.5 py-1.5 rounded-md border-2 border-purple-300 bg-white text-purple-700 hover:bg-purple-100 transition-colors ${mergingId === m.id ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        사진 올리기 → 자동 분석/저장 (여러 장 가능)
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => handleMergeImageUpload(e, m)}
+                          disabled={mergingId === m.id}
+                        />
+                      </label>
+                      {mergeImageProgress[m.id] && (
+                        <div className="flex items-center gap-1.5 text-xs text-purple-700 bg-white rounded-md px-2 py-1 border border-purple-200">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          {mergeImageProgress[m.id]}
+                        </div>
+                      )}
+                    </div>
                     <Textarea
-                      placeholder={`예:
+                      placeholder={`사진을 올리시면 AI가 자동으로 분석해서 위 매뉴얼에 통합 저장합니다.
+
+또는 직접 입력:
 - 최근 ○○병원 △△교수가 위너프 처방시 □□ 부분 특히 만족
 - ESPEN 2024 가이드라인에서 4세대 TPN 권고 등급 상향
 - 경쟁사 ◇◇ 대비 가격 약 10% 저렴
@@ -554,7 +642,7 @@ export default function ProductsPage() {
                         ) : (
                           <>
                             <Sparkles className="w-3.5 h-3.5" />
-                            AI로 매뉴얼에 통합 저장
+                            텍스트 입력만 통합 저장
                           </>
                         )}
                       </Button>
