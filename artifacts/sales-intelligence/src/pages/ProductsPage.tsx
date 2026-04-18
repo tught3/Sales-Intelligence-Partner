@@ -261,14 +261,8 @@ export default function ProductsPage() {
     }
   }
 
-  async function handleMergeImageUpload(
-    e: React.ChangeEvent<HTMLInputElement>,
-    m: CompanyManual,
-  ) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
+  async function processMergeImageFiles(files: File[], m: CompanyManual) {
     if (files.length === 0) return;
-
     setMergingId(m.id);
     const results: string[] = [];
     try {
@@ -324,6 +318,39 @@ export default function ProductsPage() {
         return next;
       });
     }
+  }
+
+  async function handleMergeImageUpload(
+    e: React.ChangeEvent<HTMLInputElement>,
+    m: CompanyManual,
+  ) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    await processMergeImageFiles(files, m);
+  }
+
+  async function handleMergePaste(
+    e: React.ClipboardEvent<HTMLTextAreaElement>,
+    m: CompanyManual,
+  ) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length === 0) return;
+    e.preventDefault();
+    if (mergingId === m.id) return;
+    toast({
+      title: `붙여넣은 이미지 ${imageFiles.length}장 분석 시작`,
+      description: "AI가 자동으로 매뉴얼에 통합합니다",
+    });
+    await processMergeImageFiles(imageFiles, m);
   }
 
   async function handleGenerateSnippets(productName: string) {
@@ -614,7 +641,7 @@ export default function ProductsPage() {
                       )}
                     </div>
                     <Textarea
-                      placeholder={`사진을 올리시면 AI가 자동으로 분석해서 위 매뉴얼에 통합 저장합니다.
+                      placeholder={`💡 입력창에 이미지를 바로 붙여넣기(Ctrl+V / ⌘+V) 하셔도 됩니다 — 캡처/스샷 그대로 붙이면 AI가 자동 분석/저장!
 
 또는 직접 입력:
 - 최근 ○○병원 △△교수가 위너프 처방시 □□ 부분 특히 만족
@@ -623,6 +650,7 @@ export default function ProductsPage() {
 - "환자 회복 속도가 눈에 띄게 빠릅니다" 어필 효과 좋음`}
                       value={mergeNotes[m.id] ?? ""}
                       onChange={(e) => setMergeNotes((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                      onPaste={(e) => handleMergePaste(e, m)}
                       rows={6}
                       className="text-xs resize-none bg-white"
                       disabled={mergingId === m.id}
