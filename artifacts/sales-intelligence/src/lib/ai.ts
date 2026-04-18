@@ -88,6 +88,10 @@ JW중외제약의 주요 제품:
 - 위너프(Winuf/위너프페리주): 3세대 3챔버 종합영양수액(TPN) - 정맥 영양제, 포도당+아미노산+지질, 수술 전후 금식, 소화기 불가 환자, 오메가-3 포함, 2024년 매출 789억원
 - 위너프에이플러스(Winuf A+): 4세대 TPN - 아미노산 함량 기존 대비 25% 증가, 포도당 감소, 중증/고단백 환자 최적화, 국내 3상 임상 완료(2024년 1월 출시), ASPEN/ESPEN 가이드라인 준수
 - 페린젝트(Ferinject): 정맥주사용 철 결핍 치료제(FCM) - 1회 1,000mg 단회 투여, 15분 이내 투여 가능, 2024년 5월 건강보험 급여 적용
+- 플라주OP(Plaju OP): 균형 전해질 수액(Balanced Crystalloid) - Mg 함유, 비락테이트, 아세트산/글루콘산 완충, 0.9% NS 대비 고염소 부담 적음, 패혈증/외상/수술 1차 수액
+- 이부프로펜프리믹스(프리브로펜주): 즉시 사용 가능한 IV NSAID 프리믹스 백 - 조제 불필요, 이지컷 포장, opioid-sparing, ERAS 프로토콜 적용, 케토롤락 대비 신독성 낮음
+- 포스페넴(Fosfomycin Inj.): 에폭사이드 계열 항생제 - 베타락탐과 교차내성 거의 없음, ESBL/MDR 그람음성균 커버, 항바이오필름 효과, 카바페넴 절약 전략(ASP)의 핵심
+- 프리페넴(Ertapenem 1g): 카바페넴 중 유일한 1일 1회 투여 - ESBL 1차 선택지, 외래주사실(OPAT)/IM 가능, 복강내 감염 IDSA 1차 권장(녹농균 비커버 주의)
 
 중요 원칙:
 - 응답은 자연스러운 한국어로, 너무 딱딱하거나 문어체일 필요 없음
@@ -474,9 +478,14 @@ export async function generateSnippetsForProduct(productName: string): Promise<A
   const allManuals = manualStorage.getAll();
 
   const detectKey = (title: string): string => {
-    if (title.includes('위너프에이플러스') || title.includes('Winuf A')) return '위너프에이플러스';
-    if (title.includes('위너프') || title.includes('Winuf')) return '위너프';
-    if (title.includes('페린젝트') || title.includes('Ferinject')) return '페린젝트';
+    const t = title.toLowerCase();
+    if (title.includes('위너프에이플러스') || t.includes('winuf a')) return '위너프에이플러스';
+    if (title.includes('위너프') || t.includes('winuf')) return '위너프';
+    if (title.includes('페린젝트') || t.includes('ferinject')) return '페린젝트';
+    if (title.includes('플라주') || t.includes('plaju')) return '플라주OP';
+    if (title.includes('이부프로펜') || title.includes('프리브로펜') || t.includes('ibuprofen') || t.includes('pribrophen')) return '이부프로펜프리믹스';
+    if (title.includes('포스페넴') || title.includes('포스포마이신') || t.includes('fospenem') || t.includes('fosfomycin')) return '포스페넴';
+    if (title.includes('프리페넴') || title.includes('에르타페넴') || t.includes('pripenem') || t.includes('ertapenem')) return '프리페넴';
     return '기타';
   };
 

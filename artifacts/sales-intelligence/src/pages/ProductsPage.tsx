@@ -36,6 +36,10 @@ const PRODUCT_TABS = [
   { key: "위너프", label: "위너프 (3세대 TPN)", color: "bg-blue-100 text-blue-700 border-blue-300" },
   { key: "위너프에이플러스", label: "위너프에이플러스 (4세대 TPN)", color: "bg-indigo-100 text-indigo-700 border-indigo-300" },
   { key: "페린젝트", label: "페린젝트 (IV FCM)", color: "bg-emerald-100 text-emerald-700 border-emerald-300" },
+  { key: "플라주OP", label: "플라주OP (균형 전해질 수액)", color: "bg-amber-100 text-amber-700 border-amber-300" },
+  { key: "이부프로펜프리믹스", label: "이부프로펜프리믹스 (IV NSAID)", color: "bg-rose-100 text-rose-700 border-rose-300" },
+  { key: "포스페넴", label: "포스페넴 (Fosfomycin)", color: "bg-teal-100 text-teal-700 border-teal-300" },
+  { key: "프리페넴", label: "프리페넴 (Ertapenem)", color: "bg-cyan-100 text-cyan-700 border-cyan-300" },
   { key: "기타", label: "기타 제품 정보", color: "bg-gray-100 text-gray-700 border-gray-300" },
 ];
 
@@ -59,9 +63,14 @@ Q.
 A. `;
 
 function categorizeProduct(title: string): string {
-  if (title.includes("위너프에이플러스") || title.includes("Winuf A")) return "위너프에이플러스";
-  if (title.includes("위너프") || title.includes("Winuf")) return "위너프";
-  if (title.includes("페린젝트") || title.includes("Ferinject")) return "페린젝트";
+  const t = title.toLowerCase();
+  if (title.includes("위너프에이플러스") || t.includes("winuf a")) return "위너프에이플러스";
+  if (title.includes("위너프") || t.includes("winuf")) return "위너프";
+  if (title.includes("페린젝트") || t.includes("ferinject")) return "페린젝트";
+  if (title.includes("플라주") || t.includes("plaju")) return "플라주OP";
+  if (title.includes("이부프로펜") || title.includes("프리브로펜") || t.includes("ibuprofen") || t.includes("pribrophen")) return "이부프로펜프리믹스";
+  if (title.includes("포스페넴") || title.includes("포스포마이신") || t.includes("fospenem") || t.includes("fosfomycin")) return "포스페넴";
+  if (title.includes("프리페넴") || title.includes("에르타페넴") || t.includes("pripenem") || t.includes("ertapenem")) return "프리페넴";
   return "기타";
 }
 
