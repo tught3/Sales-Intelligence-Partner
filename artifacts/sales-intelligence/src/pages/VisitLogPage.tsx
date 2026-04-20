@@ -55,6 +55,9 @@ export default function VisitLogPage() {
   const [isSaved, setIsSaved] = useState(false);
   const [importAnalysis, setImportAnalysis] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'manual' | 'auto' | 'import'>('manual');
+  const [bulkCount, setBulkCount] = useState(3);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; doctorName: string } | null>(null);
+  const [bulkResults, setBulkResults] = useState<Array<{ doctor: Doctor; log: VisitLog }>>([]);
 
   const hospitals = useMemo(() => {
     const set = new Set(doctors.map(d => d.hospital).filter(Boolean));
@@ -150,35 +153,56 @@ export default function VisitLogPage() {
     }
   }
 
-  async function handleAutoGenerate() {
-    if (!selectedDoctor) return;
-    const snapshotDoctorId = selectedDoctorId;
+  async function handleBulkAutoGenerate() {
+    if (filteredDoctors.length === 0) {
+      toast({ title: "선택한 범위에 등록된 교수가 없습니다", variant: "destructive" });
+      return;
+    }
+    const count = Math.min(bulkCount, filteredDoctors.length);
+    const shuffled = [...filteredDoctors].sort(() => Math.random() - 0.5);
+    const targets = shuffled.slice(0, count);
+
     setIsAutoGenerating(true);
     resetResult();
+    setBulkResults([]);
+    const generated: Array<{ doctor: Doctor; log: VisitLog }> = [];
     try {
-      const res = await autoGenerateVisitLog(selectedDoctor, pastLogs);
-      if (!res.formattedLog || res.formattedLog.trim().length < 10) {
-        toast({ title: "AI 생성 결과가 너무 짧습니다", description: "다시 시도해주세요.", variant: "destructive" });
-        return;
+      for (let i = 0; i < targets.length; i++) {
+        const doctor = targets[i];
+        setBulkProgress({ current: i + 1, total: targets.length, doctorName: doctor.name });
+        const docPastLogs = visitLogStorage.getByDoctorId(doctor.id);
+        try {
+          const res = await autoGenerateVisitLog(doctor, docPastLogs);
+          if (!res.formattedLog || res.formattedLog.trim().length < 10) continue;
+          const log: VisitLog = {
+            id: generateId(),
+            doctorId: doctor.id,
+            visitDate: res.visitDate,
+            rawNotes: "",
+            formattedLog: res.formattedLog,
+            nextStrategy: res.nextStrategy,
+            products: res.products,
+            createdAt: new Date().toISOString(),
+          };
+          visitLogStorage.save(log);
+          generated.push({ doctor, log });
+          setBulkResults([...generated]);
+        } catch (e) {
+          console.error(`${doctor.name} 일지 생성 실패`, e);
+        }
       }
-      setResult({ formattedLog: res.formattedLog, nextStrategy: res.nextStrategy });
-      setVisitDate(res.visitDate);
-      setSelectedProducts(res.products);
-      if (snapshotDoctorId) {
-        const log: VisitLog = {
-          id: generateId(), doctorId: snapshotDoctorId, visitDate: res.visitDate,
-          rawNotes: "", formattedLog: res.formattedLog,
-          nextStrategy: res.nextStrategy, products: res.products, createdAt: new Date().toISOString(),
-        };
-        visitLogStorage.save(log);
-        setAllLogs(visitLogStorage.getAll());
-        setIsSaved(true);
-      }
-      toast({ title: "영업 일지가 자동 저장되었습니다", description: "방문 일지 기록에서 확인 및 수정할 수 있습니다." });
+      setAllLogs(visitLogStorage.getAll());
+      toast({
+        title: `${generated.length}건의 영업 일지가 자동 저장되었습니다`,
+        description: targets.length > generated.length
+          ? `${targets.length - generated.length}건 실패. 방문 일지 기록에서 확인하세요.`
+          : "방문 일지 기록에서 확인 및 수정할 수 있습니다.",
+      });
     } catch (e) {
       toast({ title: "자동 생성 실패", description: String(e), variant: "destructive" });
     } finally {
       setIsAutoGenerating(false);
+      setBulkProgress(null);
     }
   }
 
@@ -314,26 +338,37 @@ export default function VisitLogPage() {
                     </>
                   )}
 
-                  <Label className="flex items-center gap-1.5 mt-2">
-                    <Users className="w-3.5 h-3.5" />
-                    교수 선택 *
-                  </Label>
-                  <div className="relative">
-                    <select
-                      value={selectedDoctorId}
-                      onChange={(e) => { setSelectedDoctorId(e.target.value); resetResult(); }}
-                      className="w-full appearance-none border border-input bg-background rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring pr-8"
-                    >
-                      <option value="">교수를 선택하세요...</option>
-                      {filteredDoctors.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name} 교수 | {d.hospital} {d.department}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  </div>
-                  {selectedDoctor && (
+                  {activeTab === 'manual' && (
+                    <>
+                      <Label className="flex items-center gap-1.5 mt-2">
+                        <Users className="w-3.5 h-3.5" />
+                        교수 선택 *
+                      </Label>
+                      <div className="relative">
+                        <select
+                          value={selectedDoctorId}
+                          onChange={(e) => { setSelectedDoctorId(e.target.value); resetResult(); }}
+                          className="w-full appearance-none border border-input bg-background rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring pr-8"
+                        >
+                          <option value="">교수를 선택하세요...</option>
+                          {filteredDoctors.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} 교수 | {d.hospital} {d.department}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      </div>
+                    </>
+                  )}
+                  {activeTab === 'auto' && (
+                    <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded p-2.5 text-blue-700">
+                      💡 자동 생성 모드는 교수 개별 선택 없이 진행됩니다. 위에서 선택한 병원
+                      {selectedDept ? ` ${selectedDept}` : ''}의 교수 {filteredDoctors.length}명 중
+                      <strong> 무작위로 N명</strong>을 뽑아 각각 일지를 생성합니다.
+                    </div>
+                  )}
+                  {activeTab === 'manual' && selectedDoctor && (
                     <div className="text-xs bg-muted/50 rounded p-3 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-foreground">{selectedDoctor.name} 교수님</span>
@@ -372,37 +407,41 @@ export default function VisitLogPage() {
                   )}
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5" />
-                    방문일
-                  </Label>
-                  <Input
-                    type="date"
-                    value={visitDate}
-                    onChange={(e) => setVisitDate(e.target.value)}
-                  />
-                </div>
+                {activeTab === 'manual' && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        방문일
+                      </Label>
+                      <Input
+                        type="date"
+                        value={visitDate}
+                        onChange={(e) => setVisitDate(e.target.value)}
+                      />
+                    </div>
 
-                <div className="space-y-1.5">
-                  <Label>관련 제품</Label>
-                  <div className="flex gap-2">
-                    {PRODUCTS.map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => toggleProduct(p)}
-                        className={`px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
-                          selectedProducts.includes(p)
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border text-muted-foreground hover:border-primary/50"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                    <div className="space-y-1.5">
+                      <Label>관련 제품</Label>
+                      <div className="flex gap-2">
+                        {PRODUCTS.map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => toggleProduct(p)}
+                            className={`px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
+                              selectedProducts.includes(p)
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border text-muted-foreground hover:border-primary/50"
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {activeTab === 'manual' && (
                   <>
@@ -434,28 +473,88 @@ export default function VisitLogPage() {
                 )}
 
                 {activeTab === 'auto' && (
-                  <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-sm space-y-2">
+                  <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-sm space-y-3">
                     <div className="flex items-start gap-2">
                       <Wand2 className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                       <div>
-                        <p className="font-medium text-primary">자동 생성 모드</p>
+                        <p className="font-medium text-primary">자동 생성 모드 (일괄)</p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          아무것도 입력하지 않아도 됩니다. 교수의 성향, 과거 방문 이력, 병원 특성, 회사 매뉴얼을 종합하여
-                          오늘 방문했을 법한 현실적인 영업 일지를 AI가 자동으로 생성합니다.
+                          병원만 선택하고 개수를 정하면, 해당 병원
+                          {selectedDept ? ` ${selectedDept}` : ''}의 교수 중 무작위로 뽑아
+                          각자에게 맞춘 영업 일지를 한 번에 생성합니다.
                         </p>
                       </div>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">생성 개수</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[1, 2, 3, 4, 5, 6].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setBulkCount(n)}
+                            disabled={isAutoGenerating}
+                            className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-all ${
+                              bulkCount === n
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border text-muted-foreground hover:border-primary/50"
+                            } disabled:opacity-50`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        선택 범위에 등록된 교수: <strong>{filteredDoctors.length}명</strong>
+                        {filteredDoctors.length > 0 && filteredDoctors.length < bulkCount && (
+                          <span className="text-amber-600"> (요청 {bulkCount}건 중 {filteredDoctors.length}건만 생성됩니다)</span>
+                        )}
+                      </p>
+                    </div>
+
+                    {bulkProgress && (
+                      <div className="flex items-center gap-2 text-xs text-primary bg-white rounded-md px-3 py-2 border border-primary/20">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        {bulkProgress.current}/{bulkProgress.total} - {bulkProgress.doctorName} 교수 일지 생성 중...
+                      </div>
+                    )}
+
                     <Button
-                      onClick={handleAutoGenerate}
-                      disabled={!selectedDoctorId || isAutoGenerating}
+                      onClick={handleBulkAutoGenerate}
+                      disabled={filteredDoctors.length === 0 || isAutoGenerating}
                       className="w-full gap-2"
                     >
                       {isAutoGenerating ? (
-                        <><Loader2 className="w-4 h-4 animate-spin" />AI가 방문 내용을 생성하는 중...</>
+                        <><Loader2 className="w-4 h-4 animate-spin" />AI가 일괄 생성 중...</>
                       ) : (
-                        <><Wand2 className="w-4 h-4" />오늘 방문 일지 자동 생성</>
+                        <><Wand2 className="w-4 h-4" />{Math.min(bulkCount, filteredDoctors.length || bulkCount)}건 자동 생성</>
                       )}
                     </Button>
+
+                    {bulkResults.length > 0 && (
+                      <div className="border-t border-primary/20 pt-3 space-y-2">
+                        <p className="text-xs font-semibold text-primary">생성 완료 ({bulkResults.length}건)</p>
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                          {bulkResults.map(({ doctor, log }) => (
+                            <div key={log.id} className="bg-white rounded-md border border-primary/10 p-2.5 text-xs">
+                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                                <span className="font-semibold text-foreground">
+                                  {doctor.name} 교수 <span className="text-muted-foreground font-normal">| {doctor.hospital} {doctor.department}</span>
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-muted-foreground">{log.visitDate}</span>
+                                  {log.products.length > 0 && log.products.map((p) => (
+                                    <Badge key={p} variant="secondary" className="text-[10px] py-0 px-1.5">{p}</Badge>
+                                  ))}
+                                </div>
+                              </div>
+                              <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{log.formattedLog}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
