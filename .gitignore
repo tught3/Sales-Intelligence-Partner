@@ -47,3 +47,10 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Environment / Secrets (절대 커밋 금지)
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
