@@ -90,7 +90,8 @@ export interface ConversationRecord {
   createdAt: string;
 }
 
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const API_BASE = import.meta.env.VITE_API_SERVER_URL ||
+  (import.meta.env.DEV ? 'http://localhost:3001' : '');
 
 const cache: {
   doctors: Doctor[];

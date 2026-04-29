@@ -22,7 +22,7 @@ async function runDataMigrations() {
   }
 }
 
-const rawPort = process.env["PORT"];
+const rawPort = process.env["API_SERVER_PORT"] ?? process.env["PORT"];
 
 if (!rawPort) {
   throw new Error(

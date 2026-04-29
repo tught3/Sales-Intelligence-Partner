@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find E:\\\\\\\\Sales-Intelligence-Partner -maxdepth 2 -type d -not -path '*/node_modules/*' -not -path '*/.git/*')",
+      "Bash(pnpm run *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm --filter @workspace/api-server run dev)",
+      "Bash(kill %1)",
+      "Bash(pnpm --filter @workspace/sales-intelligence run dev)",
+      "Bash(node -e \"require\\('/e/Sales-Intelligence-Partner/artifacts/sales-intelligence/node_modules/@tailwindcss/vite'\\)\")",
+      "Bash(node -e \"const p=require\\('./artifacts/api-server/package.json'\\); console.log\\(p.scripts.start\\)\")",
+      "Bash(node -e \"const p=require\\('./artifacts/sales-intelligence/package.json'\\); console.log\\(JSON.stringify\\(p.dependencies\\)\\)\")"
+    ]
+  }
+}

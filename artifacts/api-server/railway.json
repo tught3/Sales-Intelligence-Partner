@@ -1,0 +1,4 @@
+{
+  "buildCommand": "cd ../.. && pnpm install && pnpm run build:deploy",
+  "startCommand": "node --enable-source-maps artifacts/api-server/dist/index.mjs"
+}
