@@ -28,7 +28,7 @@ function validateChatBody(body: unknown): body is {
     const role = m.role as string;
     if (!["system", "user", "assistant"].includes(role)) return false;
     if (typeof m.content !== "string" && !Array.isArray(m.content)) return false;
-    if (typeof m.content === "string" && m.content.length > 30000) return false;
+    if (typeof m.content === "string" && m.content.length > 200000) return false;
   }
   if (b.max_completion_tokens !== undefined) {
     if (
@@ -76,6 +76,11 @@ function isAllowedOrigin(origin: string): boolean {
 
   // Replit 배포(published) 환경 도메인
   if (originHost.endsWith(".replit.app") || originHost.endsWith(".replit.dev")) {
+    return true;
+  }
+
+  // Railway 배포 도메인
+  if (originHost.endsWith(".railway.app") || originHost.endsWith(".up.railway.app")) {
     return true;
   }
 
