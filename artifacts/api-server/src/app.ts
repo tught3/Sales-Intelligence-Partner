@@ -6,6 +6,13 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+/**
+ * ✅ 루트 체크용 (Railway 헬스체크 대응)
+ */
+app.get("/", (req, res) => {
+  res.send("API Server Running");
+});
+
 app.use(
   pinoHttp({
     logger,
@@ -25,10 +32,14 @@ app.use(
     },
   }),
 );
+
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+/**
+ * 기존 API 라우터
+ */
 app.use("/api", router);
 
 export default app;
