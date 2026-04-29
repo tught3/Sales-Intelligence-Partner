@@ -315,13 +315,18 @@ export async function convertToVisitLog(
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
   const visitCount = pastLogs.length;
   const visitOrdinal = visitCount + 1;
+  const lastVisitDate = pastLogs[0]?.visitDate ?? null;
 
   const visitContextNote = visitCount > 0
-    ? `\n★ 중요: 이 교수와는 이미 ${visitCount}회 방문 기록이 있습니다. 오늘은 ${visitOrdinal}번째 방문입니다. 절대로 첫 방문, 첫 인사, 처음 뵙겠습니다, 두 번째 방문 같은 잘못된 표현을 쓰지 말 것. 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n`
+    ? `★★★ 최우선 규칙 (이것이 가장 중요):
+이 교수와는 이미 ${visitCount}회 방문한 기록이 있습니다.
+마지막 방문: ${lastVisitDate} / 오늘은 ${visitOrdinal}번째 방문입니다.
+절대로 첫 방문, 첫 인사, 처음 뵙겠습니다 같은 표현을 쓰지 말 것.
+이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const prompt = `${contextSection}
-${visitContextNote}
+  const prompt = `${visitContextNote}${contextSection}
+
 오늘 방문 메모 (날것):
 ${rawNotes}
 
@@ -366,11 +371,15 @@ export async function autoGenerateVisitLog(
   const visitOrdinal = visitCount + 1;
 
   const visitContextNote = visitCount > 0
-    ? `\n★ 중요: 이 교수와는 이미 ${visitCount}회 방문 기록이 있습니다. 오늘은 ${visitOrdinal}번째 방문입니다. 절대로 첫 방문, 첫 인사, 처음 뵙겠습니다, 두 번째 방문 같은 잘못된 표현을 쓰지 말 것. 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n`
+    ? `★★★ 최우선 규칙 (이것이 가장 중요):
+이 교수와는 이미 ${visitCount}회 방문한 기록이 있습니다.
+마지막 방문: ${lastVisitDate} / 오늘은 ${visitOrdinal}번째 방문입니다.
+절대로 첫 방문, 첫 인사, 처음 뵙겠습니다 같은 표현을 쓰지 말 것.
+이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const prompt = `${contextSection}
-${visitContextNote}
+  const prompt = `${visitContextNote}${contextSection}
+
 오늘 날짜: ${today}
 마지막 방문일: ${lastVisitDate}
 총 방문 횟수: ${visitCount}회 (오늘이 ${visitOrdinal}번째)
