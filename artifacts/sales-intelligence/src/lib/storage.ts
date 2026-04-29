@@ -20,6 +20,7 @@ export interface VisitLog {
   nextStrategy: string;
   products: string[];
   createdAt: string;
+  aiEditHint?: string; // 사용자가 AI 생성 일지를 수정한 패턴 기록
 }
 
 export interface Doctor {

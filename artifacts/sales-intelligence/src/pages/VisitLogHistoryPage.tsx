@@ -103,7 +103,13 @@ export default function VisitLogHistoryPage() {
   }
 
   function saveEdit(log: VisitLog) {
-    const updated = { ...log, formattedLog: editText };
+    const originalText = log.formattedLog;
+    const editedText = editText;
+    // 수정 패턴 힌트 생성 (원본 vs 수정본 비교)
+    const hint = originalText !== editedText
+      ? `원본(${originalText.length}자): ${originalText.slice(0, 100)}${originalText.length > 100 ? '...' : ''} → 수정(${editedText.length}자): ${editedText.slice(0, 100)}${editedText.length > 100 ? '...' : ''}`
+      : log.aiEditHint;
+    const updated = { ...log, formattedLog: editedText, aiEditHint: hint };
     visitLogStorage.save(updated);
     setAllLogs(visitLogStorage.getAll());
     setEditingId(null);

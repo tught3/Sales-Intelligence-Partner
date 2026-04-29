@@ -244,6 +244,17 @@ function buildContextSection(
 이전 전략 제안: ${latestConv.nextSuggestions.slice(0, 300)}`;
   }
 
+  // 사용자가 수정한 편집 패턴 수집 (최근 3개)
+  const editHints = pastLogs
+    .filter(l => l.aiEditHint)
+    .slice(0, 3)
+    .map(l => `  - ${l.aiEditHint}`)
+    .join('\n');
+
+  if (editHints) {
+    context += `\n\n【중요 - 사용자 수정 패턴 (반드시 반영)】\n이 교수의 일지를 사용자가 직접 수정한 이력:\n${editHints}\n→ 위 수정 패턴을 학습해서 처음부터 이런 방식으로 작성할 것`;
+  }
+
   const snippetContext = buildSnippetContext();
   if (snippetContext) {
     context += `\n${snippetContext}`;
