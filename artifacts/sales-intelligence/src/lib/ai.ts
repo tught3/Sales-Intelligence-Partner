@@ -1,7 +1,8 @@
 import type { Doctor, VisitLog, HospitalProfile, DepartmentProfile } from './storage';
 import { manualStorage, hospitalStorage, departmentStorage, snippetStorage, doctorStorage, visitLogStorage } from './storage';
 
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_SERVER_URL as string | undefined) ||
+  (import.meta.env.DEV ? 'http://localhost:3001' : '');
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const res = await fetch(`${API_BASE}/api/ai/chat`, {
