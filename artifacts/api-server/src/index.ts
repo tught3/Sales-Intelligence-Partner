@@ -10,11 +10,23 @@ async function runDataMigrations() {
       { id: "doc-1775561165326-4", field: "department", value: "간담췌외과" },
       { id: "doc-1775561202710-5", field: "department", value: "간담췌외과" },
     ];
+
     for (const m of migrations) {
       const [doc] = await db.select().from(doctors).where(eq(doctors.id, m.id));
+
       if (doc && doc.department !== m.value) {
-        await db.update(doctors).set({ department: m.value, updatedAt: new Date() }).where(eq(doctors.id, m.id));
-        logger.info({ id: m.id, from: doc.department, to: m.value }, "Data migration applied");
+        await db
+          .update(doctors)
+          .set({
+            department: m.value,
+            updatedAt: new Date(),
+          })
+          .where(eq(doctors.id, m.id));
+
+        logger.info(
+          { id: m.id, from: doc.department, to: m.value },
+          "Data migration applied",
+        );
       }
     }
   } catch (e) {
@@ -22,12 +34,10 @@ async function runDataMigrations() {
   }
 }
 
-const rawPort = process.env["API_SERVER_PORT"] ?? process.env["PORT"];
+const rawPort = process.env["PORT"] ?? process.env["API_SERVER_PORT"];
 
 if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
+  throw new Error("PORT environment variable is required but was not provided.");
 }
 
 const port = Number(rawPort);
@@ -37,12 +47,12 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 runDataMigrations().then(() => {
-  app.listen(port, (err) => {
+  app.listen(port, "0.0.0.0", (err?: Error) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
       process.exit(1);
     }
 
-    logger.info({ port }, "Server listening");
+    logger.info({ port, host: "0.0.0.0" }, "Server listening");
   });
 });
