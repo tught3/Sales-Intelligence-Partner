@@ -159,8 +159,37 @@ export default function VisitLogPage() {
       return;
     }
     const count = Math.min(bulkCount, filteredDoctors.length);
-    const shuffled = [...filteredDoctors].sort(() => Math.random() - 0.5);
-    const targets = shuffled.slice(0, count);
+
+    // 오늘 이미 생성된 방문 기록 파악
+    const today = new Date().toISOString().split('T')[0];
+    const todayLogs = visitLogStorage.getAll().filter(l => l.visitDate === today);
+    const visitedTodayIds = new Set(todayLogs.map(l => l.doctorId));
+    const visitedTodayDepts = new Set(
+      todayLogs.map(l => doctors.find(d => d.id === l.doctorId)?.department).filter((x): x is string => Boolean(x))
+    );
+
+    // 교수별 총 방문 기록 수 (적을수록 우선)
+    const logCountMap = new Map(filteredDoctors.map(d => [
+      d.id, visitLogStorage.getByDoctorId(d.id).length
+    ]));
+
+    // 우선순위 그룹 분류
+    // A: 오늘 미방문 + 오늘 방문한 과와 다른 과 (최우선)
+    // B: 오늘 미방문이지만 오늘 방문한 과와 같은 과
+    // C: 오늘 이미 방문한 교수 (최하순위)
+    const groupA = filteredDoctors.filter(d => !visitedTodayIds.has(d.id) && !visitedTodayDepts.has(d.department));
+    const groupB = filteredDoctors.filter(d => !visitedTodayIds.has(d.id) && visitedTodayDepts.has(d.department));
+    const groupC = filteredDoctors.filter(d => visitedTodayIds.has(d.id));
+
+    // 그룹 내: 기록 수 오름차순 + 약간의 랜덤
+    function sortGroup(g: Doctor[]) {
+      return [...g].sort(
+        (a, b) => (logCountMap.get(a.id) ?? 0) - (logCountMap.get(b.id) ?? 0) + (Math.random() - 0.5) * 2
+      );
+    }
+
+    const prioritized = [...sortGroup(groupA), ...sortGroup(groupB), ...sortGroup(groupC)];
+    const targets = prioritized.slice(0, count);
 
     setIsAutoGenerating(true);
     resetResult();
