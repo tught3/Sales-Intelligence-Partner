@@ -262,12 +262,16 @@ function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt:
   return { systemPrompt, contextSection };
 }
 
-async function trimToLimit(systemPrompt: string, text: string, limit: number): Promise<string> {
-  const prompt = `아래 영업일지가 ${text.length}자입니다. ${limit}자 이내로 줄여주세요.
+async function trimToLimit(systemPrompt: string, text: string, limit: number, isRetry = false): Promise<string> {
+  const retryNote = isRetry
+    ? `★★ 이전 시도에서 여전히 ${text.length}자였습니다. 이번엔 반드시 ${limit}자 이내로. 문장을 절대 중간에 자르지 말고, 완성된 문장으로 자연스럽게 줄일 것.\n`
+    : '';
+  const prompt = `${retryNote}아래 영업일지가 ${text.length}자입니다. 반드시 ${limit}자 이내로 자연스럽게 다듬어 주세요.
 
 규칙:
 - 핵심 내용과 의미를 최대한 보존
 - 말투와 톤을 그대로 유지
+- 문장을 중간에 자르지 말 것. 완성된 문장으로 끝낼 것
 - 큰따옴표("), 작은따옴표(') 모두 사용 금지
 - 줄인 일지 본문만 출력. 설명이나 글자수 표기 등 절대 붙이지 말 것
 
@@ -276,10 +280,31 @@ ${text}`;
 
   const result = await callAI(systemPrompt, prompt);
   let trimmed = result.replace(/^===.*===\s*/gm, '').replace(/['"]/g, '').trim();
-  if (trimmed.length > limit) {
-    trimmed = trimmed.slice(0, limit);
+
+  if (trimmed.length <= limit) return trimmed;
+
+  // 1회 재시도
+  if (!isRetry) {
+    return trimToLimit(systemPrompt, trimmed, limit, true);
   }
-  return trimmed;
+
+  // 재시도 후에도 초과 시 마지막 완성 문장에서 자르기 (문자 중간 아님)
+  const sentences = trimmed.split(/(?<=[다요음])(?=\s|$)/);
+  let result2 = '';
+  for (const s of sentences) {
+    if ((result2 + s).length <= limit) {
+      result2 += s;
+    } else {
+      break;
+    }
+  }
+  // 문장 분리가 안 된 경우 fallback: 마지막 공백 기준으로 자르기
+  if (!result2) {
+    const cut = trimmed.slice(0, limit);
+    const lastSpace = cut.lastIndexOf(' ');
+    result2 = lastSpace > limit * 0.7 ? cut.slice(0, lastSpace) : cut;
+  }
+  return result2;
 }
 
 export async function convertToVisitLog(
@@ -311,7 +336,7 @@ ${rawNotes}
 - 반응근거와 다음방문계획 사이에 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것
 
 ★ 절대 규칙:
-1. 반응근거 + 다음방문계획을 합쳐서 반드시 230자(한글 기준) 이내로 작성할 것. 230자를 초과하면 안 됨.
+1. 반응근거 + 다음방문계획을 합쳐서 반드시 230자(한글 기준) 이내로 작성할 것. 230자를 초과하면 전체를 다시 써야 함. 자연스러운 완성된 문장으로 끝낼 것.
 2. 큰따옴표("), 작은따옴표(') 모두 절대 사용하지 말 것. 강조는 따옴표 없이 단어만 쓸 것.
 
 응답은 영업일지 본문만 출력하세요. 제목, 구분선, 라벨 등은 절대 붙이지 마세요.`;
@@ -365,7 +390,7 @@ ${visitContextNote}
 (위너프 또는 페린젝트 또는 두 제품 모두, 쉼표 구분)
 
 ===영업일지===
-(실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것. 반드시 230자 이내. 큰따옴표("), 작은따옴표(') 모두 사용 금지)`;
+(실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것. 반드시 230자 이내로 완성된 문장으로 끝낼 것. 230자 넘으면 전체를 다시 쓸 것. 큰따옴표("), 작은따옴표(') 모두 사용 금지)`;
 
   const response = await callAI(systemPrompt, prompt);
 
