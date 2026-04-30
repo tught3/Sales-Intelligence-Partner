@@ -20,6 +20,7 @@
 - The memo-style tightening has been committed and pushed.
 - Nearby UI copy in the visit-log and doctor-detail screens was also simplified so the app speaks more like a work memo and less like an analysis tool.
 - The memo tone has been tightened further so generated text prefers the user's endings like `~함`, `~예정`, `~부탁`, `~드림`, and `~필요`, while blocking `~습니다`-style endings and normalizing `단회투여` to `1회 투여`.
+- A visit-log restore attempted through PowerShell mangled Korean text into `?`; the records were then reloaded with Node `fetch` UTF-8 and restored correctly.
 
 ## Immediate Next Step
 - Report the memo-style tightening with verification evidence and preserve the updated planning checkpoint.
