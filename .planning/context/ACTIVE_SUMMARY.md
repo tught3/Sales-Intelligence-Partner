@@ -29,6 +29,7 @@
 - Memo generation is being tightened so visible visit logs read like the user's own short work notes rather than long AI-style analyses. The auto-generation path now keeps `formattedLog` and `nextStrategy` separate.
 - The memo-style tightening has been committed and pushed on `main`.
 - Nearby UI copy on the visit-log and doctor-detail screens has also been simplified to sound more like a work memo than an analysis dashboard.
+- The memo tone has now been tightened further to favor the user's sentence endings and to normalize `단회투여` into `1회 투여` during generation output handling.
 
 ## Useful Entry Points
 - `package.json`

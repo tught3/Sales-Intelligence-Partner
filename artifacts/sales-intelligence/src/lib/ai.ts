@@ -223,10 +223,60 @@ function buildVisitOutputRules(bodyLimit: number, strategyLimit: number, include
 - 네가 실제로 업무 메모를 적은 것처럼 짧고 구어체로 쓸 것
 - 분석문, 보고서체, 설명문, 교육자료체 금지
 - 성향 분석을 텍스트로 길게 풀지 말 것. 어조와 접근법에만 반영할 것
+- 문장 끝은 네가 평소 쓰는 메모체로 맞출 것. 예: ~함, ~보임, ~예정, ~부탁, ~드림, ~필요
+- ~했습니다, ~하였습니다, ~습니다, ~입니다, ~드립니다 같은 보고서체 종결은 쓰지 말 것
 - 회사 규칙과 제품 용어는 정확히 쓸 것
 - 반응근거는 짧게, 다음 행동은 더 짧게
 - 본문 ${bodyLimit}자 이내로 끝낼 것${includeStrategy ? `\n- 다음방문전략은 ${strategyLimit}자 이내로 짧게 쓸 것` : ''}
 - 페린젝트는 1회 투여라고 쓰고 단회투여라고 쓰지 말 것`;
+}
+
+function normalizeMemoTone(text: string): string {
+  const replacements: Array<[RegExp, string]> = [
+    [/단회\s*투여/gi, '1회 투여'],
+    [/단회투여/gi, '1회 투여'],
+    [/부탁드립니다/gi, '부탁'],
+    [/요청드립니다/gi, '요청'],
+    [/말씀드렸습니다/gi, '말씀드림'],
+    [/말씀드리겠습니다/gi, '말씀드림'],
+    [/드리겠습니다/gi, '드림'],
+    [/드렸습니다/gi, '드림'],
+    [/확인했습니다/gi, '확인함'],
+    [/검토했습니다/gi, '검토함'],
+    [/공유했습니다/gi, '공유함'],
+    [/정리했습니다/gi, '정리함'],
+    [/전달했습니다/gi, '전달함'],
+    [/진행했습니다/gi, '진행함'],
+    [/반영했습니다/gi, '반영함'],
+    [/권장합니다/gi, '권장함'],
+    [/가능합니다/gi, '가능함'],
+    [/필요합니다/gi, '필요함'],
+    [/생각됩니다/gi, '생각됨'],
+    [/보입니다/gi, '보임'],
+    [/보였습니다/gi, '보임'],
+    [/되었습니다/gi, '됨'],
+    [/있습니다/gi, '있음'],
+    [/없습니다/gi, '없음'],
+    [/같습니다/gi, '같음'],
+    [/예정입니다/gi, '예정'],
+    [/드릴 예정입니다/gi, '드릴 예정'],
+    [/했습니다/gi, '함'],
+    [/하였습니다/gi, '함'],
+    [/합니다/gi, '함'],
+    [/입니다/gi, '임'],
+    [/드립니다/gi, '부탁'],
+  ];
+
+  let result = text;
+  for (const [pattern, replacement] of replacements) {
+    result = result.replace(pattern, replacement);
+  }
+
+  return result
+    .replace(/\s+([.,!?])/g, '$1')
+    .replace(/[.]{2,}/g, '.')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function buildContextSection(
@@ -469,6 +519,8 @@ ${rawNotes}
 
   cleaned = cleaned.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
+  cleaned = normalizeMemoTone(cleaned);
+  nextStrategy = normalizeMemoTone(nextStrategy);
 
   if (cleaned.length > 230) {
     cleaned = await trimToLimit(systemPrompt, cleaned, 230, false, '영업일지');
@@ -559,6 +611,8 @@ ${buildVisitOutputRules(230, 120)}
 
   fullLog = fullLog.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
+  fullLog = normalizeMemoTone(fullLog);
+  nextStrategy = normalizeMemoTone(nextStrategy);
 
   if (fullLog.length > 230) {
     fullLog = await trimToLimit(buildSystemPrompt(), fullLog, 230, false, '영업일지');
@@ -598,6 +652,7 @@ export async function generateNextVisitStrategy(
 
   const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
+  cleaned = normalizeMemoTone(cleaned);
   if (cleaned.length > 120) {
     cleaned = await trimToLimit(systemPrompt, cleaned, 120, false, '다음방문전략');
   }
