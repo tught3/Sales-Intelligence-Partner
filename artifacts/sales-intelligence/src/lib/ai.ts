@@ -143,7 +143,15 @@ ${rawText}
 }
 
 function buildSystemPrompt(): string {
-  const manualText = manualStorage.getCombinedText();
+  const ruleText = manualStorage.getByCategory('rule')
+    .map((m) => `[${m.title}]\n${m.content}`)
+    .join('\n\n---\n\n');
+  const productText = manualStorage.getByCategory('product')
+    .map((m) => `[${m.title}]\n${m.content}`)
+    .join('\n\n---\n\n');
+  const otherText = manualStorage.getByCategory('other')
+    .map((m) => `[${m.title}]\n${m.content}`)
+    .join('\n\n---\n\n');
   const base = `당신은 JW중외제약 MR(의약품 영업사원)의 영업 비서입니다.
 JW중외제약의 주요 제품:
 - 위너프(Winuf/위너프페리주): 3세대 3챔버 종합영양수액(TPN) - 정맥 영양제, 포도당+아미노산+지질, 수술 전후 금식, 소화기 불가 환자, 오메가-3 포함, 2024년 매출 789억원
@@ -155,17 +163,29 @@ JW중외제약의 주요 제품:
 - 프리페넴(Ertapenem 1g): 카바페넴 중 유일한 1일 1회 투여 - ESBL 1차 선택지, 외래주사실(OPAT)/IM 가능, 복강내 감염 IDSA 1차 권장(녹농균 비커버 주의)
 
 중요 원칙:
+- 회사 규칙과 매뉴얼이 제품 설명보다 우선이다
+- 결과물은 실무 메모처럼 짧고 구체적으로 쓸 것
 - 응답은 자연스러운 한국어로, 너무 딱딱하거나 문어체일 필요 없음
 - 영업사원이 실제로 쓰는 말투와 표현을 유지할 것
 - 교수/의사의 성향, 병원 특성, 과 특성, 과거 대화 맥락을 반드시 반영
 - 회사 규칙과 가이드라인 내에서 내용을 정리할 것
 - JW중외제약 제품 강점은 자연스럽게 녹여낼 것
-- ★ 절대로 큰따옴표(")와 작은따옴표(')를 모두 사용하지 말 것. 강조가 필요하면 따옴표 없이 그냥 단어만 쓰거나 다른 표현을 사용할 것`;
+- ★ 절대로 큰따옴표(")와 작은따옴표(')를 모두 사용하지 말 것. 강조가 필요하면 따옴표 없이 그냥 단어만 쓰거나 다른 표현을 사용할 것
+- 페린젝트는 반드시 1회 투여로 표기하고, 단회투여라고 쓰지 말 것
+- 방문일지 본문은 230자 이내, 다음 방문 전략은 더 짧고 실무적으로 쓸 것`;
 
   let prompt = base;
 
-  if (manualText) {
-    prompt += `\n\n===회사 매뉴얼 및 가이드라인===\n${manualText}`;
+  if (ruleText) {
+    prompt += `\n\n===회사 규칙 (최우선)===\n${ruleText}`;
+  }
+
+  if (productText) {
+    prompt += `\n\n===제품 정보===\n${productText}`;
+  }
+
+  if (otherText) {
+    prompt += `\n\n===기타 매뉴얼===\n${otherText}`;
   }
 
   return prompt;
@@ -182,6 +202,31 @@ function buildSnippetContext(): string {
     .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
     .join('\n');
   return `\n활용 가능한 핵심 멘트:\n${lines}\n`;
+}
+
+function buildUserMemoStyleSection(): string {
+  const styleExamples = visitLogStorage
+    .getRecent(12)
+    .map((log) => log.rawNotes.trim())
+    .filter((text) => text.length > 0)
+    .filter((text) => text.length <= 160)
+    .filter((text) => !/분석|정리하면|전반적으로|프로토콜|보고서|첫 방문|데이터중시|보수적 성향/.test(text))
+    .slice(0, 3);
+
+  if (styleExamples.length === 0) return '';
+
+  return `\n\n【사용자 문체 기준 - 반드시 반영】\n최근 실제 메모 예시:\n${styleExamples.map((text) => `  - ${text}`).join('\n')}\n문체 규칙:\n- 위 예시처럼 짧고 구어체로 작성할 것\n- 분석문, 보고서체, 교육자료체, 설명문 느낌 금지\n- 회사 규칙 용어는 정확히 사용할 것\n- 필요하면 더 줄이지, 절대 길게 풀지 말 것`;
+}
+
+function buildVisitOutputRules(bodyLimit: number, strategyLimit: number, includeStrategy = true): string {
+  return `최근 실제 메모 예시를 따라가되, 회사 규칙을 먼저 지키세요.
+- 네가 실제로 업무 메모를 적은 것처럼 짧고 구어체로 쓸 것
+- 분석문, 보고서체, 설명문, 교육자료체 금지
+- 성향 분석을 텍스트로 길게 풀지 말 것. 어조와 접근법에만 반영할 것
+- 회사 규칙과 제품 용어는 정확히 쓸 것
+- 반응근거는 짧게, 다음 행동은 더 짧게
+- 본문 ${bodyLimit}자 이내로 끝낼 것${includeStrategy ? `\n- 다음방문전략은 ${strategyLimit}자 이내로 짧게 쓸 것` : ''}
+- 페린젝트는 1회 투여라고 쓰고 단회투여라고 쓰지 말 것`;
 }
 
 function buildContextSection(
@@ -271,6 +316,11 @@ function buildContextSection(
     context += `\n${snippetContext}`;
   }
 
+  const styleSection = buildUserMemoStyleSection();
+  if (styleSection) {
+    context += styleSection;
+  }
+
   return context;
 }
 
@@ -284,11 +334,11 @@ function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt:
   return { systemPrompt, contextSection };
 }
 
-async function trimToLimit(systemPrompt: string, text: string, limit: number, isRetry = false): Promise<string> {
+async function trimToLimit(systemPrompt: string, text: string, limit: number, isRetry = false, label = '영업일지'): Promise<string> {
   const retryNote = isRetry
     ? `★★ 이전 시도에서 여전히 ${text.length}자였습니다. 이번엔 반드시 ${limit}자 이내로. 문장을 절대 중간에 자르지 말고, 완성된 문장으로 자연스럽게 줄일 것.\n`
     : '';
-  const prompt = `${retryNote}아래 영업일지가 ${text.length}자입니다. 반드시 ${limit}자 이내로 자연스럽게 다듬어 주세요.
+  const prompt = `${retryNote}아래 ${label}가 ${text.length}자입니다. 반드시 ${limit}자 이내로 자연스럽게 다듬어 주세요.
 
 규칙:
 - 핵심 내용과 의미를 최대한 보존
@@ -307,10 +357,26 @@ ${text}`;
 
   // 1회 재시도
   if (!isRetry) {
-    return trimToLimit(systemPrompt, trimmed, limit, true);
+    return trimToLimit(systemPrompt, trimmed, limit, true, label);
   }
 
   return compressTextToLimit(trimmed, limit);
+}
+
+function extractSection(response: string, sectionNames: string[]): string {
+  for (let i = 0; i < sectionNames.length; i++) {
+    const current = sectionNames[i];
+    const next = sectionNames[i + 1];
+    const pattern = new RegExp(
+      `${current}\\s*([\\s\\S]*?)${next ? `(?:${next})` : '$'}`,
+      'i'
+    );
+    const match = response.match(pattern);
+    if (match) {
+      return match[1].trim();
+    }
+  }
+  return '';
 }
 
 function compressTextToLimit(text: string, limit: number): string {
@@ -369,10 +435,12 @@ export async function convertToVisitLog(
 
   const prompt = `${visitContextNote}${contextSection}
 
+${buildVisitOutputRules(230, 120)}
+
 오늘 방문 메모 (날것):
 ${rawNotes}
 
-위 메모를 바탕으로 영업일지를 하나의 글로 작성해주세요.
+위 메모를 바탕으로 영업일지를 실제 영업 메모처럼 작성해주세요.
 
 작성 기준:
 - 입력된 메모의 말투와 톤을 그대로 유지할 것. 보고서 형식으로 바꾸지 말 것
@@ -386,18 +454,33 @@ ${rawNotes}
 1. 반응근거 + 다음방문계획을 합쳐서 반드시 230자(한글 기준) 이내로 작성할 것. 230자를 초과하면 전체를 다시 써야 함. 자연스러운 완성된 문장으로 끝낼 것.
 2. 큰따옴표("), 작은따옴표(') 모두 절대 사용하지 말 것. 강조는 따옴표 없이 단어만 쓸 것.
 
-응답은 영업일지 본문만 출력하세요. 제목, 구분선, 라벨 등은 절대 붙이지 마세요.`;
+응답 형식:
+===영업일지===
+(230자 이내의 실제 영업 메모. 설명문 금지)
+
+===다음방문전략===
+(120자 이내의 아주 짧은 다음 행동 메모)
+
+제목, 구분선, 라벨, 설명은 절대 붙이지 마세요.`;
 
   const response = await callAI(systemPrompt, prompt);
-  let cleaned = response.replace(/^===.*===\s*/gm, '').replace(/['"]/g, '').trim();
+  let cleaned = extractSection(response, ['===영업일지===']);
+  let nextStrategy = extractSection(response, ['===다음방문전략===']);
+
+  cleaned = cleaned.replace(/['"]/g, '').trim();
+  nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
 
   if (cleaned.length > 230) {
-    cleaned = await trimToLimit(systemPrompt, cleaned, 230);
+    cleaned = await trimToLimit(systemPrompt, cleaned, 230, false, '영업일지');
+  }
+
+  if (nextStrategy.length > 120) {
+    nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, false, '다음방문전략');
   }
 
   return {
     formattedLog: cleaned,
-    nextStrategy: '',
+    nextStrategy,
   };
 }
 
@@ -426,6 +509,8 @@ export async function autoGenerateVisitLog(
 
   const prompt = `${visitContextNote}${contextSection}
 
+${buildVisitOutputRules(230, 120)}
+
 오늘 날짜: ${today}
 마지막 방문일: ${lastVisitDate}
 총 방문 횟수: ${visitCount}회 (오늘이 ${visitOrdinal}번째)
@@ -439,13 +524,19 @@ export async function autoGenerateVisitLog(
 - 병원/과 특성에 맞는 현실적 대화 내용
 - 전 방문 전략이 있다면 그것을 실행한 방문으로 구성
 - 위너프 또는 페린젝트 중 해당 과에 더 적합한 제품 중심
+- 결과는 교수분석 보고서가 아니라 현장에서 적은 짧은 메모처럼 보여야 함
+- 설명하듯 길게 쓰지 말고, 실제 일지 톤으로만 쓸 것
+- 페린젝트는 반드시 1회 투여라고 쓰고 단회투여라고 쓰지 말 것
 
 응답 형식:
 ===제품===
 (위너프 또는 페린젝트 또는 두 제품 모두, 쉼표 구분)
 
 ===영업일지===
-(실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것. 반드시 230자 이내로 완성된 문장으로 끝낼 것. 230자 넘으면 전체를 다시 쓸 것. 큰따옴표("), 작은따옴표(') 모두 사용 금지)`;
+(실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것. 반드시 230자 이내로 완성된 문장으로 끝낼 것. 230자 넘으면 전체를 다시 쓸 것. 큰따옴표("), 작은따옴표(') 모두 사용 금지)
+
+===다음방문전략===
+(120자 이내의 아주 짧은 다음 행동 메모)`;
 
   const response = await callAI(systemPrompt, prompt);
 
@@ -459,22 +550,29 @@ export async function autoGenerateVisitLog(
     .map((p) => p.trim())
     .filter((p) => ['위너프', '페린젝트', '기타'].includes(p));
 
-  let fullLog = logMatch ? logMatch[1].trim() : response.replace(/===제품===[\s\S]*?(?=\n\n|$)/, '').trim();
-  if (strategyMatch) {
-    fullLog = fullLog + '\n\n' + strategyMatch[1].trim();
-  }
+  let fullLog = logMatch
+    ? logMatch[1].trim()
+    : extractSection(response, ['===영업일지===', '===다음방문전략===']);
+  let nextStrategy = strategyMatch
+    ? strategyMatch[1].trim()
+    : extractSection(response, ['===다음방문전략===']);
 
-  fullLog = fullLog.replace(/['"]/g, '');
+  fullLog = fullLog.replace(/['"]/g, '').trim();
+  nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
 
   if (fullLog.length > 230) {
-    fullLog = await trimToLimit(buildSystemPrompt(), fullLog, 230);
+    fullLog = await trimToLimit(buildSystemPrompt(), fullLog, 230, false, '영업일지');
+  }
+
+  if (nextStrategy.length > 120) {
+    nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, false, '다음방문전략');
   }
 
   return {
     visitDate: today,
     products: products.length > 0 ? products : ['위너프'],
     formattedLog: fullLog,
-    nextStrategy: '',
+    nextStrategy,
   };
 }
 
@@ -486,17 +584,24 @@ export async function generateNextVisitStrategy(
 
   const prompt = `${contextSection}
 
-위 모든 맥락을 종합하여 다음 방문을 위한 상세 시나리오를 작성해주세요:
+위 모든 맥락을 종합하여 다음 방문용 짧은 실무 메모를 작성해주세요.
 
-1. 오프닝 멘트 (교수 성향 맞춤)
-2. 핵심 메시지 (제품 강점 포인트 2-3개, 과거 대화 연속성 반영)
-3. 예상 반박 시나리오와 준비된 대응책 (과거 반박 패턴 기반)
-4. 클로징 전략
-5. 다음 방문 전 준비사항 (자료, 데이터 등)
+작성 기준:
+- 실제 현장에서 바로 볼 수 있는 짧은 메모처럼 쓸 것
+- 분석 설명처럼 길게 풀지 말 것
+- 다음에 꺼낼 제품 포인트 1개, 반응 예상 1개, 준비할 자료 1개 정도만 담을 것
+- 회사 규칙과 제품 용어는 정확히 쓸 것
+- 큰따옴표("), 작은따옴표(') 모두 사용 금지
+- 120자 안팎으로 끝낼 것
 
-★ 큰따옴표("), 작은따옴표(') 모두 사용 금지.`;
+응답은 메모 본문만 출력.`;
 
-  return callAI(systemPrompt, prompt);
+  const result = await callAI(systemPrompt, prompt);
+  let cleaned = result.replace(/['"]/g, '').trim();
+  if (cleaned.length > 120) {
+    cleaned = await trimToLimit(systemPrompt, cleaned, 120, false, '다음방문전략');
+  }
+  return cleaned;
 }
 
 export async function generateObjectionResponse(

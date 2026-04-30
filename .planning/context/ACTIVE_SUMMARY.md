@@ -1,7 +1,7 @@
 # ACTIVE SUMMARY
 
-- generated_at: 2026-04-30T04:35:00.000Z
-- latest_commit: 49ad391
+- generated_at: 2026-04-30T05:10:00.000Z
+- latest_commit: 026c9b6
 - snapshot_keep: 12
 
 ## Stable Context
@@ -26,6 +26,7 @@
 - Near-duplicate records are now also blocked when similarity is 80% or higher within the same doctor/date scope.
 - A temporary local api-server on port `3003` was used to verify the fuzzy duplicate rule, then stopped again.
 - Visit-log ordering now prefers `createdAt` so the newest generated or converted memo appears first in the history and recent-log views.
+- Memo generation is being tightened so visible visit logs read like the user's own short work notes rather than long AI-style analyses. The auto-generation path now keeps `formattedLog` and `nextStrategy` separate.
 
 ## Useful Entry Points
 - `package.json`
