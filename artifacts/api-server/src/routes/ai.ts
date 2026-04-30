@@ -84,6 +84,11 @@ function isAllowedOrigin(origin: string): boolean {
     return true;
   }
 
+  // Vercel 배포 도메인
+  if (originHost.endsWith(".vercel.app")) {
+    return true;
+  }
+
   return false;
 }
 
