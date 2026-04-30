@@ -92,7 +92,7 @@ export interface ConversationRecord {
 }
 
 const API_BASE = import.meta.env.VITE_API_SERVER_URL ||
-  (import.meta.env.DEV ? 'http://localhost:3001' : '');
+  (import.meta.env.DEV ? 'http://localhost:3001' : 'https://sales-intelligence-partner-production.up.railway.app');
 
 const cache: {
   doctors: Doctor[];
