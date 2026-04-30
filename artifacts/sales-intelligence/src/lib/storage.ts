@@ -165,6 +165,51 @@ function normalizeDuplicateArray(values: string[]): string {
   return values.map((value) => normalizeDuplicateText(value)).filter(Boolean).sort().join('|');
 }
 
+function normalizeSimilarityText(value: string): string {
+  return normalizeDuplicateText(value).toLowerCase();
+}
+
+function levenshteinSimilarity(left: string, right: string): number {
+  const a = normalizeSimilarityText(left);
+  const b = normalizeSimilarityText(right);
+
+  if (a === b) return 1;
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+
+  for (let j = 0; j <= b.length; j++) {
+    prev[j] = j;
+  }
+
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    const aChar = a.charCodeAt(i - 1);
+    for (let j = 1; j <= b.length; j++) {
+      const cost = aChar === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j++) {
+      prev[j] = curr[j];
+    }
+  }
+
+  const distance = prev[b.length];
+  const maxLen = Math.max(a.length, b.length);
+  return maxLen === 0 ? 1 : Math.max(0, 1 - (distance / maxLen));
+}
+
+function isSimilarText(left: string, right: string, threshold = 0.8): boolean {
+  if (normalizeSimilarityText(left) === normalizeSimilarityText(right)) return true;
+  return levenshteinSimilarity(left, right) >= threshold;
+}
+
 function sameVisitLogSignature(a: VisitLog, b: VisitLog): boolean {
   return (
     a.doctorId === b.doctorId &&
@@ -177,30 +222,34 @@ function sameVisitLogSignature(a: VisitLog, b: VisitLog): boolean {
 }
 
 function hasDuplicateConversationRecord(records: ConversationRecord[]): boolean {
-  const seen = new Set<string>();
-  for (const record of records) {
-    const key = `${normalizeDuplicateText(record.rawText)}::${normalizeDuplicateText(record.period)}`;
-    if (seen.has(key)) return true;
-    seen.add(key);
+  for (let i = 0; i < records.length; i++) {
+    for (let j = i + 1; j < records.length; j++) {
+      if (sameConversationRecordSignature(records[i], records[j])) return true;
+    }
   }
   return false;
 }
 
+function sameConversationRecordSignature(a: ConversationRecord, b: ConversationRecord): boolean {
+  const left = `${a.rawText}\n${a.period}`;
+  const right = `${b.rawText}\n${b.period}`;
+  return isSimilarText(left, right);
+}
+
 function hasDuplicateVisitLog(logs: VisitLog[]): boolean {
-  const seen = new Set<string>();
-  for (const log of logs) {
-    const key = [
-      log.doctorId,
-      log.visitDate,
-      normalizeDuplicateText(log.rawNotes),
-      normalizeDuplicateText(log.formattedLog),
-      normalizeDuplicateText(log.nextStrategy),
-      normalizeDuplicateArray(log.products ?? []),
-    ].join('::');
-    if (seen.has(key)) return true;
-    seen.add(key);
+  for (let i = 0; i < logs.length; i++) {
+    for (let j = i + 1; j < logs.length; j++) {
+      if (sameVisitLogSimilarity(logs[i], logs[j])) return true;
+    }
   }
   return false;
+}
+
+function sameVisitLogSimilarity(a: VisitLog, b: VisitLog): boolean {
+  if (a.doctorId !== b.doctorId || a.visitDate !== b.visitDate) return false;
+  const left = [a.rawNotes, a.formattedLog, a.nextStrategy, ...(a.products ?? [])].join('\n');
+  const right = [b.rawNotes, b.formattedLog, b.nextStrategy, ...(b.products ?? [])].join('\n');
+  return isSimilarText(left, right);
 }
 
 function countVisitsInConversationRecord(record: ConversationRecord): number {
@@ -378,6 +427,9 @@ export const doctorStorage = {
     if (hasDuplicateConversationRecord(nextHistory)) {
       return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
     }
+    if (conversationHistory.some((existing) => sameConversationRecordSignature(existing, record))) {
+      return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
+    }
 
     const migratedLog = conversationRecordToVisitLog(doctor, record);
     if (cache.visitLogs.some((existing) => sameVisitLogSignature(existing, migratedLog))) {
@@ -464,6 +516,10 @@ export const visitLogStorage = {
     const idx = cache.visitLogs.findIndex((v) => v.id === log.id);
     const duplicate = cache.visitLogs.find((existing) => existing.id !== log.id && sameVisitLogSignature(existing, log));
     if (duplicate) {
+      return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
+    }
+    const fuzzyDuplicate = cache.visitLogs.find((existing) => existing.id !== log.id && sameVisitLogSimilarity(existing, log));
+    if (fuzzyDuplicate) {
       return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
     }
     if (idx >= 0) {

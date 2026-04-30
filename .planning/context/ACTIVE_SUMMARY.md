@@ -23,6 +23,8 @@
 - The AI provider has been migrated from Anthropic to OpenAI Chat Completions; the frontend now sends `gpt-5.5`, and live generation was verified successfully in-browser.
 - Exact duplicate visit logs and conversation records are now rejected before persistence. The client surfaces `중복된 내용입니다.` and the API returns `409` for duplicate saves.
 - A temporary local api-server on port `3002` was built and used to verify duplicate rejection, then stopped again.
+- Near-duplicate records are now also blocked when similarity is 80% or higher within the same doctor/date scope.
+- A temporary local api-server on port `3003` was used to verify the fuzzy duplicate rule, then stopped again.
 
 ## Useful Entry Points
 - `package.json`

@@ -126,6 +126,51 @@ function normalizeDuplicateArray(values: any[] | undefined): string {
     .join("|");
 }
 
+function normalizeSimilarityText(value: any): string {
+  return normalizeDuplicateText(value).toLowerCase();
+}
+
+function levenshteinSimilarity(left: any, right: any): number {
+  const a = normalizeSimilarityText(left);
+  const b = normalizeSimilarityText(right);
+
+  if (a === b) return 1;
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+
+  for (let j = 0; j <= b.length; j++) {
+    prev[j] = j;
+  }
+
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    const aChar = a.charCodeAt(i - 1);
+    for (let j = 1; j <= b.length; j++) {
+      const cost = aChar === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j++) {
+      prev[j] = curr[j];
+    }
+  }
+
+  const distance = prev[b.length];
+  const maxLen = Math.max(a.length, b.length);
+  return maxLen === 0 ? 1 : Math.max(0, 1 - (distance / maxLen));
+}
+
+function isSimilarText(left: any, right: any, threshold = 0.8): boolean {
+  if (normalizeSimilarityText(left) === normalizeSimilarityText(right)) return true;
+  return levenshteinSimilarity(left, right) >= threshold;
+}
+
 function sameVisitLogSignature(a: any, b: any): boolean {
   return (
     normalizeDuplicateText(a.doctorId) === normalizeDuplicateText(b.doctorId) &&
@@ -138,16 +183,27 @@ function sameVisitLogSignature(a: any, b: any): boolean {
 }
 
 function hasDuplicateConversationHistory(history: any[]): boolean {
-  const seen = new Set<string>();
-  for (const record of history ?? []) {
-    const key = [
-      normalizeDuplicateText(record.rawText),
-      normalizeDuplicateText(record.period),
-    ].join("::");
-    if (seen.has(key)) return true;
-    seen.add(key);
+  const records = history ?? [];
+  for (let i = 0; i < records.length; i++) {
+    for (let j = i + 1; j < records.length; j++) {
+      if (isSimilarText(
+        `${records[i].rawText}\n${records[i].period}`,
+        `${records[j].rawText}\n${records[j].period}`,
+      )) {
+        return true;
+      }
+    }
   }
   return false;
+}
+
+function sameVisitLogSimilarity(a: any, b: any): boolean {
+  if (normalizeDuplicateText(a.doctorId) !== normalizeDuplicateText(b.doctorId)) return false;
+  if (normalizeDuplicateText(a.visitDate) !== normalizeDuplicateText(b.visitDate)) return false;
+  return isSimilarText(
+    [a.rawNotes, a.formattedLog, a.nextStrategy, ...(a.products ?? [])].join("\n"),
+    [b.rawNotes, b.formattedLog, b.nextStrategy, ...(b.products ?? [])].join("\n"),
+  );
 }
 
 router.get("/doctors", wrap(async (_req, res) => {
@@ -194,6 +250,11 @@ router.post("/visit-logs", wrap(async (req, res) => {
     .where(eq(visitLogs.doctorId, data.doctorId));
   const duplicate = existing.find((row) => row.id !== data.id && sameVisitLogSignature(row, data));
   if (duplicate) {
+    res.status(409).json({ error: "duplicate", message: "중복된 내용입니다." });
+    return;
+  }
+  const fuzzyDuplicate = existing.find((row) => row.id !== data.id && sameVisitLogSimilarity(row, data));
+  if (fuzzyDuplicate) {
     res.status(409).json({ error: "duplicate", message: "중복된 내용입니다." });
     return;
   }

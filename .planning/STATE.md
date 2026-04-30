@@ -13,6 +13,8 @@
 - AI provider migration to OpenAI is complete: the server now proxies `/api/ai/chat` to OpenAI Chat Completions, the frontend sends `gpt-5.5`, and a live generation test passed end-to-end.
 - Duplicate prevention has been added for visit logs and conversation records. Exact duplicates now return `중복된 내용입니다.` and are not persisted, and the API route also returns `409` for duplicate saves.
 - Verified the duplicate guard against a temporary local api-server on port `3002` before stopping it again.
+- Duplicate prevention now also blocks near-duplicates: records with 80%+ similarity are treated as duplicates within the same doctor and visit-date scope.
+- Verified the 80% similarity rule against a temporary local api-server on port `3003` before stopping it again.
 
 ## Immediate Next Step
 - Report the duplicate-prevention work with verification evidence and note the saved planning checkpoints.
