@@ -17,9 +17,10 @@
 - Verified the 80% similarity rule against a temporary local api-server on port `3003` before stopping it again.
 - Visit-log lists now sort by `createdAt` first so the most recently created memo conversion or auto-generated log appears at the top of the history and recent-log views.
 - Visit-log generation is being tightened again so the visible memo reads like the user's own short work note, not an analysis report. Auto-generation now separates `formattedLog` and `nextStrategy` instead of merging them.
+- The memo-style tightening has been committed and pushed.
 
 ## Immediate Next Step
-- Verify the refreshed visit-log generation wording in the browser, then commit and push the memo-style fix.
+- Report the memo-style tightening with verification evidence and preserve the updated planning checkpoint.
 
 ## Known Structure
 - `artifacts/api-server`
