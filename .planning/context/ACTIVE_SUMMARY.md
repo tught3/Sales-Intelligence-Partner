@@ -28,6 +28,7 @@
 - Visit-log ordering now prefers `createdAt` so the newest generated or converted memo appears first in the history and recent-log views.
 - Memo generation is being tightened so visible visit logs read like the user's own short work notes rather than long AI-style analyses. The auto-generation path now keeps `formattedLog` and `nextStrategy` separate.
 - The memo-style tightening has been committed and pushed on `main`.
+- Nearby UI copy on the visit-log and doctor-detail screens has also been simplified to sound more like a work memo than an analysis dashboard.
 
 ## Useful Entry Points
 - `package.json`

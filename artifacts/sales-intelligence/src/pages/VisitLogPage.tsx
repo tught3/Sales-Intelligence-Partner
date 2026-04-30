@@ -415,7 +415,7 @@ export default function VisitLogPage() {
                   )}
                   {activeTab === 'auto' && (
                     <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded p-2.5 text-blue-700">
-                      💡 자동 생성 모드는 교수 개별 선택 없이 진행됩니다. 위에서 선택한 병원
+                      💡 일괄 메모 생성은 교수 개별 선택 없이 진행됩니다. 위에서 선택한 병원
                       {selectedDept ? ` ${selectedDept}` : ''}의 교수 {filteredDoctors.length}명 중
                       <strong> 무작위로 N명</strong>을 뽑아 각각 일지를 생성합니다.
                     </div>
@@ -433,7 +433,7 @@ export default function VisitLogPage() {
                       </div>
                       {!pastLogs.length && selectedDoctorConversationCount > 0 && (
                         <p className="text-[11px] text-amber-600">
-                          상담/분석 기록 {selectedDoctorConversationCount}회 분량이 있어 첫 방문으로 처리하지 않습니다
+                          최근 메모 {selectedDoctorConversationCount}회 분량이 있어 첫 방문으로 처리하지 않습니다
                         </p>
                       )}
                       {selectedDoctor.traits.length > 0 && (
@@ -521,7 +521,7 @@ export default function VisitLogPage() {
                       className="w-full gap-2"
                     >
                       {isGenerating ? (
-                        <><Loader2 className="w-4 h-4 animate-spin" />AI가 일지를 생성하는 중...</>
+                        <><Loader2 className="w-4 h-4 animate-spin" />일지를 다듬는 중...</>
                       ) : (
                         <><Sparkles className="w-4 h-4" />AI 일지 생성</>
                       )}
@@ -534,7 +534,7 @@ export default function VisitLogPage() {
                     <div className="flex items-start gap-2">
                       <Wand2 className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                       <div>
-                        <p className="font-medium text-primary">자동 생성 모드 (일괄)</p>
+                        <p className="font-medium text-primary">일괄 메모 생성</p>
                         <p className="text-xs text-muted-foreground mt-1">
                           병원만 선택하고 개수를 정하면, 해당 병원
                           {selectedDept ? ` ${selectedDept}` : ''}의 교수 중 무작위로 뽑아
@@ -583,7 +583,7 @@ export default function VisitLogPage() {
                       className="w-full gap-2"
                     >
                       {isAutoGenerating ? (
-                        <><Loader2 className="w-4 h-4 animate-spin" />AI가 일괄 생성 중...</>
+                        <><Loader2 className="w-4 h-4 animate-spin" />일괄 메모를 다듬는 중...</>
                       ) : (
                         <><Wand2 className="w-4 h-4" />{Math.min(bulkCount, filteredDoctors.length || bulkCount)}건 자동 생성</>
                       )}
@@ -627,7 +627,7 @@ export default function VisitLogPage() {
                     <p className="font-medium mb-1">과거 기록 가져오기</p>
                     <p className="text-xs text-muted-foreground">
                       <strong>JSON 형식:</strong> 방문 기록 배열을 바로 데이터베이스에 추가합니다.<br/>
-                      <strong>텍스트/CSV:</strong> AI가 내용을 분석하고 인사이트를 제공합니다.
+                      <strong>텍스트/CSV:</strong> AI가 내용을 정리하고 요약을 제공합니다.
                     </p>
                   </div>
                 </div>
@@ -644,7 +644,7 @@ export default function VisitLogPage() {
                 {isAnalyzingImport && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    AI가 가져온 기록을 분석하는 중...
+                    가져온 기록을 정리하는 중...
                   </div>
                 )}
 
@@ -652,7 +652,7 @@ export default function VisitLogPage() {
                   <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg">
                     <p className="text-xs font-semibold text-primary mb-2 flex items-center gap-1">
                       <Sparkles className="w-3.5 h-3.5" />
-                      AI 분석 결과
+                      메모 요약 결과
                     </p>
                     <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed">{importAnalysis}</pre>
                   </div>

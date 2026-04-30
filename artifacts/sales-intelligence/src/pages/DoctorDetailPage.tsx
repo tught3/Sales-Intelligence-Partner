@@ -272,7 +272,7 @@ export default function DoctorDetailPage() {
                   <FileText className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">
                     {conversationCount > 0
-                      ? `실제 방문 일지는 아직 없지만 상담/분석 기록 ${conversationCount}건이 있습니다`
+                    ? `실제 방문 일지는 아직 없지만 최근 메모 ${conversationCount}건이 있습니다`
                       : '방문 기록이 없습니다'}
                   </p>
                 </div>
@@ -401,7 +401,7 @@ export default function DoctorDetailPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-primary" />
-              과거 대화 기록 & 성향 분석
+              과거 메모 & 성향 메모
               <span className="text-xs font-normal text-muted-foreground ml-1">
                 ({(doctor.conversationHistory ?? []).length}개 저장됨)
               </span>
@@ -410,7 +410,7 @@ export default function DoctorDetailPage() {
           <CardContent className="space-y-4">
             <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-xs text-muted-foreground">
               <p className="font-medium text-primary mb-1">📋 사용법</p>
-              <p>2월부터 일했던 내용, 방문 메모, 대화 내용 등을 그대로 붙여넣으세요. AI가 이 교수의 성향을 분석하고 다음 방문 전략을 제안합니다. 저장하면 영업 일지 생성 시 자동으로 참고합니다.</p>
+              <p>2월부터 일했던 내용, 방문 메모, 대화 내용 등을 그대로 붙여넣으세요. AI가 이 교수의 메모를 바탕으로 다음 방문 포인트를 제안합니다. 저장하면 영업 일지 생성 시 자동으로 참고합니다.</p>
             </div>
             <div className="space-y-2">
               <div className="flex gap-2">
@@ -439,8 +439,8 @@ export default function DoctorDetailPage() {
                   className="gap-2 flex-1"
                 >
                   {analyzingConv
-                    ? <><Loader2 className="w-4 h-4 animate-spin" />AI가 성향 분석 중...</>
-                    : <><Sparkles className="w-4 h-4" />AI 성향 분석</>}
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />기록 참고 중...</>
+                    : <><Sparkles className="w-4 h-4" />기록 참고</>}
                 </Button>
               </div>
             </div>
@@ -450,13 +450,13 @@ export default function DoctorDetailPage() {
                 <div className="bg-primary/5 p-3 border-b border-primary/20">
                   <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
-                    AI 분석 결과
+                    메모 요약 결과
                   </p>
                 </div>
                 <div className="p-3 space-y-3">
                   {convAnalysisResult.detectedTraits.length > 0 && (
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground mb-1.5">파악된 성향 태그</p>
+                      <p className="text-xs font-semibold text-muted-foreground mb-1.5">파악된 메모 태그</p>
                       <div className="flex flex-wrap gap-1.5">
                         {convAnalysisResult.detectedTraits.map((t) => (
                           <span key={t} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">{t}</span>
@@ -465,16 +465,16 @@ export default function DoctorDetailPage() {
                     </div>
                   )}
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1">성향 분석</p>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">메모 요약</p>
                     <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed bg-muted/30 rounded p-2">{convAnalysisResult.analysis}</pre>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-primary mb-1">다음 방문 전략 제안</p>
+                    <p className="text-xs font-semibold text-primary mb-1">다음 방문 포인트</p>
                     <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed bg-primary/5 rounded p-2">{convAnalysisResult.nextSuggestions}</pre>
                   </div>
                   <Button onClick={handleSaveConvAnalysis} size="sm" className="w-full gap-1.5">
                     <Plus className="w-3.5 h-3.5" />
-                    이 분석 저장 (AI가 다음부터 자동 참고)
+                    이 메모 저장 (AI가 다음부터 자동 참고)
                   </Button>
                 </div>
               </div>
@@ -482,7 +482,7 @@ export default function DoctorDetailPage() {
 
             {(doctor.conversationHistory ?? []).length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground">저장된 과거 대화 분석</p>
+                <p className="text-xs font-semibold text-muted-foreground">저장된 과거 메모</p>
                 {(doctor.conversationHistory ?? []).map((record) => (
                   <div key={record.id} className="border rounded-lg overflow-hidden group">
                     <div
@@ -525,7 +525,7 @@ export default function DoctorDetailPage() {
                     {expandedConvId === record.id && (
                       <div className="border-t p-3 space-y-2 bg-muted/20 text-xs">
                         <div>
-                          <p className="font-semibold text-muted-foreground mb-1">성향 분석</p>
+                    <p className="font-semibold text-muted-foreground mb-1">메모 요약</p>
                           <pre className="text-foreground whitespace-pre-wrap font-sans leading-relaxed">{record.aiAnalysis}</pre>
                         </div>
                         {record.nextSuggestions && (
