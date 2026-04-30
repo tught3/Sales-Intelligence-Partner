@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { doctorStorage, Doctor, ConversationRecord } from "@/lib/storage";
+import { doctorStorage, visitLogStorage, Doctor, ConversationRecord, VisitLog } from "@/lib/storage";
 import { Upload, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { analyzePastConversations } from "@/lib/ai";
 
@@ -211,9 +211,23 @@ export default function BulkImportPage() {
             updatedAt: new Date().toISOString(),
           };
           doctorStorage.save(doctor);
-        } else if (p.hospital && !doctor.hospital) {
-          // 기존 교수인데 병원명이 없었으면 업데이트
-          doctorStorage.save({ ...doctor, hospital: p.hospital, updatedAt: new Date().toISOString() });
+        } else {
+          // 기존 교수: 빈 필드만 새 값으로 보강
+          const updated: Doctor = {
+            ...doctor,
+            hospital: doctor.hospital || p.hospital || "",
+            department: doctor.department || p.department || "",
+            position: doctor.position || "교수",
+            updatedAt: new Date().toISOString(),
+          };
+          if (
+            updated.hospital !== doctor.hospital ||
+            updated.department !== doctor.department ||
+            updated.position !== doctor.position
+          ) {
+            doctorStorage.save(updated);
+            doctor = updated;
+          }
         }
 
         const allVisitsText = p.visits.map((v, i) => `[방문 ${i + 1}]\n${v.content}`).join("\n\n");
@@ -243,6 +257,26 @@ export default function BulkImportPage() {
           nextSuggestions: analysis.nextSuggestions,
           createdAt: new Date().toISOString(),
         };
+
+        // 각 방문을 VisitLog로 저장 (방문 횟수 집계용)
+        const baseTime = Date.now();
+        const visitCount = p.visits.length;
+        p.visits.forEach((v, vIdx) => {
+          const daysAgo = visitCount - 1 - vIdx;
+          const visitDateObj = new Date(baseTime - daysAgo * 24 * 60 * 60 * 1000);
+          const visitDate = visitDateObj.toISOString().split("T")[0];
+          const log: VisitLog = {
+            id: `visit-bulk-${baseTime}-${idx}-${vIdx}`,
+            doctorId: doctor!.id,
+            visitDate,
+            rawNotes: v.content,
+            formattedLog: v.content,
+            nextStrategy: "",
+            products: [],
+            createdAt: new Date().toISOString(),
+          };
+          visitLogStorage.save(log);
+        });
 
         doctorStorage.addConversationRecord(doctor.id, record);
 
