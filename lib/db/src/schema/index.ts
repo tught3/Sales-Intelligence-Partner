@@ -23,6 +23,7 @@ export const visitLogs = pgTable("visit_logs", {
   rawNotes: text("raw_notes").notNull().default(""),
   formattedLog: text("formatted_log").notNull().default(""),
   nextStrategy: text("next_strategy").notNull().default(""),
+  aiEditHint: text("ai_edit_hint").notNull().default(""),
   products: jsonb("products").notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

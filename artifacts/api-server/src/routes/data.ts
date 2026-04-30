@@ -27,6 +27,11 @@ function stripId<T extends Record<string, any>>(obj: T): Omit<T, 'id'> {
   return rest as any;
 }
 
+function getRouteId(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return typeof value === "string" ? value : "";
+}
+
 function prepDoctor(d: any) {
   return {
     id: d.id,
@@ -53,6 +58,7 @@ function prepVisitLog(v: any) {
     rawNotes: v.rawNotes ?? v.raw_notes ?? "",
     formattedLog: v.formattedLog ?? v.formatted_log ?? "",
     nextStrategy: v.nextStrategy ?? v.next_strategy ?? "",
+    aiEditHint: v.aiEditHint ?? v.ai_edit_hint ?? "",
     products: v.products || [],
     createdAt: toDate(v.createdAt ?? v.created_at),
   };
@@ -114,7 +120,8 @@ router.get("/doctors", wrap(async (_req, res) => {
 }));
 
 router.get("/doctors/:id", wrap(async (req, res) => {
-  const [doc] = await db.select().from(doctors).where(eq(doctors.id, req.params.id));
+  const id = getRouteId(req.params.id);
+  const [doc] = await db.select().from(doctors).where(eq(doctors.id, id));
   if (!doc) { res.status(404).json({ error: "not found" }); return; }
   res.json(doc);
 }));
@@ -129,7 +136,8 @@ router.post("/doctors", wrap(async (req, res) => {
 }));
 
 router.delete("/doctors/:id", wrap(async (req, res) => {
-  await db.delete(doctors).where(eq(doctors.id, req.params.id));
+  const id = getRouteId(req.params.id);
+  await db.delete(doctors).where(eq(doctors.id, id));
   res.json({ ok: true });
 }));
 
@@ -148,7 +156,8 @@ router.post("/visit-logs", wrap(async (req, res) => {
 }));
 
 router.delete("/visit-logs/:id", wrap(async (req, res) => {
-  await db.delete(visitLogs).where(eq(visitLogs.id, req.params.id));
+  const id = getRouteId(req.params.id);
+  await db.delete(visitLogs).where(eq(visitLogs.id, id));
   res.json({ ok: true });
 }));
 
@@ -167,7 +176,8 @@ router.post("/snippets", wrap(async (req, res) => {
 }));
 
 router.delete("/snippets/:id", wrap(async (req, res) => {
-  await db.delete(goldenSnippets).where(eq(goldenSnippets.id, req.params.id));
+  const id = getRouteId(req.params.id);
+  await db.delete(goldenSnippets).where(eq(goldenSnippets.id, id));
   res.json({ ok: true });
 }));
 
@@ -186,7 +196,8 @@ router.post("/hospitals", wrap(async (req, res) => {
 }));
 
 router.delete("/hospitals/:id", wrap(async (req, res) => {
-  await db.delete(hospitalProfiles).where(eq(hospitalProfiles.id, req.params.id));
+  const id = getRouteId(req.params.id);
+  await db.delete(hospitalProfiles).where(eq(hospitalProfiles.id, id));
   res.json({ ok: true });
 }));
 
@@ -205,7 +216,8 @@ router.post("/departments", wrap(async (req, res) => {
 }));
 
 router.delete("/departments/:id", wrap(async (req, res) => {
-  await db.delete(departmentProfiles).where(eq(departmentProfiles.id, req.params.id));
+  const id = getRouteId(req.params.id);
+  await db.delete(departmentProfiles).where(eq(departmentProfiles.id, id));
   res.json({ ok: true });
 }));
 
@@ -224,7 +236,8 @@ router.post("/manuals", wrap(async (req, res) => {
 }));
 
 router.delete("/manuals/:id", wrap(async (req, res) => {
-  await db.delete(companyManuals).where(eq(companyManuals.id, req.params.id));
+  const id = getRouteId(req.params.id);
+  await db.delete(companyManuals).where(eq(companyManuals.id, id));
   res.json({ ok: true });
 }));
 

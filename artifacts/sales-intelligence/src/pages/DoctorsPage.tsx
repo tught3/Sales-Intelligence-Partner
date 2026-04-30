@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
-import { doctorStorage, visitLogStorage, generateId, type Doctor, type DoctorTrait } from "@/lib/storage";
+import { doctorStorage, generateId, getDoctorVisitCount, type Doctor, type DoctorTrait } from "@/lib/storage";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +33,6 @@ export default function DoctorsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>(() => doctorStorage.getAll());
-  const logs = useMemo(() => visitLogStorage.getAll(), []);
 
   const filtered = useMemo(
     () =>
@@ -123,7 +122,7 @@ export default function DoctorsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((doctor) => {
-            const visitCount = logs.filter((l) => l.doctorId === doctor.id).length;
+            const visitCount = getDoctorVisitCount(doctor);
             return (
               <Card key={doctor.id} className="hover:shadow-md transition-shadow group">
                 <CardContent className="p-5">

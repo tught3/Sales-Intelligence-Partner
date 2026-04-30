@@ -140,6 +140,33 @@ function normalizeDoctor(d: any): Doctor {
   };
 }
 
+function toVisitDate(v: any): string {
+  try {
+    return toISOStr(v).split('T')[0];
+  } catch {
+    return new Date().toISOString().split('T')[0];
+  }
+}
+
+function countVisitsInConversationRecord(record: ConversationRecord): number {
+  const periodMatch = record.period.match(/(\d+)\s*회\s*방문/);
+  if (periodMatch) {
+    const parsed = Number(periodMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const rawText = record.rawText || '';
+  const visitMarkers = rawText.match(/^\s*\[방문\s*\d+\]/gm);
+  if (visitMarkers && visitMarkers.length > 0) return visitMarkers.length;
+
+  return 1;
+}
+
+export function getConversationHistoryVisitCount(doctor: Doctor | undefined): number {
+  if (!doctor) return 0;
+  return (doctor.conversationHistory ?? []).reduce((total, record) => total + countVisitsInConversationRecord(record), 0);
+}
+
 function normalizeVisitLog(v: any): VisitLog {
   return {
     ...v,
@@ -148,8 +175,22 @@ function normalizeVisitLog(v: any): VisitLog {
     rawNotes: v.rawNotes ?? v.raw_notes ?? '',
     formattedLog: v.formattedLog ?? v.formatted_log ?? '',
     nextStrategy: v.nextStrategy ?? v.next_strategy ?? '',
+    aiEditHint: v.aiEditHint ?? v.ai_edit_hint ?? '',
     products: v.products ?? [],
     createdAt: toISOStr(v.createdAt ?? v.created_at),
+  };
+}
+
+function conversationRecordToVisitLog(doctor: Doctor, record: ConversationRecord): VisitLog {
+  return {
+    id: `migrated-${record.id}`,
+    doctorId: doctor.id,
+    visitDate: toVisitDate(record.createdAt),
+    rawNotes: record.rawText || '',
+    formattedLog: record.aiAnalysis || record.rawText || '',
+    nextStrategy: record.nextSuggestions || '',
+    products: [],
+    createdAt: toISOStr(record.createdAt),
   };
 }
 
@@ -190,6 +231,50 @@ function normalizeManual(m: any): CompanyManual {
   };
 }
 
+async function migrateConversationHistoryToVisitLogs(): Promise<void> {
+  const migrated: VisitLog[] = [];
+
+  for (const doctor of cache.doctors) {
+    const conversationLogs = (doctor.conversationHistory ?? [])
+      .map((record) => conversationRecordToVisitLog(doctor, record))
+      .filter((log) => log.formattedLog.trim().length > 0);
+
+    for (const log of conversationLogs) {
+      if (cache.visitLogs.some((existing) => existing.id === log.id)) continue;
+      migrated.push(log);
+    }
+  }
+
+  if (migrated.length === 0) return;
+
+  const results = await Promise.allSettled(
+    migrated.map((log) =>
+      api('/visit-logs', 'POST', {
+        id: log.id,
+        doctorId: log.doctorId,
+        visitDate: log.visitDate,
+        rawNotes: log.rawNotes,
+        formattedLog: log.formattedLog,
+        nextStrategy: log.nextStrategy,
+        products: log.products,
+      }).then(() => log)
+    )
+  );
+
+  const persistedLogs = results
+    .filter((result): result is PromiseFulfilledResult<VisitLog> => result.status === 'fulfilled')
+    .map((result) => result.value);
+
+  if (persistedLogs.length > 0) {
+    cache.visitLogs.push(...persistedLogs);
+  }
+
+  const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (rejected.length > 0) {
+    console.error('Some conversation-history visit log migrations failed:', rejected.map((r) => r.reason));
+  }
+}
+
 export async function initStorage(): Promise<void> {
   if (cache.loaded) return;
   try {
@@ -207,6 +292,7 @@ export async function initStorage(): Promise<void> {
     cache.hospitals = (hosps || []).map(normalizeHospital);
     cache.departments = (depts || []).map(normalizeDepartment);
     cache.manuals = (mans || []).map(normalizeManual);
+    await migrateConversationHistoryToVisitLogs();
     cache.loaded = true;
   } catch (e) {
     console.error('Failed to load data from server, falling back to empty state:', e);
@@ -231,6 +317,7 @@ export const doctorStorage = {
     if (idx < 0) return;
     cache.doctors[idx].conversationHistory = [record, ...(cache.doctors[idx].conversationHistory ?? [])];
     cache.doctors[idx].updatedAt = new Date().toISOString();
+    visitLogStorage.save(conversationRecordToVisitLog(cache.doctors[idx], record));
     api('/doctors', 'POST', doctorToApi(cache.doctors[idx])).catch(console.error);
   },
   deleteConversationRecord(doctorId: string, recordId: string): void {
@@ -238,6 +325,7 @@ export const doctorStorage = {
     if (idx < 0) return;
     cache.doctors[idx].conversationHistory = (cache.doctors[idx].conversationHistory ?? []).filter((r) => r.id !== recordId);
     cache.doctors[idx].updatedAt = new Date().toISOString();
+    visitLogStorage.delete(`migrated-${recordId}`);
     api('/doctors', 'POST', doctorToApi(cache.doctors[idx])).catch(console.error);
   },
   getByHospital(hospital: string): Doctor[] {
@@ -312,6 +400,7 @@ export const visitLogStorage = {
       rawNotes: log.rawNotes,
       formattedLog: log.formattedLog,
       nextStrategy: log.nextStrategy,
+      aiEditHint: log.aiEditHint ?? '',
       products: log.products,
     }).catch(console.error);
   },
@@ -320,6 +409,21 @@ export const visitLogStorage = {
     api(`/visit-logs/${id}`, 'DELETE').catch(console.error);
   },
 };
+
+export function getDoctorVisitCount(doctor: Doctor | undefined): number {
+  if (!doctor) return 0;
+
+  const doctorLogs = visitLogStorage.getByDoctorId(doctor.id);
+  const migratedCount = doctorLogs.filter((log) => log.id.startsWith('migrated-')).length;
+  const realVisitCount = doctorLogs.length - migratedCount;
+  const conversationVisitCount = getConversationHistoryVisitCount(doctor);
+
+  if (doctorLogs.length > 0) {
+    return realVisitCount + conversationVisitCount;
+  }
+
+  return conversationVisitCount;
+}
 
 export const snippetStorage = {
   getAll(): GoldenSnippet[] {
@@ -570,7 +674,7 @@ const DEFAULT_PRODUCT_MANUALS: CompanyManual[] = [
 - 체중, Hb 기준으로 누적 필요량 계산
 
 【제품 핵심 강조점 (영업)】
-1. 1회 1,000mg 고용량 1회 투여 가능 → 내원 횟수 감소
+1. 1,000mg 1회 투여 가능 → 내원 횟수 감소
 2. 15분 이내 빠른 투여 → 외래 효율성
 3. 2024년 5월 급여 적용 → 환자 부담 대폭 감소
 4. 빠른 Hb 회복 (1~2주 내 유의미한 상승)

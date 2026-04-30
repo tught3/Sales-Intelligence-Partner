@@ -1,8 +1,10 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import {
   doctorStorage,
   visitLogStorage,
+  getDoctorVisitCount,
+  getConversationHistoryVisitCount,
   generateId,
   type Doctor,
   type VisitLog,
@@ -83,6 +85,7 @@ export default function VisitLogPage() {
     () => doctors.find((d) => d.id === selectedDoctorId),
     [doctors, selectedDoctorId]
   );
+  const selectedDoctorConversationCount = getConversationHistoryVisitCount(selectedDoctor);
 
   const pastLogs = useMemo(
     () => (selectedDoctorId ? visitLogStorage.getByDoctorId(selectedDoctorId) : []),
@@ -170,8 +173,9 @@ export default function VisitLogPage() {
 
     // 교수별 총 방문 기록 수 (적을수록 우선)
     const logCountMap = new Map(filteredDoctors.map(d => [
-      d.id, visitLogStorage.getByDoctorId(d.id).length
+      d.id, getDoctorVisitCount(d)
     ]));
+    const randomTieBreaker = new Map(filteredDoctors.map(d => [d.id, Math.random()]));
 
     // 우선순위 그룹 분류
     // A: 오늘 미방문 + 오늘 방문한 과와 다른 과 (최우선)
@@ -184,7 +188,10 @@ export default function VisitLogPage() {
     // 그룹 내: 기록 수 오름차순 + 약간의 랜덤
     function sortGroup(g: Doctor[]) {
       return [...g].sort(
-        (a, b) => (logCountMap.get(a.id) ?? 0) - (logCountMap.get(b.id) ?? 0) + (Math.random() - 0.5) * 2
+        (a, b) =>
+          (logCountMap.get(a.id) ?? 0) - (logCountMap.get(b.id) ?? 0) ||
+          (randomTieBreaker.get(a.id) ?? 0) - (randomTieBreaker.get(b.id) ?? 0) ||
+          a.name.localeCompare(b.name, 'ko')
       );
     }
 
@@ -400,14 +407,19 @@ export default function VisitLogPage() {
                   {activeTab === 'manual' && selectedDoctor && (
                     <div className="text-xs bg-muted/50 rounded p-3 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-foreground">{selectedDoctor.name} 교수님</span>
+                        <span className="font-medium text-foreground">{selectedDoctor.name} 교수</span>
                         <span className="text-muted-foreground">|</span>
                         <span className="text-muted-foreground">{selectedDoctor.hospital}, {selectedDoctor.department}</span>
                         <span className="sm:ml-auto text-muted-foreground">
-                          방문 {pastLogs.length}회
+                          방문 {selectedDoctor ? getDoctorVisitCount(selectedDoctor) : pastLogs.length}회
                           {pastLogs[0] && ` | 최근: ${pastLogs[0].visitDate}`}
                         </span>
                       </div>
+                      {!pastLogs.length && selectedDoctorConversationCount > 0 && (
+                        <p className="text-[11px] text-amber-600">
+                          상담/분석 기록 {selectedDoctorConversationCount}회 분량이 있어 첫 방문으로 처리하지 않습니다
+                        </p>
+                      )}
                       {selectedDoctor.traits.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {selectedDoctor.traits.map((t) => (
@@ -641,9 +653,9 @@ export default function VisitLogPage() {
                 <CardTitle className="text-base flex items-center gap-2 text-green-700">
                   <CheckCircle2 className="w-4 h-4" />
                   자동 저장 완료
-                  {pastLogs.length > 0 && (
+                  {((selectedDoctor ? getDoctorVisitCount(selectedDoctor) : pastLogs.length) > 0) && (
                     <span className="text-xs font-normal text-muted-foreground ml-auto">
-                      과거 {pastLogs.length}회 방문 맥락 반영
+                      과거 {selectedDoctor ? getDoctorVisitCount(selectedDoctor) : pastLogs.length}회 방문 맥락 반영
                     </span>
                   )}
                 </CardTitle>

@@ -70,7 +70,7 @@ cp .env.example .env  # 필요시
 
 `.env` 파일에서:
 - `DATABASE_URL` = PostgreSQL 연결 문자열
-- `AI_INTEGRATIONS_ANTHROPIC_API_KEY` = Claude API 키
+- `AI_INTEGRATIONS_OPENAI_API_KEY` = OpenAI API 키
 - `SESSION_SECRET` = 임의 문자열 (openssl rand -hex 32)
 - `PORT` = 5000 (프론트엔드 Vite)
 - `API_SERVER_PORT` = 3001 (백엔드)
@@ -263,18 +263,18 @@ Railway가 자동으로 감지하지만, 명시적으로 설정하려면:
 ```bash
 railway service select api-server
 railway env set DATABASE_URL $(railway var -s postgres DATABASE_URL)
-railway env set AI_INTEGRATIONS_ANTHROPIC_API_KEY "sk-ant-..."
+railway env set AI_INTEGRATIONS_OPENAI_API_KEY "sk-proj-..."
 railway env set PORT 3001
 railway env set NODE_ENV production
 railway env set SESSION_SECRET $(openssl rand -hex 32)
-railway env set AI_INTEGRATIONS_ANTHROPIC_BASE_URL "https://api.anthropic.com"
+railway env set AI_INTEGRATIONS_OPENAI_BASE_URL "https://api.openai.com/v1"
 ```
 
 또는 Railway 대시보드 → `api-server` 서비스 → `Variables`:
 | Key | Value |
 |-----|-------|
 | `DATABASE_URL` | postgres://... (PostgreSQL 서비스에서 복사) |
-| `AI_INTEGRATIONS_ANTHROPIC_API_KEY` | sk-ant-... |
+| `AI_INTEGRATIONS_OPENAI_API_KEY` | sk-proj-... |
 | `PORT` | 3001 |
 | `NODE_ENV` | production |
 | `SESSION_SECRET` | (임의 32자) |

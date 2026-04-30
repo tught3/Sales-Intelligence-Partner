@@ -1,12 +1,14 @@
-import type { Doctor, VisitLog, HospitalProfile, DepartmentProfile } from './storage';
-import { manualStorage, hospitalStorage, departmentStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE } from './storage';
+﻿import type { Doctor, VisitLog, HospitalProfile, DepartmentProfile } from './storage';
+import { manualStorage, hospitalStorage, departmentStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
+
+const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const res = await fetch(`${API_BASE}/api/ai/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: OPENAI_DEFAULT_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -27,7 +29,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: OPENAI_DEFAULT_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -146,7 +148,7 @@ function buildSystemPrompt(): string {
 JW중외제약의 주요 제품:
 - 위너프(Winuf/위너프페리주): 3세대 3챔버 종합영양수액(TPN) - 정맥 영양제, 포도당+아미노산+지질, 수술 전후 금식, 소화기 불가 환자, 오메가-3 포함, 2024년 매출 789억원
 - 위너프에이플러스(Winuf A+): 4세대 TPN - 아미노산 함량 기존 대비 25% 증가, 포도당 감소, 중증/고단백 환자 최적화, 국내 3상 임상 완료(2024년 1월 출시), ASPEN/ESPEN 가이드라인 준수
-- 페린젝트(Ferinject): 정맥주사용 철 결핍 치료제(FCM) - 1회 1,000mg 1회 투여, 15분 이내 투여 가능, 2024년 5월 건강보험 급여 적용
+- 페린젝트(Ferinject): 정맥주사용 철 결핍 치료제(FCM) - 1,000mg 1회 투여, 15분 이내 투여 가능, 2024년 5월 건강보험 급여 적용
 - 플라주OP(Plaju OP): 균형 전해질 수액(Balanced Crystalloid) - Mg 함유, 비락테이트, 아세트산/글루콘산 완충, 0.9% NS 대비 고염소 부담 적음, 패혈증/외상/수술 1차 수액
 - 이부프로펜프리믹스(프리브로펜주): 즉시 사용 가능한 IV NSAID 프리믹스 백 - 조제 불필요, 이지컷 포장, opioid-sparing, ERAS 프로토콜 적용, 케토롤락 대비 신독성 낮음
 - 포스페넴(Fosfomycin Inj.): 에폭사이드 계열 항생제 - 베타락탐과 교차내성 거의 없음, ESBL/MDR 그람음성균 커버, 항바이오필름 효과, 카바페넴 절약 전략(ASP)의 핵심
@@ -230,16 +232,27 @@ function buildContextSection(
   if (pastLogs.length > 0) {
     context += `\n\n최근 방문 기록 (${pastLogs.length}회 중 최근 5회):\n${pastContext}`;
   } else {
-    context += '\n\n방문 기록: 없음 (첫 방문 또는 기록 없음)';
+    const convVisitCount = getConversationHistoryVisitCount(doctor);
+    if (convVisitCount > 0) {
+      context += `\n\n방문 기록: 없음. 대신 과거 상담/분석 기록 ${convVisitCount}회 분량이 있습니다. 첫 방문으로 쓰지 마세요.`;
+    } else {
+      context += '\n\n방문 기록: 없음 (첫 방문 또는 기록 없음)';
+    }
   }
 
   const convHistory = doctor.conversationHistory ?? [];
   if (convHistory.length > 0) {
-    const latestConv = convHistory[0];
-    context += `\n\n과거 대화 패턴 분석 (${latestConv.period}):
-성향 태그: ${latestConv.detectedTraits.join(', ') || '없음'}
-성향 요약: ${latestConv.aiAnalysis.slice(0, 400)}
-이전 전략 제안: ${latestConv.nextSuggestions.slice(0, 300)}`;
+    const convSummary = convHistory
+      .slice(0, 3)
+      .map((record, index) => {
+        const traitText = record.detectedTraits.join(', ') || '없음';
+        const analysisText = record.aiAnalysis.slice(0, 220);
+        const strategyText = record.nextSuggestions.slice(0, 180);
+        return `  [${index + 1}] ${record.period}\n  성향 태그: ${traitText}\n  요약: ${analysisText}\n  다음전략: ${strategyText}`;
+      })
+      .join('\n\n');
+
+    context += `\n\n과거 상담/분석 기록 (${getConversationHistoryVisitCount(doctor)}회 분량, 최근 3개):\n${convSummary}`;
   }
 
   // 사용자가 수정한 편집 패턴 수집 (최근 3개)
@@ -297,23 +310,39 @@ ${text}`;
     return trimToLimit(systemPrompt, trimmed, limit, true);
   }
 
-  // 재시도 후에도 초과 시 마지막 완성 문장에서 자르기 (문자 중간 아님)
-  const sentences = trimmed.split(/(?<=[다요음])(?=\s|$)/);
-  let result2 = '';
-  for (const s of sentences) {
-    if ((result2 + s).length <= limit) {
-      result2 += s;
-    } else {
-      break;
+  return compressTextToLimit(trimmed, limit);
+}
+
+function compressTextToLimit(text: string, limit: number): string {
+  const source = text.trim().replace(/\s+/g, ' ');
+  if (source.length <= limit) return source;
+
+  const appendSegments = (granularity: 'sentence' | 'word' | 'grapheme'): string => {
+    if (typeof Intl === 'undefined' || typeof Intl.Segmenter !== 'function') return '';
+    const segmenter = new Intl.Segmenter('ko', { granularity });
+    let result = '';
+    for (const { segment } of segmenter.segment(source)) {
+      if (!segment) continue;
+      const next = result + segment;
+      if (next.length <= limit) {
+        result = next;
+      } else {
+        break;
+      }
     }
-  }
-  // 문장 분리가 안 된 경우 fallback: 마지막 공백 기준으로 자르기
-  if (!result2) {
-    const cut = trimmed.slice(0, limit);
-    const lastSpace = cut.lastIndexOf(' ');
-    result2 = lastSpace > limit * 0.7 ? cut.slice(0, lastSpace) : cut;
-  }
-  return result2;
+    return result.trim();
+  };
+
+  const sentenceTrimmed = appendSegments('sentence');
+  if (sentenceTrimmed.length > 0 && sentenceTrimmed.length <= limit) return sentenceTrimmed;
+
+  const wordTrimmed = appendSegments('word');
+  if (wordTrimmed.length > 0 && wordTrimmed.length <= limit) return wordTrimmed;
+
+  const graphemeTrimmed = appendSegments('grapheme');
+  if (graphemeTrimmed.length > 0 && graphemeTrimmed.length <= limit) return graphemeTrimmed;
+
+  return source.slice(0, limit);
 }
 
 export async function convertToVisitLog(
@@ -322,9 +351,13 @@ export async function convertToVisitLog(
   pastLogs: VisitLog[]
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
-  const visitCount = pastLogs.length;
+  const visitCount = getDoctorVisitCount(doctor);
   const visitOrdinal = visitCount + 1;
-  const lastVisitDate = pastLogs[0]?.visitDate ?? null;
+  const lastVisitDate =
+    pastLogs[0]?.visitDate ??
+    doctor.conversationHistory?.[0]?.period ??
+    doctor.conversationHistory?.[0]?.createdAt ??
+    null;
 
   const visitContextNote = visitCount > 0
     ? `★★★ 최우선 규칙 (이것이 가장 중요):
@@ -375,8 +408,12 @@ export async function autoGenerateVisitLog(
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
 
   const today = new Date().toISOString().split('T')[0];
-  const lastVisitDate = pastLogs[0]?.visitDate ?? '기록 없음';
-  const visitCount = pastLogs.length;
+  const lastVisitDate =
+    pastLogs[0]?.visitDate ??
+    doctor.conversationHistory?.[0]?.period ??
+    doctor.conversationHistory?.[0]?.createdAt ??
+    '기록 없음';
+  const visitCount = getDoctorVisitCount(doctor);
   const visitOrdinal = visitCount + 1;
 
   const visitContextNote = visitCount > 0

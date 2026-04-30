@@ -6,6 +6,8 @@ const ALLOWED_MODELS = new Set([
   "claude-sonnet-4-6",
   "claude-haiku-4-5",
   "claude-opus-4-6",
+  "gpt-5.5",
+  "gpt-5.4-mini",
 ]);
 
 type ContentBlock =
@@ -68,23 +70,19 @@ function isAllowedOrigin(origin: string): boolean {
     return true;
   }
 
-  // Replit dev 환경 도메인
   const replDomain = process.env["REPLIT_DEV_DOMAIN"] ?? "";
   if (replDomain && originHost.endsWith(replDomain)) {
     return true;
   }
 
-  // Replit 배포(published) 환경 도메인
   if (originHost.endsWith(".replit.app") || originHost.endsWith(".replit.dev")) {
     return true;
   }
 
-  // Railway 배포 도메인
   if (originHost.endsWith(".railway.app") || originHost.endsWith(".up.railway.app")) {
     return true;
   }
 
-  // Vercel 배포 도메인
   if (originHost.endsWith(".vercel.app")) {
     return true;
   }
@@ -92,31 +90,21 @@ function isAllowedOrigin(origin: string): boolean {
   return false;
 }
 
-function convertToAnthropicContent(
-  content: ContentBlock | ContentBlock[]
-): Array<{ type: string; [key: string]: unknown }> {
-  const blocks = Array.isArray(content) ? content : [content];
-  return blocks.map((block) => {
-    if (typeof block === "string") {
-      return { type: "text", text: block };
-    }
-    if (block.type === "image_url") {
-      const url = block.image_url.url;
-      const match = url.match(/^data:([^;]+);base64,(.+)$/);
-      if (match) {
-        return {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: match[1] as string,
-            data: match[2] as string,
-          },
-        };
-      }
-      return { type: "text", text: `[이미지: ${url}]` };
-    }
-    return block as { type: string; [key: string]: unknown };
-  });
+function normalizeOpenAIBaseUrl(rawUrl?: string): string {
+  const fallback = "https://api.openai.com/v1";
+  if (!rawUrl) return fallback;
+
+  const trimmed = rawUrl.trim().replace(/\/+$/, "");
+  if (!trimmed) return fallback;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.hostname === "platform.openai.com") return fallback;
+  } catch {
+    return fallback;
+  }
+
+  return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
 }
 
 router.post("/ai/chat", async (req, res) => {
@@ -138,7 +126,7 @@ router.post("/ai/chat", async (req, res) => {
     "unknown";
 
   if (isRateLimited(clientIp)) {
-    res.status(429).json({ error: "Too many requests — please wait before retrying" });
+    res.status(429).json({ error: "Too many requests, please wait before retrying" });
     return;
   }
 
@@ -147,90 +135,73 @@ router.post("/ai/chat", async (req, res) => {
     return;
   }
 
-  const baseUrl = process.env["AI_INTEGRATIONS_ANTHROPIC_BASE_URL"];
-  const apiKey = process.env["AI_INTEGRATIONS_ANTHROPIC_API_KEY"];
+  const baseUrl = normalizeOpenAIBaseUrl(
+    process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"] ?? process.env["OPENAI_BASE_URL"]
+  );
+  const apiKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"] ?? process.env["OPENAI_API_KEY"];
 
-  if (!baseUrl || !apiKey) {
-    res.status(503).json({ error: "AI integration not configured" });
+  if (!apiKey) {
+    res.status(503).json({ error: "OpenAI integration not configured" });
     return;
   }
 
   const { model, messages, max_completion_tokens } = req.body;
+  const openaiModel =
+    model === "gpt-5.5"
+      ? "gpt-5.5"
+      : "gpt-5.4-mini";
 
-  let systemPrompt: string | undefined;
-  const anthropicMessages: Array<{ role: string; content: unknown }> = [];
+  const bodyStr = JSON.stringify({
+    model: openaiModel,
+    max_completion_tokens: max_completion_tokens ?? 8192,
+    messages,
+  });
 
-  for (const msg of messages) {
-    if (msg.role === "system") {
-      systemPrompt = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
-    } else {
-      const converted = convertToAnthropicContent(msg.content as ContentBlock | ContentBlock[]);
-      anthropicMessages.push({
-        role: msg.role,
-        content: converted.length === 1 && converted[0].type === "text"
-          ? (converted[0] as { type: string; text: string }).text
-          : converted,
-      });
-    }
-  }
-
-  const anthropicBody: Record<string, unknown> = {
-    model,
-    max_tokens: max_completion_tokens ?? 8192,
-    messages: anthropicMessages,
-  };
-  if (systemPrompt) {
-    anthropicBody["system"] = systemPrompt;
-  }
-
-  const bodyStr = JSON.stringify(anthropicBody);
   const MAX_RETRIES = 3;
-
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(`${baseUrl}/v1/messages`, {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
+          Authorization: `Bearer ${apiKey}`,
         },
         body: bodyStr,
       });
 
       const rawText = await response.text();
-      let data: { content?: Array<{ type: string; text?: string }>; error?: { type?: string; message: string } };
+      let data: {
+        choices?: Array<{ message?: { role?: string; content?: string | null } }>;
+        error?: { message: string };
+      };
       try {
         data = JSON.parse(rawText);
       } catch {
         data = { error: { message: rawText } };
       }
 
-      // 일시적 과부하(529) 또는 레이트리밋(429) → 재시도
-      if ((response.status === 529 || response.status === 429) && attempt < MAX_RETRIES - 1) {
+      if (response.status === 429 && attempt < MAX_RETRIES - 1) {
         const delay = (attempt + 1) * 3000;
-        console.log(`[ai] status ${response.status}, retry in ${delay}ms (attempt ${attempt + 1})`);
-        await new Promise((r) => setTimeout(r, delay));
+        console.log(`[ai] OpenAI status ${response.status}, retry in ${delay}ms (attempt ${attempt + 1})`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
 
       if (!response.ok) {
         const errMsg = data.error?.message ?? rawText;
-        console.error(`[ai] Anthropic error ${response.status}:`, errMsg);
+        console.error(`[ai] OpenAI error ${response.status}:`, errMsg);
         res.status(response.status).json({ error: errMsg });
         return;
       }
 
-      const textBlock = data.content?.find((b) => b.type === "text");
-      const text = textBlock?.text ?? "";
-
+      const text = data.choices?.[0]?.message?.content ?? "";
       res.json({
         choices: [{ message: { role: "assistant", content: text } }],
       });
       return;
     } catch (err) {
       if (attempt < MAX_RETRIES - 1) {
-        await new Promise((r) => setTimeout(r, (attempt + 1) * 3000));
+        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 3000));
         continue;
       }
       res.status(500).json({ error: "AI request failed", detail: String(err) });

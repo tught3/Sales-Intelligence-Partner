@@ -47,8 +47,8 @@ railway service create
 
 # 환경변수 설정
 railway env set DATABASE_URL "postgresql://..." # 3단계에서 복사
-railway env set AI_INTEGRATIONS_ANTHROPIC_API_KEY "sk-ant-..." # 본인 키
-railway env set AI_INTEGRATIONS_ANTHROPIC_BASE_URL "https://api.anthropic.com"
+railway env set AI_INTEGRATIONS_OPENAI_API_KEY "sk-proj-..." # 본인 키
+railway env set AI_INTEGRATIONS_OPENAI_BASE_URL "https://api.openai.com/v1"
 railway env set SESSION_SECRET "$(openssl rand -hex 32)"
 railway env set PORT 3001
 railway env set NODE_ENV production
@@ -121,8 +121,8 @@ Railway 대시보드:
 | 변수 | 예시 | 설명 |
 |------|------|------|
 | `DATABASE_URL` | `postgresql://...` | PostgreSQL 서비스 (자동 생성) |
-| `AI_INTEGRATIONS_ANTHROPIC_API_KEY` | `sk-ant-...` | Claude API 키 |
-| `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude API 엔드포인트 |
+| `AI_INTEGRATIONS_OPENAI_API_KEY` | `sk-proj-...` | OpenAI API 키 |
+| `AI_INTEGRATIONS_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI API 엔드포인트 |
 | `SESSION_SECRET` | (임의 32자) | 세션 암호화 |
 | `PORT` | `3001` (api) / `5000` (web) | 서비스 포트 |
 | `NODE_ENV` | `production` | 환경 |
@@ -155,4 +155,3 @@ pnpm dev  # 한 번에 양쪽 실행
 ```
 
 브라우저: http://localhost:5000
-

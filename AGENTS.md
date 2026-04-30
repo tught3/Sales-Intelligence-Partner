@@ -1,4 +1,4 @@
-# AGENTS.md for `C:\AI-automatic-expense-tracker`
+# AGENTS.md for `E:\Sales-Intelligence-Partner`
 
 This file is the top-priority working rule for this repo.
 Secondary detail sources: `CLAUDE.md` and `docs/agent-rules-*.md`.
@@ -17,9 +17,12 @@ Secondary detail sources: `CLAUDE.md` and `docs/agent-rules-*.md`.
 - Planning: `gpt-5.5`
 - Execution: `gpt-5.4-mini`
 - Review / verification: `gpt-5.4-mini`
+- If a task looks like it benefits from GSD, use GSD first and keep the same model split inside that workflow.
 
 ## Workflow rules
 - Use GSD workflows for non-trivial work.
+- If the user gives an instruction and GSD appears useful for structure, planning, or safe modification, run GSD rather than skipping it.
+- When using GSD, keep the established split: `gpt-5.5` for planning, `gpt-5.4-mini` for code edits and review.
 - Prefer existing code, shared helpers, and existing docs before creating new structures.
 - Create new code only when reuse is clearly worse.
 - Do not delete unused code until implementation and verification are fully complete.
@@ -38,6 +41,7 @@ Secondary detail sources: `CLAUDE.md` and `docs/agent-rules-*.md`.
 - Run `node scripts/gsd-context-hygiene.mjs` at session start, before long work, and before final report.
 - After every completed logical change, write a short checkpoint to the planning context so interrupted work can resume immediately.
 - Prefer updating `.planning/context/ACTIVE_SUMMARY.md` and the latest snapshot before moving to the next chunk.
+- If the repo structure is already known from the planning context, do not re-map it unless the task depends on a fresh scan.
 
 ## Repo-specific rules
 - `lite-app/` is read-only for this work; do not modify it.
@@ -45,7 +49,7 @@ Secondary detail sources: `CLAUDE.md` and `docs/agent-rules-*.md`.
 - Financial pipeline source of truth is `financial_raw_archive`.
 - Parser/storage changes must run the financial regression before completion.
 - Keep review/verification strict: no completion report until the requested items are all satisfied.
-- Path context: stay rooted at `C:\AI-automatic-expense-tracker` unless a task explicitly says otherwise.
+- Path context: stay rooted at `E:\Sales-Intelligence-Partner` unless a task explicitly says otherwise.
 - If planning needs real phone records from the financial app, request ADB connection first, verify the device is connected, and inspect the device with ADB before finalizing the plan or code changes.
 
 ## Detail references

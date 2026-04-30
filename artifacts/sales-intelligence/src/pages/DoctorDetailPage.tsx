@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
-import { doctorStorage, visitLogStorage, snippetStorage, generateId, type Doctor, type DoctorTrait, type Objection, type ConversationRecord } from "@/lib/storage";
+import { doctorStorage, visitLogStorage, snippetStorage, generateId, getDoctorVisitCount, getConversationHistoryVisitCount, type Doctor, type DoctorTrait, type Objection, type ConversationRecord } from "@/lib/storage";
 import { generateObjectionResponse, generateNextVisitStrategy, analyzePastConversations } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,8 +43,10 @@ export default function DoctorDetailPage() {
   const { toast } = useToast();
 
   const [doctor, setDoctor] = useState(() => doctorStorage.getById(id));
-  const logs = useMemo(() => visitLogStorage.getByDoctorId(id), [id]);
+  const [logs, setLogs] = useState(() => visitLogStorage.getByDoctorId(id));
   const snippets = useMemo(() => snippetStorage.getAll(), []);
+  const visitCount = getDoctorVisitCount(doctor ?? undefined);
+  const conversationCount = getConversationHistoryVisitCount(doctor ?? undefined);
 
   const [newObjection, setNewObjection] = useState("");
   const [newResponse, setNewResponse] = useState("");
@@ -59,6 +61,10 @@ export default function DoctorDetailPage() {
   const [analyzingConv, setAnalyzingConv] = useState(false);
   const [convAnalysisResult, setConvAnalysisResult] = useState<{ analysis: string; detectedTraits: string[]; nextSuggestions: string } | null>(null);
   const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLogs(visitLogStorage.getByDoctorId(id));
+  }, [id]);
 
   if (!doctor) {
     return (
@@ -93,6 +99,7 @@ export default function DoctorDetailPage() {
     const updated = { ...doctor, objections: [...doctor.objections, obj] };
     doctorStorage.save(updated);
     setDoctor(doctorStorage.getById(id));
+    setLogs(visitLogStorage.getByDoctorId(id));
     setNewObjection("");
     setNewResponse("");
     toast({ title: "반박 패턴이 저장되었습니다" });
@@ -103,6 +110,7 @@ export default function DoctorDetailPage() {
     const updated = { ...doctor, objections: doctor.objections.filter((o) => o.id !== objId) };
     doctorStorage.save(updated);
     setDoctor(doctorStorage.getById(id));
+    setLogs(visitLogStorage.getByDoctorId(id));
   }
 
   async function handleGenerateStrategy() {
@@ -159,6 +167,7 @@ export default function DoctorDetailPage() {
     };
     doctorStorage.addConversationRecord(doctor.id, record);
     setDoctor(doctorStorage.getById(id));
+    setLogs(visitLogStorage.getByDoctorId(id));
     setConvText("");
     setConvAnalysisResult(null);
     toast({ title: "과거 대화 기록이 저장되었습니다", description: "AI가 다음 방문 생성 시 자동으로 참고합니다" });
@@ -168,6 +177,7 @@ export default function DoctorDetailPage() {
     if (!doctor) return;
     doctorStorage.deleteConversationRecord(doctor.id, recordId);
     setDoctor(doctorStorage.getById(id));
+    setLogs(visitLogStorage.getByDoctorId(id));
     toast({ title: "기록이 삭제되었습니다" });
   }
 
@@ -242,7 +252,7 @@ export default function DoctorDetailPage() {
               <CardTitle className="text-base flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-primary" />
-                  방문 이력 ({logs.length}회)
+                  방문 이력 ({visitCount}회)
                 </div>
                 <button
                   onClick={() => setLocation(`/visit-log?doctorId=${doctor.id}`)}
@@ -256,7 +266,11 @@ export default function DoctorDetailPage() {
               {logs.length === 0 ? (
                 <div className="text-center py-6">
                   <FileText className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">방문 기록이 없습니다</p>
+                  <p className="text-sm text-muted-foreground">
+                    {conversationCount > 0
+                      ? `실제 방문 일지는 아직 없지만 상담/분석 기록 ${conversationCount}건이 있습니다`
+                      : '방문 기록이 없습니다'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -467,9 +481,17 @@ export default function DoctorDetailPage() {
                 <p className="text-xs font-semibold text-muted-foreground">저장된 과거 대화 분석</p>
                 {(doctor.conversationHistory ?? []).map((record) => (
                   <div key={record.id} className="border rounded-lg overflow-hidden group">
-                    <button
+                    <div
                       onClick={() => setExpandedConvId(expandedConvId === record.id ? null : record.id)}
-                      className="w-full flex items-center justify-between p-3 hover:bg-muted/30 transition-colors text-left"
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setExpandedConvId(expandedConvId === record.id ? null : record.id);
+                        }
+                      }}
+                      className="w-full flex items-center justify-between p-3 hover:bg-muted/30 transition-colors text-left cursor-pointer"
                     >
                       <div className="flex items-center gap-2">
                         <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -495,7 +517,7 @@ export default function DoctorDetailPage() {
                           ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
                           : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                       </div>
-                    </button>
+                    </div>
                     {expandedConvId === record.id && (
                       <div className="border-t p-3 space-y-2 bg-muted/20 text-xs">
                         <div>

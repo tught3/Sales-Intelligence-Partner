@@ -34,7 +34,7 @@ async function runDataMigrations() {
   }
 }
 
-const rawPort = process.env["PORT"] ?? process.env["API_SERVER_PORT"];
+const rawPort = process.env["API_SERVER_PORT"] ?? process.env["PORT"];
 
 if (!rawPort) {
   throw new Error("PORT environment variable is required but was not provided.");
