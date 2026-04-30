@@ -188,6 +188,7 @@ export default function BulkImportPage() {
   async function handleImport() {
     setImporting(true);
     const importResults: ImportResult[] = [];
+    let duplicateCount = 0;
 
     for (let idx = 0; idx < parsed.length; idx++) {
       const p = parsed[idx];
@@ -261,6 +262,7 @@ export default function BulkImportPage() {
         // 각 방문을 VisitLog로 저장 (방문 횟수 집계용)
         const baseTime = Date.now();
         const visitCount = p.visits.length;
+        let savedVisits = 0;
         p.visits.forEach((v, vIdx) => {
           const daysAgo = visitCount - 1 - vIdx;
           const visitDateObj = new Date(baseTime - daysAgo * 24 * 60 * 60 * 1000);
@@ -275,10 +277,26 @@ export default function BulkImportPage() {
             products: [],
             createdAt: new Date().toISOString(),
           };
-          visitLogStorage.save(log);
+          const saveResult = visitLogStorage.save(log);
+          if (saveResult.duplicate) {
+            duplicateCount++;
+            return;
+          }
+          savedVisits++;
         });
 
-        doctorStorage.addConversationRecord(doctor.id, record);
+        const recordResult = doctorStorage.addConversationRecord(doctor.id, record);
+        if (recordResult.duplicate) {
+          duplicateCount++;
+          importResults.push({
+            name: p.name,
+            department: p.department,
+            created: !p.existingDoctor,
+            visitsAdded: savedVisits,
+            error: "중복된 내용입니다.",
+          });
+          continue;
+        }
 
         importResults.push({
           name: p.name,
@@ -301,7 +319,10 @@ export default function BulkImportPage() {
     setResults(importResults);
     setImporting(false);
     setStep("done");
-    toast({ title: `${importResults.filter((r) => !r.error).length}명 입력 완료` });
+    toast({
+      title: `${importResults.filter((r) => !r.error).length}명 입력 완료`,
+      description: duplicateCount > 0 ? `중복된 내용 ${duplicateCount}건은 건너뛰었습니다.` : undefined,
+    });
   }
 
   function toggleExpand(idx: number) {

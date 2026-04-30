@@ -91,6 +91,15 @@ export interface ConversationRecord {
   createdAt: string;
 }
 
+export type SaveOutcome = {
+  saved: true;
+  duplicate?: false;
+} | {
+  saved: false;
+  duplicate: true;
+  message: string;
+};
+
 export const API_BASE = import.meta.env.VITE_API_SERVER_URL ||
   (import.meta.env.DEV ? 'http://localhost:3001' : 'https://sales-intelligence-partner-production.up.railway.app');
 
@@ -146,6 +155,52 @@ function toVisitDate(v: any): string {
   } catch {
     return new Date().toISOString().split('T')[0];
   }
+}
+
+function normalizeDuplicateText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeDuplicateArray(values: string[]): string {
+  return values.map((value) => normalizeDuplicateText(value)).filter(Boolean).sort().join('|');
+}
+
+function sameVisitLogSignature(a: VisitLog, b: VisitLog): boolean {
+  return (
+    a.doctorId === b.doctorId &&
+    a.visitDate === b.visitDate &&
+    normalizeDuplicateText(a.rawNotes) === normalizeDuplicateText(b.rawNotes) &&
+    normalizeDuplicateText(a.formattedLog) === normalizeDuplicateText(b.formattedLog) &&
+    normalizeDuplicateText(a.nextStrategy) === normalizeDuplicateText(b.nextStrategy) &&
+    normalizeDuplicateArray(a.products ?? []) === normalizeDuplicateArray(b.products ?? [])
+  );
+}
+
+function hasDuplicateConversationRecord(records: ConversationRecord[]): boolean {
+  const seen = new Set<string>();
+  for (const record of records) {
+    const key = `${normalizeDuplicateText(record.rawText)}::${normalizeDuplicateText(record.period)}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}
+
+function hasDuplicateVisitLog(logs: VisitLog[]): boolean {
+  const seen = new Set<string>();
+  for (const log of logs) {
+    const key = [
+      log.doctorId,
+      log.visitDate,
+      normalizeDuplicateText(log.rawNotes),
+      normalizeDuplicateText(log.formattedLog),
+      normalizeDuplicateText(log.nextStrategy),
+      normalizeDuplicateArray(log.products ?? []),
+    ].join('::');
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
 }
 
 function countVisitsInConversationRecord(record: ConversationRecord): number {
@@ -241,6 +296,7 @@ async function migrateConversationHistoryToVisitLogs(): Promise<void> {
 
     for (const log of conversationLogs) {
       if (cache.visitLogs.some((existing) => existing.id === log.id)) continue;
+      if (hasDuplicateVisitLog([...cache.visitLogs, ...migrated, log])) continue;
       migrated.push(log);
     }
   }
@@ -312,13 +368,31 @@ export const doctorStorage = {
   getById(id: string): Doctor | undefined {
     return cache.doctors.find((d) => d.id === id);
   },
-  addConversationRecord(doctorId: string, record: ConversationRecord): void {
+  addConversationRecord(doctorId: string, record: ConversationRecord): SaveOutcome {
     const idx = cache.doctors.findIndex((d) => d.id === doctorId);
-    if (idx < 0) return;
-    cache.doctors[idx].conversationHistory = [record, ...(cache.doctors[idx].conversationHistory ?? [])];
+    if (idx < 0) return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
+
+    const doctor = cache.doctors[idx];
+    const conversationHistory = doctor.conversationHistory ?? [];
+    const nextHistory = [record, ...conversationHistory];
+    if (hasDuplicateConversationRecord(nextHistory)) {
+      return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
+    }
+
+    const migratedLog = conversationRecordToVisitLog(doctor, record);
+    if (cache.visitLogs.some((existing) => sameVisitLogSignature(existing, migratedLog))) {
+      return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
+    }
+
+    cache.doctors[idx].conversationHistory = [record, ...conversationHistory];
     cache.doctors[idx].updatedAt = new Date().toISOString();
-    visitLogStorage.save(conversationRecordToVisitLog(cache.doctors[idx], record));
+    const visitSave = visitLogStorage.save(migratedLog);
+    if (visitSave.duplicate) {
+      cache.doctors[idx].conversationHistory = conversationHistory;
+      return { saved: false, duplicate: true, message: visitSave.message };
+    }
     api('/doctors', 'POST', doctorToApi(cache.doctors[idx])).catch(console.error);
+    return { saved: true };
   },
   deleteConversationRecord(doctorId: string, recordId: string): void {
     const idx = cache.doctors.findIndex((d) => d.id === doctorId);
@@ -386,8 +460,12 @@ export const visitLogStorage = {
       .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
       .slice(0, limit);
   },
-  save(log: VisitLog): void {
+  save(log: VisitLog): SaveOutcome {
     const idx = cache.visitLogs.findIndex((v) => v.id === log.id);
+    const duplicate = cache.visitLogs.find((existing) => existing.id !== log.id && sameVisitLogSignature(existing, log));
+    if (duplicate) {
+      return { saved: false, duplicate: true, message: '중복된 내용입니다.' };
+    }
     if (idx >= 0) {
       cache.visitLogs[idx] = log;
     } else {
@@ -403,6 +481,7 @@ export const visitLogStorage = {
       aiEditHint: log.aiEditHint ?? '',
       products: log.products,
     }).catch(console.error);
+    return { saved: true };
   },
   delete(id: string): void {
     cache.visitLogs = cache.visitLogs.filter((v) => v.id !== id);

@@ -114,6 +114,42 @@ function prepManual(m: any) {
   };
 }
 
+function normalizeDuplicateText(value: any): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeDuplicateArray(values: any[] | undefined): string {
+  return (values ?? [])
+    .map((value) => normalizeDuplicateText(value))
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
+function sameVisitLogSignature(a: any, b: any): boolean {
+  return (
+    normalizeDuplicateText(a.doctorId) === normalizeDuplicateText(b.doctorId) &&
+    normalizeDuplicateText(a.visitDate) === normalizeDuplicateText(b.visitDate) &&
+    normalizeDuplicateText(a.rawNotes) === normalizeDuplicateText(b.rawNotes) &&
+    normalizeDuplicateText(a.formattedLog) === normalizeDuplicateText(b.formattedLog) &&
+    normalizeDuplicateText(a.nextStrategy) === normalizeDuplicateText(b.nextStrategy) &&
+    normalizeDuplicateArray(a.products) === normalizeDuplicateArray(b.products)
+  );
+}
+
+function hasDuplicateConversationHistory(history: any[]): boolean {
+  const seen = new Set<string>();
+  for (const record of history ?? []) {
+    const key = [
+      normalizeDuplicateText(record.rawText),
+      normalizeDuplicateText(record.period),
+    ].join("::");
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}
+
 router.get("/doctors", wrap(async (_req, res) => {
   const all = await db.select().from(doctors);
   res.json(all);
@@ -128,6 +164,10 @@ router.get("/doctors/:id", wrap(async (req, res) => {
 
 router.post("/doctors", wrap(async (req, res) => {
   const data = prepDoctor(req.body);
+  if (hasDuplicateConversationHistory(data.conversationHistory)) {
+    res.status(409).json({ error: "duplicate", message: "중복된 내용입니다." });
+    return;
+  }
   await db.insert(doctors).values(data).onConflictDoUpdate({
     target: doctors.id,
     set: { ...stripId(data), updatedAt: new Date() },
@@ -148,6 +188,15 @@ router.get("/visit-logs", wrap(async (_req, res) => {
 
 router.post("/visit-logs", wrap(async (req, res) => {
   const data = prepVisitLog(req.body);
+  const existing = await db
+    .select()
+    .from(visitLogs)
+    .where(eq(visitLogs.doctorId, data.doctorId));
+  const duplicate = existing.find((row) => row.id !== data.id && sameVisitLogSignature(row, data));
+  if (duplicate) {
+    res.status(409).json({ error: "duplicate", message: "중복된 내용입니다." });
+    return;
+  }
   await db.insert(visitLogs).values(data).onConflictDoUpdate({
     target: visitLogs.id,
     set: stripId(data),

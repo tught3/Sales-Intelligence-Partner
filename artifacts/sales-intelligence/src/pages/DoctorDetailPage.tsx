@@ -165,7 +165,11 @@ export default function DoctorDetailPage() {
       nextSuggestions: convAnalysisResult.nextSuggestions,
       createdAt: new Date().toISOString(),
     };
-    doctorStorage.addConversationRecord(doctor.id, record);
+    const saveResult = doctorStorage.addConversationRecord(doctor.id, record);
+    if (saveResult.duplicate) {
+      toast({ title: "중복된 내용입니다.", description: "이미 같은 내용의 방문 기록이 있습니다.", variant: "destructive" });
+      return;
+    }
     setDoctor(doctorStorage.getById(id));
     setLogs(visitLogStorage.getByDoctorId(id));
     setConvText("");

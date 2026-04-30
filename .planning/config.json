@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "projectType": "brownfield",
+  "forceGsdMode": true,
+  "workflowStyle": "plan-first",
+  "defaultExecutionMode": "phase",
+  "preferredTaskMode": {
+    "small_changes": "gsd-fast",
+    "medium_changes": "gsd-quick",
+    "large_changes": "gsd-plan-phase"
+  },
+  "verificationPolicy": {
+    "requireCodePathAudit": true,
+    "requireTargetedVerification": true,
+    "requireBuildOrTypecheckForCodeChanges": true
+  },
+  "notes": [
+    "Initialize this repository in GSD plan-first mode before editing code.",
+    "The workspace is a pnpm monorepo with application code in artifacts/ and shared packages in lib/.",
+    "Keep the first pass focused on codebase mapping, then move into the requested task.",
+    "Prefer targeted verification for each change instead of broad repo-wide runs unless the task needs them."
+  ]
+}

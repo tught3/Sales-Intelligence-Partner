@@ -110,7 +110,11 @@ export default function VisitLogHistoryPage() {
       ? `원본(${originalText.length}자): ${originalText.slice(0, 100)}${originalText.length > 100 ? '...' : ''} → 수정(${editedText.length}자): ${editedText.slice(0, 100)}${editedText.length > 100 ? '...' : ''}`
       : log.aiEditHint;
     const updated = { ...log, formattedLog: editedText, aiEditHint: hint };
-    visitLogStorage.save(updated);
+    const saveResult = visitLogStorage.save(updated);
+    if (saveResult.duplicate) {
+      toast({ title: "중복된 내용입니다.", description: "이미 같은 방문 기록이 있어 저장하지 않았습니다.", variant: "destructive" });
+      return;
+    }
     setAllLogs(visitLogStorage.getAll());
     setEditingId(null);
     setEditText("");

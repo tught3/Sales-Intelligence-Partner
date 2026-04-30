@@ -144,7 +144,12 @@ export default function VisitLogPage() {
           rawNotes: snapshotRawNotes, formattedLog: res.formattedLog,
           nextStrategy: res.nextStrategy, products: prods, createdAt: new Date().toISOString(),
         };
-        visitLogStorage.save(log);
+        const saveResult = visitLogStorage.save(log);
+        if (saveResult.duplicate) {
+          setIsSaved(false);
+          toast({ title: "중복된 내용입니다.", description: "이미 같은 방문 기록이 있어 저장하지 않았습니다.", variant: "destructive" });
+          return;
+        }
         setAllLogs(visitLogStorage.getAll());
         setIsSaved(true);
       }
@@ -220,7 +225,10 @@ export default function VisitLogPage() {
             products: res.products,
             createdAt: new Date().toISOString(),
           };
-          visitLogStorage.save(log);
+          const saveResult = visitLogStorage.save(log);
+          if (saveResult.duplicate) {
+            continue;
+          }
           generated.push({ doctor, log });
           setBulkResults([...generated]);
         } catch (e) {
@@ -253,14 +261,22 @@ export default function VisitLogPage() {
         const data = JSON.parse(text);
         if (Array.isArray(data)) {
           let saved = 0;
+          let duplicates = 0;
           for (const item of data) {
             if (item.doctorId && item.visitDate && item.formattedLog) {
-              visitLogStorage.save({ ...item, id: item.id ?? generateId(), createdAt: item.createdAt ?? new Date().toISOString() });
+              const saveResult = visitLogStorage.save({ ...item, id: item.id ?? generateId(), createdAt: item.createdAt ?? new Date().toISOString() });
+              if (saveResult.duplicate) {
+                duplicates++;
+                continue;
+              }
               saved++;
             }
           }
           setAllLogs(visitLogStorage.getAll());
-          toast({ title: `${saved}개의 방문 기록이 가져와졌습니다` });
+          toast({
+            title: `${saved}개의 방문 기록이 가져와졌습니다`,
+            description: duplicates > 0 ? `${duplicates}개는 중복된 내용이라 건너뛰었습니다.` : undefined,
+          });
         }
       } catch {
         toast({ title: "파일 파싱 실패", variant: "destructive" });
