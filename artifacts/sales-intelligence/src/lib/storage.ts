@@ -252,6 +252,14 @@ function sameVisitLogSimilarity(a: VisitLog, b: VisitLog): boolean {
   return isSimilarText(left, right);
 }
 
+function compareVisitLogsDesc(a: VisitLog, b: VisitLog): number {
+  const createdDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  if (createdDiff !== 0) return createdDiff;
+  const visitDiff = new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime();
+  if (visitDiff !== 0) return visitDiff;
+  return b.id.localeCompare(a.id, 'ko');
+}
+
 function countVisitsInConversationRecord(record: ConversationRecord): number {
   const periodMatch = record.period.match(/(\d+)\s*회\s*방문/);
   if (periodMatch) {
@@ -494,22 +502,22 @@ function doctorToApi(d: Doctor) {
 
 export const visitLogStorage = {
   getAll(): VisitLog[] {
-    return [...cache.visitLogs];
+    return [...cache.visitLogs].sort(compareVisitLogsDesc);
   },
   getByDoctorId(doctorId: string): VisitLog[] {
     return cache.visitLogs
       .filter((v) => v.doctorId === doctorId)
-      .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
+      .sort(compareVisitLogsDesc);
   },
   getByHospital(hospital: string, doctors: Doctor[]): VisitLog[] {
     const hospitalDoctorIds = new Set(doctors.filter(d => d.hospital === hospital).map(d => d.id));
     return cache.visitLogs
       .filter((v) => hospitalDoctorIds.has(v.doctorId))
-      .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
+      .sort(compareVisitLogsDesc);
   },
   getRecent(limit = 10): VisitLog[] {
     return [...cache.visitLogs]
-      .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
+      .sort(compareVisitLogsDesc)
       .slice(0, limit);
   },
   save(log: VisitLog): SaveOutcome {

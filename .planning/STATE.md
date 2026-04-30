@@ -15,6 +15,7 @@
 - Verified the duplicate guard against a temporary local api-server on port `3002` before stopping it again.
 - Duplicate prevention now also blocks near-duplicates: records with 80%+ similarity are treated as duplicates within the same doctor and visit-date scope.
 - Verified the 80% similarity rule against a temporary local api-server on port `3003` before stopping it again.
+- Visit-log lists now sort by `createdAt` first so the most recently created memo conversion or auto-generated log appears at the top of the history and recent-log views.
 
 ## Immediate Next Step
 - Report the duplicate-prevention work with verification evidence and note the saved planning checkpoints.

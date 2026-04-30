@@ -74,9 +74,7 @@ export default function VisitLogHistoryPage() {
       logs = logs.filter(l => docIds.has(l.doctorId));
     }
 
-    return logs.sort(
-      (a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime()
-    );
+    return logs;
   }, [allLogs, doctors, selectedHospital, selectedDept]);
 
   function handleDelete(id: string) {

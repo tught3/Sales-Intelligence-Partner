@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const recentLogs = useMemo(
     () =>
       [...logs]
-        .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
         .slice(0, 5),
     [logs]
   );

@@ -25,6 +25,7 @@
 - A temporary local api-server on port `3002` was built and used to verify duplicate rejection, then stopped again.
 - Near-duplicate records are now also blocked when similarity is 80% or higher within the same doctor/date scope.
 - A temporary local api-server on port `3003` was used to verify the fuzzy duplicate rule, then stopped again.
+- Visit-log ordering now prefers `createdAt` so the newest generated or converted memo appears first in the history and recent-log views.
 
 ## Useful Entry Points
 - `package.json`
