@@ -52,6 +52,36 @@ Secondary detail sources: `CLAUDE.md` and `docs/agent-rules-*.md`.
 - Path context: stay rooted at `E:\Sales-Intelligence-Partner` unless a task explicitly says otherwise.
 - If planning needs real phone records from the financial app, request ADB connection first, verify the device is connected, and inspect the device with ADB before finalizing the plan or code changes.
 
+## 🧠 Karpathy 코딩 원칙 (LLM 실수 방지)
+
+> 출처: [andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)
+
+1. **코딩 전 사고**: 가정을 명시적으로 서술, 불확실하면 질문. 침묵 속 결정 금지.
+2. **단순성 우선**: 요청된 것만 구현. 200줄이 50줄 가능하면 다시 작성. 추측성 기능 추가 금지.
+3. **수술적 변경**: 필요한 것만 수정, 기존 스타일 유지. 불필요해진 것만 제거.
+4. **목표 기반 실행**: 검증 가능한 성공 기준 설정 후 시작. 단계별 체크포인트 생성.
+
+## 프로젝트 구조 (Sales Intelligence Partner)
+
+```
+artifacts/
+├── api-server/          # Express API (포트 3001)
+│   └── src/routes/
+│       ├── ai.ts        # Claude AI 프록시
+│       └── data.ts      # CRUD API
+└── sales-intelligence/  # React 프론트엔드 (포트 5000)
+    └── src/lib/
+        ├── storage.ts   # API 클라이언트 + 캐시 (API_BASE 여기서 export)
+        └── ai.ts        # AI 통합 (API_BASE를 storage.ts에서 import)
+lib/
+└── db/                  # Drizzle ORM + 스키마
+```
+
+## 배포 구조
+
+- **Vercel** (프론트): `vercel.json`에서 `/api/*` → Railway로 rewrite
+- **Railway** (백엔드): Express API + PostgreSQL
+
 ## Detail references
 - Workflow details: `docs/agent-rules-workflow.md`
 - Validation details: `docs/agent-rules-validation.md`
