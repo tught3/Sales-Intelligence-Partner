@@ -144,6 +144,27 @@ lib/
 3. **보안 관련** → `security-review` 스킬 사용
 4. **PR/병합 전** → `review` 스킬 사용
 
+### 🧠 Karpathy 코딩 원칙 (LLM 실수 방지)
+> 출처: [andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)
+
+1. **코딩 전 사고 (Think Before Coding)**
+   - 가정을 명시적으로 서술, 불확실하면 질문
+   - 트레이드오프를 숨기지 말고 드러낼 것
+   - 침묵 속에 결정 금지
+
+2. **단순성 우선 (Simplicity First)**
+   - 요청된 것만 구현, 추측성 기능 추가 금지
+   - 200줄로 작성했는데 50줄 가능하면 다시 작성
+   - 불필요한 추상화 금지
+
+3. **수술적 변경 (Surgical Changes)**
+   - 필요한 것만 변경, 기존 스타일 유지
+   - 변경으로 인해 불필요해진 것만 제거
+
+4. **목표 기반 실행 (Goal-Driven Execution)**
+   - 요청을 검증 가능한 성공 기준으로 변환 후 시작
+   - 다단계 작업은 단계별 검증 체크포인트 생성
+
 ### 규칙
 - 타입 안전: TypeScript strict mode, Zod 검증
 - 데이터베이스: Drizzle ORM, 마이그레이션은 `pnpm --filter @workspace/db run push`
