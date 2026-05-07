@@ -693,7 +693,7 @@ ${buildVisitOutputRules(230, 120)}
   const products = productText
     .split(/[,，、]/)
     .map((p) => p.trim())
-    .filter((p) => ['위너프', '페린젝트', '기타'].includes(p));
+    .filter((p) => ['위너프', '페린젝트', '플라주OP', '기타'].includes(p));
 
   let fullLog = logMatch
     ? logMatch[1].trim()

@@ -607,6 +607,9 @@ export default function VisitLogPage() {
                                 </div>
                               </div>
                               <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{log.formattedLog}</p>
+                              {log.nextStrategy && (
+                                <p className="text-primary/70 mt-1.5 leading-relaxed">→ {log.nextStrategy}</p>
+                              )}
                             </div>
                           ))}
                         </div>
