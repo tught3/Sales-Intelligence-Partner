@@ -249,10 +249,33 @@ function buildContextAwareSnippets(
       .join('\n');
   }
 
-  // 일반 과: 최근 미사용 우선
-  const unused = shuffle(allSnippets.filter(notUsed));
-  const used = shuffle(allSnippets.filter(wasUsed));
-  const selected = [...unused, ...used].slice(0, count);
+  // 일반 과: 과별 주력 제품 우선, 그 외 제품은 보조
+  const { primary, secondary } = getDeptFocusProducts(department);
+  const allProducts = [...primary, ...secondary];
+
+  // 선택된 스니펫 풀: primary 제품 우선, secondary 그 다음, 나머지는 뒤로
+  const primarySnippets = allSnippets.filter(s => primary.includes(s.product));
+  const secondarySnippets = allSnippets.filter(s => secondary.includes(s.product));
+  const otherSnippets = allProducts.length > 0
+    ? allSnippets.filter(s => !allProducts.includes(s.product))
+    : [];
+
+  // 각 그룹 내에서 미사용 우선 셔플
+  const pickFrom = (pool: typeof allSnippets) => [
+    ...shuffle(pool.filter(notUsed)),
+    ...shuffle(pool.filter(wasUsed)),
+  ];
+
+  // primary에서 최소 절반 이상, secondary 1개, 나머지는 other
+  const primaryCount = Math.ceil(count * 0.6);
+  const secondaryCount = secondary.length > 0 ? Math.min(1, count - primaryCount) : 0;
+  const otherCount = count - primaryCount - secondaryCount;
+
+  const selected = [
+    ...pickFrom(primarySnippets).slice(0, primaryCount),
+    ...pickFrom(secondarySnippets).slice(0, secondaryCount),
+    ...pickFrom(otherSnippets).slice(0, otherCount),
+  ];
   return selected
     .map(s => `  - [${s.product}] ${s.content}${s.context ? ` (상황: ${s.context})` : ''}`)
     .join('\n');
@@ -483,6 +506,34 @@ ${editHints}
   return context;
 }
 
+// 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
+const DEPT_PRODUCT_MAP: Array<{ keywords: string[]; primary: string[]; secondary: string[] }> = [
+  { keywords: ['산부인과', '산과', '부인과'], primary: ['페린젝트'], secondary: ['플라주OP', '이부프로펜프리믹스'] },
+  { keywords: ['정형외과'], primary: ['페린젝트'], secondary: ['이부프로펜프리믹스'] },
+  { keywords: ['신장내과', '신장', '투석'], primary: ['페린젝트'], secondary: [] },
+  { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], primary: ['페린젝트', '위너프에이플러스'], secondary: [] },
+  { keywords: ['마취통증', '마취과', '통증의학'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: [] },
+  { keywords: ['응급의학과', '응급'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: [] },
+  { keywords: ['흉부외과', '심혈관외과', '심장외과'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: ['위너프에이플러스'] },
+  { keywords: ['감염내과', '감염'], primary: ['포스페넴', '프리페넴'], secondary: [] },
+  { keywords: ['비뇨의학과', '비뇨'], primary: ['포스페넴', '프리페넴'], secondary: ['페린젝트'] },
+  { keywords: ['호흡기내과', '호흡기', '결핵'], primary: ['프리페넴'], secondary: [] },
+  { keywords: ['종양혈액내과', '혈액종양', '혈액', '종양'], primary: ['위너프에이플러스', '페린젝트'], secondary: [] },
+  { keywords: ['간담췌외과', '간담'], primary: ['위너프에이플러스'], secondary: [] },
+  { keywords: ['중환자의학과', '중환자', 'ICU'], primary: ['위너프에이플러스', '플라주OP'], secondary: ['포스페넴'] },
+  { keywords: ['외과', '일반외과', '복부외과', '신경외과'], primary: ['위너프에이플러스', '플라주OP'], secondary: ['이부프로펜프리믹스'] },
+];
+
+function getDeptFocusProducts(department: string): { primary: string[]; secondary: string[] } {
+  for (const rule of DEPT_PRODUCT_MAP) {
+    if (rule.keywords.some(k => department.includes(k))) {
+      return { primary: rule.primary, secondary: rule.secondary };
+    }
+  }
+  // 기본값: 위너프에이플러스 + 페린젝트
+  return { primary: ['위너프에이플러스', '페린젝트'], secondary: [] };
+}
+
 const ICU_DEPTS = [
   '중환자', '응급', '외상', '신경외과', '흉부외과', '심혈관외과', '심장외과',
   '마취', '호흡기', '감염', '외과', '내과', '신경과', '신장'
@@ -614,10 +665,19 @@ export async function convertToVisitLog(
     : '';
 
   const cvSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 4, doctor.department);
+  const cvFocus = selectedProducts.length > 0
+    ? `★ 선택 제품(${selectedProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
+    : (() => {
+        const { primary, secondary } = getDeptFocusProducts(doctor.department);
+        const focus = secondary.length > 0
+          ? `${primary.join(', ')} 위주. 맥락에 자연스러울 때만 ${secondary.join(', ')} 추가 가능.`
+          : `${primary.join(', ')} 위주. 굳이 다른 제품 끼워 넣지 말 것.`;
+        return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
+      })();
   const cvSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선, 화법만 차용):\n`
-    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n`;
-  const cvSnippetSection = cvSnippetLines ? `${cvSnippetLabel}${cvSnippetLines}\n` : '';
+    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선):\n`
+    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선):\n`;
+  const cvSnippetSection = cvSnippetLines ? `${cvFocus}\n${cvSnippetLabel}${cvSnippetLines}\n` : `${cvFocus}\n`;
 
   const cvProductConstraint = selectedProducts.length > 0
     ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
@@ -688,10 +748,19 @@ export async function autoGenerateVisitLog(
     : '';
 
   const agSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 4, doctor.department);
+  const agFocus = selectedProducts.length > 0
+    ? `★ 선택 제품(${selectedProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
+    : (() => {
+        const { primary, secondary } = getDeptFocusProducts(doctor.department);
+        const focus = secondary.length > 0
+          ? `${primary.join(', ')} 위주. 맥락에 자연스러울 때만 ${secondary.join(', ')} 추가 가능.`
+          : `${primary.join(', ')} 위주. 굳이 다른 제품 끼워 넣지 말 것.`;
+        return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
+      })();
   const agSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선, 화법만 차용):\n`
-    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n`;
-  const agSnippetSection = agSnippetLines ? `${agSnippetLabel}${agSnippetLines}\n` : '';
+    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선):\n`
+    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선):\n`;
+  const agSnippetSection = agSnippetLines ? `${agFocus}\n${agSnippetLabel}${agSnippetLines}\n` : `${agFocus}\n`;
 
   const agProductConstraint = selectedProducts.length > 0
     ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
