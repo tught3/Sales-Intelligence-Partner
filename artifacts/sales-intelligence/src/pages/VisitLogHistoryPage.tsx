@@ -114,7 +114,11 @@ export default function VisitLogHistoryPage() {
 
   function startEdit(log: VisitLog) {
     setEditingId(log.id);
-    setEditText(log.formattedLog);
+    // formattedLog + nextStrategy 합쳐서 편집창에 표시 (한 문단으로 복사 가능)
+    const combined = log.nextStrategy
+      ? `${log.formattedLog}\n${log.nextStrategy}`
+      : log.formattedLog;
+    setEditText(combined);
   }
 
   function cancelEdit() {
@@ -123,13 +127,24 @@ export default function VisitLogHistoryPage() {
   }
 
   function saveEdit(log: VisitLog) {
-    const originalText = log.formattedLog;
-    const editedText = editText;
-    // 수정 패턴 힌트 생성 (원본 vs 수정본 비교)
+    const editedText = editText.trim();
+
+    // 다음방문 문장 분리 (다음방문시에는 / 다음번에는 / 다음에는 으로 시작하는 줄)
+    const lines = editedText.split('\n');
+    const nextMarkers = ['다음방문시에는', '다음번에는', '다음에는'];
+    const splitIdx = lines.findIndex(l => nextMarkers.some(m => l.trim().startsWith(m)));
+    const newFormattedLog = splitIdx > 0
+      ? lines.slice(0, splitIdx).join('\n').trim()
+      : editedText;
+    const newNextStrategy = splitIdx > 0
+      ? lines.slice(splitIdx).join('\n').trim()
+      : '';
+
+    const originalText = log.formattedLog + (log.nextStrategy ? '\n' + log.nextStrategy : '');
     const hint = originalText !== editedText
       ? `원본(${originalText.length}자): ${originalText.slice(0, 100)}${originalText.length > 100 ? '...' : ''} → 수정(${editedText.length}자): ${editedText.slice(0, 100)}${editedText.length > 100 ? '...' : ''}`
       : log.aiEditHint;
-    const updated = { ...log, formattedLog: editedText, aiEditHint: hint };
+    const updated = { ...log, formattedLog: newFormattedLog, nextStrategy: newNextStrategy, aiEditHint: hint };
     const saveResult = visitLogStorage.save(updated);
     if (saveResult.duplicate) {
       toast({ title: "중복된 내용입니다.", description: "이미 같은 방문 기록이 있어 저장하지 않았습니다.", variant: "destructive" });
@@ -288,10 +303,9 @@ export default function VisitLogHistoryPage() {
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{log.formattedLog}</p>
-                      {log.nextStrategy && (
-                        <p className="text-sm text-primary/70 mt-1">→ {log.nextStrategy}</p>
-                      )}
+                      <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                        {log.formattedLog}{log.nextStrategy ? `\n${log.nextStrategy}` : ''}
+                      </p>
                     </>
                   )}
 
