@@ -225,16 +225,18 @@ function buildVisitOutputRules(bodyLimit: number, strategyLimit: number, include
 - 성향 분석을 텍스트로 길게 풀지 말 것. 어조와 접근법에만 반영할 것
 - 문장 끝은 네가 평소 쓰는 메모체로 맞출 것. 예: ~함, ~보임, ~예정, ~부탁, ~드림, ~필요
 - ~했습니다, ~하였습니다, ~습니다, ~입니다, ~드립니다 같은 보고서체 종결은 쓰지 말 것
+- ★ 중간점(·) 절대 금지. · 가운뎃점, • 불릿 모두 사용 금지. 문장 구분은 오직 콤마(,)만 사용
 - 회사 규칙과 제품 용어는 정확히 쓸 것
 - 반응근거는 짧게, 다음 행동은 더 짧게
 - 본문 ${bodyLimit}자 이내로 끝낼 것${includeStrategy ? `\n- 다음방문전략은 ${strategyLimit}자 이내로 짧게 쓸 것` : ''}
-- 페린젝트는 1회 투여라고 쓰고 단회투여라고 쓰지 말 것`;
+- ★ 페린젝트는 반드시 "1회 투여"로만 표기. "단회투여", "단회 투여", "1회투여" 모두 금지`;
 }
 
 function normalizeMemoTone(text: string): string {
   const replacements: Array<[RegExp, string]> = [
     [/단회\s*투여/gi, '1회 투여'],
     [/단회투여/gi, '1회 투여'],
+    [/[·•]/g, ','],
     [/부탁드립니다/gi, '부탁'],
     [/요청드립니다/gi, '요청'],
     [/말씀드렸습니다/gi, '말씀드림'],
@@ -267,12 +269,16 @@ function normalizeMemoTone(text: string): string {
     [/드립니다/gi, '부탁'],
   ];
 
-  let result = text;
+  let result = text
+    .replace(/={2,}\s*(다음방문전략|영업일지|전문영업일지|제품|반응근거|다음방문계획)\s*={2,}/g, '')
+    .replace(/^(다음방문전략|영업일지|전문영업일지|제품|반응근거|다음방문계획)\s*[:：]\s*/gm, '')
+    .trim();
   for (const [pattern, replacement] of replacements) {
     result = result.replace(pattern, replacement);
   }
 
   return result
+    .replace(/\s*,\s*/g, ', ')
     .replace(/\s+([.,!?])/g, '$1')
     .replace(/[.]{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
@@ -350,15 +356,24 @@ function buildContextSection(
     context += `\n\n과거 상담/분석 기록 (${getConversationHistoryVisitCount(doctor)}회 분량, 최근 3개):\n${convSummary}`;
   }
 
-  // 사용자가 수정한 편집 패턴 수집 (최근 3개)
-  const editHints = pastLogs
-    .filter(l => l.aiEditHint)
-    .slice(0, 3)
-    .map(l => `  - ${l.aiEditHint}`)
+  // 사용자가 수정한 편집 패턴 수집 (최근 5개)
+  const editHintLogs = pastLogs.filter(l => l.aiEditHint).slice(0, 5);
+  const editHints = editHintLogs
+    .map((l, i) => `  ${i + 1}. ${l.aiEditHint}`)
     .join('\n');
 
   if (editHints) {
-    context += `\n\n【중요 - 사용자 수정 패턴 (반드시 반영)】\n이 교수의 일지를 사용자가 직접 수정한 이력:\n${editHints}\n→ 위 수정 패턴을 학습해서 처음부터 이런 방식으로 작성할 것`;
+    context = `★★★ 최최우선 - 사용자 직접 수정 학습 (이 규칙이 다른 모든 규칙보다 우선) ★★★
+이 교수의 AI 생성 일지를 사용자가 ${editHintLogs.length}회 직접 수정했습니다.
+수정 패턴 (반드시 모두 반영):
+${editHints}
+
+→ 위 수정 패턴 중 단 하나도 위반하지 말 것
+→ 처음부터 사용자가 수정한 형태대로 작성할 것
+
+────────────────────────────
+
+` + context;
   }
 
   const snippetContext = buildSnippetContext();
@@ -483,13 +498,22 @@ export async function convertToVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
+  const cvCandidateProducts = ['위너프', '페린젝트'];
+  const cvProductSnippets: string[] = [];
+  for (const product of cvCandidateProducts) {
+    const pool = snippetStorage.getByProduct(product);
+    if (pool.length === 0) continue;
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 1);
+    for (const s of shuffled) {
+      cvProductSnippets.push(`[${s.product}] ${s.content}`);
+    }
+  }
+  const cvSnippetSection = cvProductSnippets.length > 0
+    ? `\n다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${cvProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
+    : '';
+
   const prompt = `${visitContextNote}${contextSection}
-
-${buildVisitOutputRules(230, 120)}
-
-오늘 방문 메모 (날것):
-${rawNotes}
-
+${cvSnippetSection}
 위 메모를 바탕으로 영업일지를 실제 영업 메모처럼 작성해주세요.
 
 작성 기준:
@@ -509,7 +533,7 @@ ${rawNotes}
 (230자 이내의 실제 영업 메모. 설명문 금지)
 
 ===다음방문전략===
-(120자 이내의 아주 짧은 다음 행동 메모)
+(120자 이내. 반드시 "다음방문시에는", "다음방문때는", "다음에는" 중 하나로 시작. 위 제품 특장점 화법 반영. 라벨/구분자(===) 다시 쓰지 말 것)
 
 제목, 구분선, 라벨, 설명은 절대 붙이지 마세요.`;
 
@@ -559,8 +583,22 @@ export async function autoGenerateVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const prompt = `${visitContextNote}${contextSection}
+  const agCandidateProducts = ['위너프', '페린젝트'];
+  const agProductSnippets: string[] = [];
+  for (const product of agCandidateProducts) {
+    const pool = snippetStorage.getByProduct(product);
+    if (pool.length === 0) continue;
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 1);
+    for (const s of shuffled) {
+      agProductSnippets.push(`[${s.product}] ${s.content}`);
+    }
+  }
+  const agSnippetSection = agProductSnippets.length > 0
+    ? `\n오늘 다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${agProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
+    : '';
 
+  const prompt = `${visitContextNote}${contextSection}
+${agSnippetSection}
 ${buildVisitOutputRules(230, 120)}
 
 오늘 날짜: ${today}
@@ -588,7 +626,7 @@ ${buildVisitOutputRules(230, 120)}
 (실제 방문한 것처럼 작성한 일지. 앞부분에 반응근거, 뒷부분에 다음방문계획을 자연스럽게 이어서 작성. 빈 줄 없이 바로 다음 줄에 이어서 쓸 것. 별도 제목이나 구분선 붙이지 말 것. 반드시 230자 이내로 완성된 문장으로 끝낼 것. 230자 넘으면 전체를 다시 쓸 것. 큰따옴표("), 작은따옴표(') 모두 사용 금지)
 
 ===다음방문전략===
-(120자 이내의 아주 짧은 다음 행동 메모)`;
+(120자 이내. 반드시 "다음방문시에는", "다음방문때는", "다음에는" 중 하나로 시작. 위 제품 특장점 화법 반영. 라벨/구분자(===) 다시 쓰지 말 것)`;
 
   const response = await callAI(systemPrompt, prompt);
 
@@ -1086,7 +1124,7 @@ ${rawText.slice(0, 4000)}
   const tagsText = tagsMatch ? tagsMatch[1].trim() : '';
   const detectedTraits = tagsText
     .split(/[,，、\n]/)
-    .map((t) => t.trim().replace(/^[-·•]\s*/, ''))
+    .map((t) => t.trim().replace(/^[-·•]\s*/, '').replace(/[·•]/g, ','))
     .filter(Boolean)
     .slice(0, 5);
 
