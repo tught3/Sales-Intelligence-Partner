@@ -517,16 +517,11 @@ export async function convertToVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const cvCandidateProducts = ['위너프', '페린젝트'];
-  const cvProductSnippets: string[] = [];
-  for (const product of cvCandidateProducts) {
-    const pool = snippetStorage.getByProduct(product);
-    if (pool.length === 0) continue;
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 1);
-    for (const s of shuffled) {
-      cvProductSnippets.push(`[${s.product}] ${s.content}`);
-    }
-  }
+  const cvAllSnippets = snippetStorage.getAll();
+  const cvProductSnippets = [...cvAllSnippets]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map(s => `[${s.product}] ${s.content}`);
   const cvSnippetSection = cvProductSnippets.length > 0
     ? `\n다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${cvProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
     : '';
@@ -602,16 +597,11 @@ export async function autoGenerateVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const agCandidateProducts = ['위너프', '페린젝트'];
-  const agProductSnippets: string[] = [];
-  for (const product of agCandidateProducts) {
-    const pool = snippetStorage.getByProduct(product);
-    if (pool.length === 0) continue;
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 1);
-    for (const s of shuffled) {
-      agProductSnippets.push(`[${s.product}] ${s.content}`);
-    }
-  }
+  const agAllSnippets = snippetStorage.getAll();
+  const agProductSnippets = [...agAllSnippets]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map(s => `[${s.product}] ${s.content}`);
   const agSnippetSection = agProductSnippets.length > 0
     ? `\n오늘 다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${agProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
     : '';
