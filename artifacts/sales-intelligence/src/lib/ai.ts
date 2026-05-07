@@ -243,13 +243,20 @@ function buildVisitOutputRules(bodyLimit: number, strategyLimit: number, include
 - 회사 규칙과 제품 용어는 정확히 쓸 것
 - 반응근거는 짧게, 다음 행동은 더 짧게
 - 본문 ${bodyLimit}자 이내로 끝낼 것${includeStrategy ? `\n- 다음방문전략은 ${strategyLimit}자 이내로 짧게 쓸 것` : ''}
-- ★ 페린젝트는 반드시 "1회 투여"로만 표기. "단회투여", "단회 투여", "1회투여" 모두 금지`;
+- ★ 페린젝트는 반드시 "1회 투여"로만 표기. "단회투여", "단회 투여", "1회투여" 모두 금지
+- ★ 교수에게 전달/안내한 내용은 "디테일 진행함", "디테일 안내함", "페린젝트 디테일 진행함" 형태로. "짚음", "언급함", "설명함" 금지`;
 }
 
 function normalizeMemoTone(text: string): string {
   const replacements: Array<[RegExp, string]> = [
     [/단회\s*투여/gi, '1회 투여'],
     [/단회투여/gi, '1회 투여'],
+    [/짚겠음/gi, '디테일 진행함'],
+    [/짚을 예정/gi, '디테일 진행 예정'],
+    [/짚어볼 예정/gi, '디테일 진행 예정'],
+    [/짚고\s*넘어/gi, '디테일 진행'],
+    [/짚음/gi, '디테일 진행함'],
+    [/짚을/gi, '디테일 진행할'],
     [/[·•]/g, ','],
     [/부탁드립니다/gi, '부탁'],
     [/요청드립니다/gi, '요청'],
