@@ -194,14 +194,41 @@ JW중외제약의 주요 제품:
 function buildSnippetContext(): string {
   const allSnippets = snippetStorage.getAll();
   if (allSnippets.length === 0) return '';
-
-  const sorted = allSnippets
-    .sort((a, b) => b.effectiveness - a.effectiveness)
-    .slice(0, 10);
-  const lines = sorted
+  // 전체 랜덤 셔플 후 최대 8개 (매번 다른 조합)
+  const shuffled = [...allSnippets].sort(() => Math.random() - 0.5).slice(0, 8);
+  const lines = shuffled
     .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
     .join('\n');
-  return `\n활용 가능한 핵심 멘트:\n${lines}\n`;
+  return `\n활용 가능한 핵심 멘트 (이 중 오늘 과/맥락에 맞는 것 선택):\n${lines}\n`;
+}
+
+function buildContextAwareSnippets(
+  pastLogs: VisitLog[],
+  selectedProducts: string[] = [],
+  count = 3
+): string {
+  const allSnippets = selectedProducts.length > 0
+    ? snippetStorage.getAll().filter(s => selectedProducts.includes(s.product))
+    : snippetStorage.getAll();
+  if (allSnippets.length === 0) return '';
+
+  // 최근 5회 방문 일지+다음전략 텍스트 합산
+  const recentTexts = pastLogs.slice(0, 5)
+    .map(l => `${l.formattedLog} ${l.nextStrategy ?? ''}`.toLowerCase());
+
+  // 최근 방문에서 이미 다룬 내용은 우선순위 낮춤 (앞 15자로 판단)
+  const shuffle = <T>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
+  const unused = shuffle(allSnippets.filter(s =>
+    !recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()))
+  ));
+  const used = shuffle(allSnippets.filter(s =>
+    recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()))
+  ));
+
+  const selected = [...unused, ...used].slice(0, count);
+  return selected
+    .map(s => `  - [${s.product}] ${s.content}${s.context ? ` (상황: ${s.context})` : ''}`)
+    .join('\n');
 }
 
 function buildUserMemoStyleSection(): string {
@@ -437,12 +464,17 @@ function buildIcuContextNote(department: string): string {
   const isIcu = icuDepts.some(d => department.includes(d));
   if (!isIcu) return '';
 
-  return `[ICU/중증 환경 영업 포인트 - 이 과에서 실제로 나올 법한 디테일 활용]
-- 위너프/위너프에이플러스: ICU 금식·소화기 불가 환자 TPN, 오메가3로 염증반응 억제, 중증환자 고단백 필요 시 위너프에이플러스(아미노산 25% 증가), 수술 전후 영양 보충
-- 플라주OP: 패혈증·외상·수술 1차 수액, 0.9% NS 대비 고염소혈증 예방, Mg 함유로 전해질 균형, 비락테이트·아세트산 완충으로 대사성 산증 부담 감소
-- 포스페넴: ICU 내 ESBL/MDR 그람음성균 감염, 항바이오필름 효과(카테터·인공호흡기 관련 감염), 카바페넴 절약 전략(ASP)
-- 이부프로펜프리믹스: ICU·ERAS 환자 opioid-sparing, 수술 후 통증 조절, 케토롤락 대비 신독성 낮음
-위 포인트 중 오늘 방문 맥락에 맞는 것을 자연스럽게 활용할 것`;
+  // 하드코딩 대신 실제 저장된 스니펫에서 ICU 관련 랜덤 2개 추출
+  const icuKeywords = ['icu', '중증', '수술', '패혈', '외상', '감염', '영양', '수액', '항생', '통증', 'eras'];
+  const allSnippets = snippetStorage.getAll();
+  const icuSnippets = allSnippets.filter(s =>
+    icuKeywords.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+  );
+  const picked = [...icuSnippets].sort(() => Math.random() - 0.5).slice(0, 2);
+
+  if (picked.length === 0) return '';
+  const lines = picked.map(s => `  - [${s.product}] ${s.content}`).join('\n');
+  return `[이 과(${department})에서 활용 가능한 ICU/중증 관련 포인트]\n${lines}`;
 }
 
 function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt: string; contextSection: string } {
@@ -558,15 +590,9 @@ export async function convertToVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const cvAllSnippets = selectedProducts.length > 0
-    ? snippetStorage.getAll().filter(s => selectedProducts.includes(s.product))
-    : snippetStorage.getAll();
-  const cvProductSnippets = [...cvAllSnippets]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3)
-    .map(s => `[${s.product}] ${s.content}`);
-  const cvSnippetSection = cvProductSnippets.length > 0
-    ? `\n다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${cvProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
+  const cvSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 3);
+  const cvSnippetSection = cvSnippetLines
+    ? `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n${cvSnippetLines}\n`
     : '';
 
   const cvProductConstraint = selectedProducts.length > 0
@@ -637,15 +663,9 @@ export async function autoGenerateVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const agAllSnippets = selectedProducts.length > 0
-    ? snippetStorage.getAll().filter(s => selectedProducts.includes(s.product))
-    : snippetStorage.getAll();
-  const agProductSnippets = [...agAllSnippets]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3)
-    .map(s => `[${s.product}] ${s.content}`);
-  const agSnippetSection = agProductSnippets.length > 0
-    ? `\n오늘 다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${agProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
+  const agSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 3);
+  const agSnippetSection = agSnippetLines
+    ? `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n${agSnippetLines}\n`
     : '';
 
   const agProductConstraint = selectedProducts.length > 0
