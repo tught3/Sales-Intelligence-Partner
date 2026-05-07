@@ -191,12 +191,27 @@ JW중외제약의 주요 제품:
   return prompt;
 }
 
-function buildSnippetContext(): string {
+function buildSnippetContext(department = ''): string {
   const allSnippets = snippetStorage.getAll();
   if (allSnippets.length === 0) return '';
-  // 전체 랜덤 셔플 후 최대 8개 (매번 다른 조합)
-  const shuffled = [...allSnippets].sort(() => Math.random() - 0.5).slice(0, 8);
-  const lines = shuffled
+
+  const isIcu = department && isIcuDepartment(department);
+  let selected;
+  if (isIcu) {
+    const icuOnes = allSnippets.filter(s =>
+      ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    );
+    const others = allSnippets.filter(s =>
+      !ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    );
+    const icuPicked = [...icuOnes].sort(() => Math.random() - 0.5).slice(0, 5);
+    const otherPicked = [...others].sort(() => Math.random() - 0.5).slice(0, 4);
+    selected = [...icuPicked, ...otherPicked].sort(() => Math.random() - 0.5);
+  } else {
+    selected = [...allSnippets].sort(() => Math.random() - 0.5).slice(0, 9);
+  }
+
+  const lines = selected
     .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
     .join('\n');
   return `\n활용 가능한 핵심 멘트 (이 중 오늘 과/맥락에 맞는 것 선택):\n${lines}\n`;
@@ -205,7 +220,8 @@ function buildSnippetContext(): string {
 function buildContextAwareSnippets(
   pastLogs: VisitLog[],
   selectedProducts: string[] = [],
-  count = 3
+  count = 4,
+  department = ''
 ): string {
   const allSnippets = selectedProducts.length > 0
     ? snippetStorage.getAll().filter(s => selectedProducts.includes(s.product))
@@ -216,15 +232,35 @@ function buildContextAwareSnippets(
   const recentTexts = pastLogs.slice(0, 5)
     .map(l => `${l.formattedLog} ${l.nextStrategy ?? ''}`.toLowerCase());
 
-  // 최근 방문에서 이미 다룬 내용은 우선순위 낮춤 (앞 15자로 판단)
   const shuffle = <T>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
-  const unused = shuffle(allSnippets.filter(s =>
-    !recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()))
-  ));
-  const used = shuffle(allSnippets.filter(s =>
-    recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()))
-  ));
+  const notUsed = (s: typeof allSnippets[number]) =>
+    !recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()));
+  const wasUsed = (s: typeof allSnippets[number]) =>
+    recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()));
 
+  // ICU 과인 경우: ICU 스니펫 ~60% + 일반 ~40% 비율로 선택
+  const isIcu = department && isIcuDepartment(department);
+  if (isIcu) {
+    const icuOnes = allSnippets.filter(s =>
+      ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    );
+    const others = allSnippets.filter(s =>
+      !ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    );
+    const icuCount = Math.ceil(count * 0.6);
+    const generalCount = count - icuCount;
+
+    const selectedIcu = [...shuffle(icuOnes.filter(notUsed)), ...shuffle(icuOnes.filter(wasUsed))].slice(0, icuCount);
+    const selectedGen = [...shuffle(others.filter(notUsed)), ...shuffle(others.filter(wasUsed))].slice(0, generalCount);
+    const selected = shuffle([...selectedIcu, ...selectedGen]);
+    return selected
+      .map(s => `  - [${s.product}] ${s.content}${s.context ? ` (상황: ${s.context})` : ''}`)
+      .join('\n');
+  }
+
+  // 일반 과: 최근 미사용 우선
+  const unused = shuffle(allSnippets.filter(notUsed));
+  const used = shuffle(allSnippets.filter(wasUsed));
   const selected = [...unused, ...used].slice(0, count);
   return selected
     .map(s => `  - [${s.product}] ${s.content}${s.context ? ` (상황: ${s.context})` : ''}`)
@@ -437,7 +473,7 @@ ${editHints}
 ` + context;
   }
 
-  const snippetContext = buildSnippetContext();
+  const snippetContext = buildSnippetContext(doctor.department);
   if (snippetContext) {
     context += `\n${snippetContext}`;
   }
@@ -456,25 +492,21 @@ ${editHints}
   return context;
 }
 
+const ICU_DEPTS = [
+  '중환자', '응급', '외상', '신경외과', '흉부외과', '심혈관외과', '심장외과',
+  '마취', '호흡기', '감염', '외과', '내과', '신경과', '신장'
+];
+const ICU_KEYWORDS = ['icu', '중증', '수술', '패혈', '외상', '감염', '영양', '수액', '항생', '통증', 'eras'];
+
+function isIcuDepartment(department: string): boolean {
+  return ICU_DEPTS.some(d => department.includes(d));
+}
+
 function buildIcuContextNote(department: string): string {
-  const icuDepts = [
-    '중환자', '응급', '외상', '신경외과', '흉부외과', '심혈관외과', '심장외과',
-    '마취', '호흡기', '감염', '외과', '내과', '신경과', '신장'
-  ];
-  const isIcu = icuDepts.some(d => department.includes(d));
-  if (!isIcu) return '';
-
-  // 하드코딩 대신 실제 저장된 스니펫에서 ICU 관련 랜덤 2개 추출
-  const icuKeywords = ['icu', '중증', '수술', '패혈', '외상', '감염', '영양', '수액', '항생', '통증', 'eras'];
-  const allSnippets = snippetStorage.getAll();
-  const icuSnippets = allSnippets.filter(s =>
-    icuKeywords.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
-  );
-  const picked = [...icuSnippets].sort(() => Math.random() - 0.5).slice(0, 2);
-
-  if (picked.length === 0) return '';
-  const lines = picked.map(s => `  - [${s.product}] ${s.content}`).join('\n');
-  return `[이 과(${department})에서 활용 가능한 ICU/중증 관련 포인트]\n${lines}`;
+  if (!isIcuDepartment(department)) return '';
+  return `[중요] 이 과(${department})는 ICU/중증 환자를 담당합니다.
+제품 디테일 포인트 중 ICU/중증/수술/감염 관련 포인트를 다른 포인트보다 비중 있게 활용할 것.
+단, ICU 포인트만 고집하지 말고 환자군과 맥락에 따라 적절히 섞어서 사용할 것.`;
 }
 
 function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt: string; contextSection: string } {
@@ -590,10 +622,11 @@ export async function convertToVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const cvSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 3);
-  const cvSnippetSection = cvSnippetLines
-    ? `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n${cvSnippetLines}\n`
-    : '';
+  const cvSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 4, doctor.department);
+  const cvSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
+    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선, 화법만 차용):\n`
+    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n`;
+  const cvSnippetSection = cvSnippetLines ? `${cvSnippetLabel}${cvSnippetLines}\n` : '';
 
   const cvProductConstraint = selectedProducts.length > 0
     ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
@@ -663,10 +696,11 @@ export async function autoGenerateVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const agSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 3);
-  const agSnippetSection = agSnippetLines
-    ? `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n${agSnippetLines}\n`
-    : '';
+  const agSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 4, doctor.department);
+  const agSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
+    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선, 화법만 차용):\n`
+    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선, 원문 복붙 금지 화법만 차용):\n`;
+  const agSnippetSection = agSnippetLines ? `${agSnippetLabel}${agSnippetLines}\n` : '';
 
   const agProductConstraint = selectedProducts.length > 0
     ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
