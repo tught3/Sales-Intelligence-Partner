@@ -455,32 +455,35 @@ function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt:
   return { systemPrompt, contextSection };
 }
 
-async function trimToLimit(systemPrompt: string, text: string, limit: number, isRetry = false, label = '영업일지'): Promise<string> {
-  const retryNote = isRetry
-    ? `★★ 이전 시도에서 여전히 ${text.length}자였습니다. 이번엔 반드시 ${limit}자 이내로. 문장을 절대 중간에 자르지 말고, 완성된 문장으로 자연스럽게 줄일 것.\n`
+async function trimToLimit(systemPrompt: string, text: string, limit: number, attempt = 0, label = '영업일지'): Promise<string> {
+  if (text.length <= limit) return text;
+
+  const retryNote = attempt > 0
+    ? `★★ ${attempt}번 시도했지만 아직 ${text.length}자입니다. 반드시 이번엔 ${limit}자 이내로 완성된 문장으로 끝낼 것.\n`
     : '';
-  const prompt = `${retryNote}아래 ${label}가 ${text.length}자입니다. 반드시 ${limit}자 이내로 자연스럽게 다듬어 주세요.
+  const prompt = `${retryNote}아래 ${label}가 ${text.length}자입니다. 반드시 ${limit}자 이내로 줄여주세요.
 
 규칙:
-- 핵심 내용과 의미를 최대한 보존
-- 말투와 톤을 그대로 유지
-- 문장을 중간에 자르지 말 것. 완성된 문장으로 끝낼 것
-- 큰따옴표("), 작은따옴표(') 모두 사용 금지
-- 줄인 일지 본문만 출력. 설명이나 글자수 표기 등 절대 붙이지 말 것
+- 핵심 내용 보존, 말투/톤 유지
+- 문장 중간에 자르지 말고 완성된 문장으로 끝낼 것
+- 큰따옴표("), 작은따옴표(') 금지
+- 본문만 출력. 글자수 표기, 설명 붙이지 말 것
 
 원문:
 ${text}`;
 
   const result = await callAI(systemPrompt, prompt);
   let trimmed = result.replace(/^===.*===\s*/gm, '').replace(/['"]/g, '').trim();
+  trimmed = normalizeMemoTone(trimmed);
 
   if (trimmed.length <= limit) return trimmed;
 
-  // 1회 재시도
-  if (!isRetry) {
-    return trimToLimit(systemPrompt, trimmed, limit, true, label);
+  // 최대 2회 AI 재시도
+  if (attempt < 2) {
+    return trimToLimit(systemPrompt, trimmed, limit, attempt + 1, label);
   }
 
+  // 최후 수단: 마지막 완성된 문장에서 컷
   return compressTextToLimit(trimmed, limit);
 }
 
@@ -595,12 +598,14 @@ ${buildVisitLogRules()}
   nextStrategy = normalizeMemoTone(nextStrategy);
 
   if (cleaned.length > 230) {
-    cleaned = await trimToLimit(systemPrompt, cleaned, 230, false, '영업일지');
+    cleaned = await trimToLimit(systemPrompt, cleaned, 230, 0, '영업일지');
   }
+  if (cleaned.length > 230) cleaned = compressTextToLimit(cleaned, 230);
 
   if (nextStrategy.length > 120) {
-    nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, false, '다음방문전략');
+    nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, 0, '다음방문전략');
   }
+  if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
   return {
     formattedLog: cleaned,
@@ -691,12 +696,14 @@ ${buildVisitLogRules()}
   nextStrategy = normalizeMemoTone(nextStrategy);
 
   if (fullLog.length > 230) {
-    fullLog = await trimToLimit(buildSystemPrompt(), fullLog, 230, false, '영업일지');
+    fullLog = await trimToLimit(buildSystemPrompt(), fullLog, 230, 0, '영업일지');
   }
+  if (fullLog.length > 230) fullLog = compressTextToLimit(fullLog, 230);
 
   if (nextStrategy.length > 120) {
-    nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, false, '다음방문전략');
+    nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
   }
+  if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
   return {
     visitDate: today,
@@ -730,8 +737,9 @@ export async function generateNextVisitStrategy(
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeMemoTone(cleaned);
   if (cleaned.length > 120) {
-    cleaned = await trimToLimit(systemPrompt, cleaned, 120, false, '다음방문전략');
+    cleaned = await trimToLimit(systemPrompt, cleaned, 120, 0, '다음방문전략');
   }
+  if (cleaned.length > 120) cleaned = compressTextToLimit(cleaned, 120);
   return cleaned;
 }
 
