@@ -421,7 +421,28 @@ ${editHints}
     context = styleSection + '\n\n' + context;
   }
 
+  const icuNote = buildIcuContextNote(doctor.department);
+  if (icuNote) {
+    context += `\n\n${icuNote}`;
+  }
+
   return context;
+}
+
+function buildIcuContextNote(department: string): string {
+  const icuDepts = [
+    '중환자', '응급', '외상', '신경외과', '흉부외과', '심혈관외과', '심장외과',
+    '마취', '호흡기', '감염', '외과', '내과', '신경과', '신장'
+  ];
+  const isIcu = icuDepts.some(d => department.includes(d));
+  if (!isIcu) return '';
+
+  return `[ICU/중증 환경 영업 포인트 - 이 과에서 실제로 나올 법한 디테일 활용]
+- 위너프/위너프에이플러스: ICU 금식·소화기 불가 환자 TPN, 오메가3로 염증반응 억제, 중증환자 고단백 필요 시 위너프에이플러스(아미노산 25% 증가), 수술 전후 영양 보충
+- 플라주OP: 패혈증·외상·수술 1차 수액, 0.9% NS 대비 고염소혈증 예방, Mg 함유로 전해질 균형, 비락테이트·아세트산 완충으로 대사성 산증 부담 감소
+- 포스페넴: ICU 내 ESBL/MDR 그람음성균 감염, 항바이오필름 효과(카테터·인공호흡기 관련 감염), 카바페넴 절약 전략(ASP)
+- 이부프로펜프리믹스: ICU·ERAS 환자 opioid-sparing, 수술 후 통증 조절, 케토롤락 대비 신독성 낮음
+위 포인트 중 오늘 방문 맥락에 맞는 것을 자연스럽게 활용할 것`;
 }
 
 function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt: string; contextSection: string } {
