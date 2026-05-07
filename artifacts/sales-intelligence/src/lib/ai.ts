@@ -205,19 +205,30 @@ function buildSnippetContext(): string {
 }
 
 function buildUserMemoStyleSection(): string {
-  const recentLogs = visitLogStorage.getRecent(20);
+  const recentLogs = visitLogStorage.getRecent(30);
 
-  // formattedLog 우선, 없으면 rawNotes fallback
+  // formattedLog 우선 (실제 작성된 일지), 없으면 rawNotes fallback
   const styleExamples = recentLogs
     .map((log) => (log.formattedLog?.trim() || log.rawNotes?.trim() || ''))
-    .filter((text) => text.length > 20)
-    .filter((text) => text.length <= 220)
+    .filter((text) => text.length > 30)
+    .filter((text) => text.length <= 300)
     .filter((text) => !/분석|정리하면|전반적으로|프로토콜|보고서|첫 방문|데이터중시|보수적 성향|겠습니다/.test(text))
-    .slice(0, 4);
+    .slice(0, 6);
 
   if (styleExamples.length === 0) return '';
 
-  return `\n\n【★★ 사용자 문체 기준 - 최우선 반영 ★★】\n실제 작성된 방문일지 예시 (이 형태/말투로 작성할 것):\n${styleExamples.map((text, i) => `  [예시${i + 1}] ${text}`).join('\n')}\n\n문체 규칙:\n- 위 예시의 말투와 어미 형태를 그대로 따를 것\n- 예시에서 쓰이는 종결 어미(~함, ~보임, ~예정, ~있음 등)만 사용\n- ~겠습니다, ~했습니다, ~합니다, ~입니다 절대 금지\n- 분석문, 보고서체, 교육자료체, 설명문 느낌 금지\n- 필요하면 더 줄이지, 절대 길게 풀지 말 것`;
+  return `════════════════════════════════
+★★★ 최최우선 - 사용자 작성 일지 문체 기준 ★★★
+아래는 사용자가 실제로 작성한 방문일지입니다.
+반드시 이 말투, 어미, 형식을 그대로 따라서 작성하세요.
+
+${styleExamples.map((text, i) => `[실제 일지 예시 ${i + 1}]\n${text}`).join('\n\n')}
+
+→ 위 예시들의 종결 어미(~함, ~보임, ~예정, ~있음, ~확인함 등)만 사용
+→ ~겠습니다, ~했습니다, ~합니다, ~입니다 절대 금지
+→ 보고서체, 교육자료체, 설명문 스타일 금지
+→ 위 예시보다 길게 쓰지 말 것
+════════════════════════════════`;
 }
 
 function buildVisitOutputRules(bodyLimit: number, strategyLimit: number, includeStrategy = true): string {
@@ -388,9 +399,10 @@ ${editHints}
     context += `\n${snippetContext}`;
   }
 
+  // 스타일 기준을 컨텍스트 맨 앞에 배치 (editHints 바로 다음)
   const styleSection = buildUserMemoStyleSection();
   if (styleSection) {
-    context += styleSection;
+    context = styleSection + '\n\n' + context;
   }
 
   return context;
