@@ -195,6 +195,13 @@ router.post("/ai/chat", async (req, res) => {
       }
 
       const text = data.choices?.[0]?.message?.content ?? "";
+      const usage = (data as Record<string, unknown>).usage as Record<string, unknown> | undefined;
+      if (usage) {
+        const total = usage.total_tokens ?? '?';
+        const cached = (usage.prompt_tokens_details as Record<string, unknown> | undefined)?.cached_tokens ?? 0;
+        const prompt = usage.prompt_tokens ?? '?';
+        console.log(`[ai] tokens: prompt=${prompt} (cached=${cached}) | total=${total} | cache_hit=${cached ? Math.round(Number(cached)/Number(prompt)*100)+'%' : '0%'}`);
+      }
       res.json({
         choices: [{ message: { role: "assistant", content: text } }],
       });
