@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useSearch } from "wouter";
 import {
   doctorStorage,
   visitLogStorage,
@@ -22,6 +23,7 @@ import {
 
 export default function VisitLogHistoryPage() {
   const { toast } = useToast();
+  const search = useSearch();
   const [doctors] = useState(() => doctorStorage.getAll());
   const [allLogs, setAllLogs] = useState(() => visitLogStorage.getAll());
 
@@ -30,11 +32,31 @@ export default function VisitLogHistoryPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editTargetRef = useRef<HTMLDivElement>(null);
+
+  // URL ?editId= 파라미터로 진입 시 해당 로그 자동 편집 오픈
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const editId = params.get("editId");
+    if (editId) {
+      const log = visitLogStorage.getAll().find(l => l.id === editId);
+      if (log) {
+        setEditingId(editId);
+        setEditText(log.formattedLog);
+      }
+    }
+  }, [search]);
 
   useEffect(() => {
-    if (editingId && textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.selectionStart = textareaRef.current.value.length;
+    if (editingId) {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.selectionStart = textareaRef.current.value.length;
+      }
+      // 편집 중인 카드로 스크롤
+      setTimeout(() => {
+        editTargetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
     }
   }, [editingId]);
 
@@ -206,8 +228,8 @@ export default function VisitLogHistoryPage() {
             const doc = doctors.find((d) => d.id === log.doctorId);
             const isEditing = editingId === log.id;
             return (
+              <div key={log.id} ref={isEditing ? editTargetRef : undefined}>
               <Card
-                key={log.id}
                 className={`group transition-all ${isEditing ? 'border-primary ring-1 ring-primary/20' : 'cursor-pointer hover:border-primary/30'}`}
                 onClick={() => { if (!isEditing) startEdit(log); }}
               >
@@ -282,6 +304,7 @@ export default function VisitLogHistoryPage() {
                   )}
                 </CardContent>
               </Card>
+              </div>
             );
           })}
         </div>

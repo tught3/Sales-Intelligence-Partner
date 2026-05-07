@@ -60,6 +60,7 @@ export default function VisitLogPage() {
   const [bulkCount, setBulkCount] = useState(3);
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; doctorName: string } | null>(null);
   const [bulkResults, setBulkResults] = useState<Array<{ doctor: Doctor; log: VisitLog }>>([]);
+  const [savedLogId, setSavedLogId] = useState<string | null>(null);
 
   const hospitals = useMemo(() => {
     const set = new Set(doctors.map(d => d.hospital).filter(Boolean));
@@ -152,8 +153,9 @@ export default function VisitLogPage() {
         }
         setAllLogs(visitLogStorage.getAll());
         setIsSaved(true);
+        setSavedLogId(log.id);
       }
-      toast({ title: "영업 일지가 자동 저장되었습니다", description: "방문 일지 기록에서 확인 및 수정할 수 있습니다." });
+      toast({ title: "영업 일지가 자동 저장되었습니다", description: "아래 결과를 클릭하면 바로 편집할 수 있습니다." });
     } catch (e) {
       toast({ title: "AI 생성 실패", description: String(e), variant: "destructive" });
     } finally {
@@ -594,7 +596,11 @@ export default function VisitLogPage() {
                         <p className="text-xs font-semibold text-primary">생성 완료 ({bulkResults.length}건)</p>
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                           {bulkResults.map(({ doctor, log }) => (
-                            <div key={log.id} className="bg-white rounded-md border border-primary/10 p-2.5 text-xs">
+                            <div
+                              key={log.id}
+                              className="bg-white rounded-md border border-primary/10 p-2.5 text-xs cursor-pointer hover:border-primary/40 hover:shadow-sm transition-all"
+                              onClick={() => setLocation(`/visit-log-history?editId=${log.id}`)}
+                            >
                               <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                                 <span className="font-semibold text-foreground">
                                   {doctor.name} 교수 <span className="text-muted-foreground font-normal">| {doctor.hospital} {doctor.department}</span>
@@ -667,11 +673,14 @@ export default function VisitLogPage() {
 
         <div className="lg:col-span-2 space-y-4">
           {result && (
-            <Card className="border-green-300 bg-green-50/30">
+            <Card
+              className="border-green-300 bg-green-50/30 cursor-pointer hover:border-green-400 hover:shadow-md transition-all"
+              onClick={() => savedLogId && setLocation(`/visit-log-history?editId=${savedLogId}`)}
+            >
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2 text-green-700">
                   <CheckCircle2 className="w-4 h-4" />
-                  자동 저장 완료
+                  저장 완료 — 클릭하면 바로 편집
                   {((selectedDoctor ? getDoctorVisitCount(selectedDoctor) : pastLogs.length) > 0) && (
                     <span className="text-xs font-normal text-muted-foreground ml-auto">
                       과거 {selectedDoctor ? getDoctorVisitCount(selectedDoctor) : pastLogs.length}회 방문 맥락 반영
@@ -679,26 +688,18 @@ export default function VisitLogPage() {
                   )}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2">
                 <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed bg-white rounded-lg p-3 border">
                   {result.formattedLog}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  방문 일지 기록 페이지에서 내용을 수정할 수 있습니다. 수정된 말투와 내용은 다음 AI 생성에 반영됩니다.
-                </p>
+                {result.nextStrategy && (
+                  <p className="text-sm text-primary/70 whitespace-pre-wrap leading-relaxed px-1">
+                    → {result.nextStrategy}
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
-
-          <Button
-            variant="outline"
-            className="w-full gap-2"
-            onClick={() => setLocation("/visit-log-history")}
-          >
-            <ClipboardList className="w-4 h-4" />
-            방문 일지 기록 전체보기
-            <Badge variant="secondary" className="ml-auto text-xs">{allLogs.length}건</Badge>
-          </Button>
         </div>
       </div>
     </div>
