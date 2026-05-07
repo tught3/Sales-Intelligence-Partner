@@ -205,17 +205,19 @@ function buildSnippetContext(): string {
 }
 
 function buildUserMemoStyleSection(): string {
-  const styleExamples = visitLogStorage
-    .getRecent(12)
-    .map((log) => log.rawNotes.trim())
-    .filter((text) => text.length > 0)
-    .filter((text) => text.length <= 160)
-    .filter((text) => !/분석|정리하면|전반적으로|프로토콜|보고서|첫 방문|데이터중시|보수적 성향/.test(text))
-    .slice(0, 3);
+  const recentLogs = visitLogStorage.getRecent(20);
+
+  // formattedLog 우선, 없으면 rawNotes fallback
+  const styleExamples = recentLogs
+    .map((log) => (log.formattedLog?.trim() || log.rawNotes?.trim() || ''))
+    .filter((text) => text.length > 20)
+    .filter((text) => text.length <= 220)
+    .filter((text) => !/분석|정리하면|전반적으로|프로토콜|보고서|첫 방문|데이터중시|보수적 성향|겠습니다/.test(text))
+    .slice(0, 4);
 
   if (styleExamples.length === 0) return '';
 
-  return `\n\n【사용자 문체 기준 - 반드시 반영】\n최근 실제 메모 예시:\n${styleExamples.map((text) => `  - ${text}`).join('\n')}\n문체 규칙:\n- 위 예시처럼 짧고 구어체로 작성할 것\n- 분석문, 보고서체, 교육자료체, 설명문 느낌 금지\n- 회사 규칙 용어는 정확히 사용할 것\n- 필요하면 더 줄이지, 절대 길게 풀지 말 것`;
+  return `\n\n【★★ 사용자 문체 기준 - 최우선 반영 ★★】\n실제 작성된 방문일지 예시 (이 형태/말투로 작성할 것):\n${styleExamples.map((text, i) => `  [예시${i + 1}] ${text}`).join('\n')}\n\n문체 규칙:\n- 위 예시의 말투와 어미 형태를 그대로 따를 것\n- 예시에서 쓰이는 종결 어미(~함, ~보임, ~예정, ~있음 등)만 사용\n- ~겠습니다, ~했습니다, ~합니다, ~입니다 절대 금지\n- 분석문, 보고서체, 교육자료체, 설명문 느낌 금지\n- 필요하면 더 줄이지, 절대 길게 풀지 말 것`;
 }
 
 function buildVisitOutputRules(bodyLimit: number, strategyLimit: number, includeStrategy = true): string {
@@ -224,6 +226,7 @@ function buildVisitOutputRules(bodyLimit: number, strategyLimit: number, include
 - 분석문, 보고서체, 설명문, 교육자료체 금지
 - 성향 분석을 텍스트로 길게 풀지 말 것. 어조와 접근법에만 반영할 것
 - 문장 끝은 네가 평소 쓰는 메모체로 맞출 것. 예: ~함, ~보임, ~예정, ~부탁, ~드림, ~필요
+- ★ ~겠습니다, ~해보겠습니다, ~짚겠습니다 등 겠습니다 체 절대 금지
 - ~했습니다, ~하였습니다, ~습니다, ~입니다, ~드립니다 같은 보고서체 종결은 쓰지 말 것
 - ★ 중간점(·) 절대 금지. · 가운뎃점, • 불릿 모두 사용 금지. 문장 구분은 오직 콤마(,)만 사용
 - 회사 규칙과 제품 용어는 정확히 쓸 것
@@ -243,6 +246,10 @@ function normalizeMemoTone(text: string): string {
     [/말씀드리겠습니다/gi, '말씀드림'],
     [/드리겠습니다/gi, '드림'],
     [/드렸습니다/gi, '드림'],
+    [/어\s*보겠습니다/gi, '어볼 예정'],
+    [/아\s*보겠습니다/gi, '아볼 예정'],
+    [/해보겠습니다/gi, '해볼 예정'],
+    [/겠습니다/gi, '겠음'],
     [/확인했습니다/gi, '확인함'],
     [/검토했습니다/gi, '검토함'],
     [/공유했습니다/gi, '공유함'],
