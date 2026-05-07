@@ -32,7 +32,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 
-const PRODUCTS = ["위너프", "페린젝트", "기타"];
+const PRODUCTS = ["위너프", "페린젝트", "플라주OP", "기타"];
 
 export default function VisitLogPage() {
   const search = useSearch();
@@ -125,7 +125,7 @@ export default function VisitLogPage() {
     setIsGenerating(true);
     resetResult();
     try {
-      const res = await convertToVisitLog(snapshotRawNotes, selectedDoctor, pastLogs);
+      const res = await convertToVisitLog(snapshotRawNotes, selectedDoctor, pastLogs, snapshotProducts);
       if (!res.formattedLog || res.formattedLog.trim().length < 10) {
         toast({ title: "AI 생성 결과가 너무 짧습니다", description: "다시 시도해주세요.", variant: "destructive" });
         return;

@@ -505,7 +505,8 @@ function compressTextToLimit(text: string, limit: number): string {
 export async function convertToVisitLog(
   rawNotes: string,
   doctor: Doctor,
-  pastLogs: VisitLog[]
+  pastLogs: VisitLog[],
+  selectedProducts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
   const visitCount = getDoctorVisitCount(doctor);
@@ -524,7 +525,9 @@ export async function convertToVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const cvAllSnippets = snippetStorage.getAll();
+  const cvAllSnippets = selectedProducts.length > 0
+    ? snippetStorage.getAll().filter(s => selectedProducts.includes(s.product))
+    : snippetStorage.getAll();
   const cvProductSnippets = [...cvAllSnippets]
     .sort(() => Math.random() - 0.5)
     .slice(0, 3)
@@ -533,8 +536,12 @@ export async function convertToVisitLog(
     ? `\n다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${cvProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
     : '';
 
+  const cvProductConstraint = selectedProducts.length > 0
+    ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
+    : '';
+
   const prompt = `${visitContextNote}${contextSection}
-${cvSnippetSection}
+${cvSnippetSection}${cvProductConstraint}
 위 메모를 바탕으로 영업일지를 작성해주세요.
 
 ━━━ 일지 흐름 (반드시 이 순서로 자연스럽게 이어서 작성) ━━━
@@ -587,7 +594,8 @@ ${cvSnippetSection}
 
 export async function autoGenerateVisitLog(
   doctor: Doctor,
-  pastLogs: VisitLog[]
+  pastLogs: VisitLog[],
+  selectedProducts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
 
@@ -608,7 +616,9 @@ export async function autoGenerateVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const agAllSnippets = snippetStorage.getAll();
+  const agAllSnippets = selectedProducts.length > 0
+    ? snippetStorage.getAll().filter(s => selectedProducts.includes(s.product))
+    : snippetStorage.getAll();
   const agProductSnippets = [...agAllSnippets]
     .sort(() => Math.random() - 0.5)
     .slice(0, 3)
@@ -617,8 +627,12 @@ export async function autoGenerateVisitLog(
     ? `\n오늘 다음방문전략에 자연스럽게 녹여낼 제품 특장점 (원문 복붙 금지, 화법만 차용):\n${agProductSnippets.map(s => `  - ${s}`).join('\n')}\n`
     : '';
 
+  const agProductConstraint = selectedProducts.length > 0
+    ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
+    : '';
+
   const prompt = `${visitContextNote}${contextSection}
-${agSnippetSection}
+${agSnippetSection}${agProductConstraint}
 ${buildVisitOutputRules(230, 120)}
 
 오늘 날짜: ${today}
