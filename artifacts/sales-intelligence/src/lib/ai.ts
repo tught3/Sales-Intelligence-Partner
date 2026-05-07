@@ -307,7 +307,7 @@ function buildVisitLogRules(): string {
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 짧은 메모처럼
 글자수: 본문 230자 이내 / 다음방문전략 120자 이내
-다음방문전략 종결: 반드시 "~할예정"으로 끝낼 것 (예: "디테일 진행할예정", "확인할예정", "드릴예정")
+다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 포인트 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
 따옴표: 큰따옴표("), 작은따옴표(') 절대 금지`;
 }
 
@@ -395,34 +395,6 @@ function normalizeMemoTone(text: string): string {
     .replace(/[.]{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
     .trim();
-}
-
-function enforceNextStrategyEnding(text: string): string {
-  if (!text) return text;
-  const trimmed = text.trimEnd();
-  // 이미 예정으로 끝나면 OK
-  if (trimmed.endsWith('예정') || trimmed.endsWith('예정.')) return text;
-  // 흔한 잘못된 종결어미 → 예정으로 교체
-  const endingMap: Array<[RegExp, string]> = [
-    [/할\s*계획임\.?$/, '할예정'],
-    [/할\s*계획\.?$/, '할예정'],
-    [/드릴\s*계획임\.?$/, '드릴예정'],
-    [/드릴\s*계획\.?$/, '드릴예정'],
-    [/진행할\s*것임\.?$/, '진행할예정'],
-    [/진행함\.?$/, '진행할예정'],
-    [/확인함\.?$/, '확인할예정'],
-    [/드림\.?$/, '드릴예정'],
-    [/있음\.?$/, '있을예정'],
-    [/함\.?$/, '할예정'],
-    [/임\.?$/, '일예정'],
-  ];
-  for (const [pattern, replacement] of endingMap) {
-    if (pattern.test(trimmed)) {
-      return trimmed.replace(pattern, replacement);
-    }
-  }
-  // 위에 해당 안 되면 그냥 "할예정" 붙이기
-  return trimmed.replace(/\.?$/, '') + '할예정';
 }
 
 function buildContextSection(
@@ -745,7 +717,7 @@ ${buildVisitLogRules()}
     nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, 0, '다음방문전략');
   }
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
-  nextStrategy = enforceNextStrategyEnding(nextStrategy);
+
 
   return {
     formattedLog: cleaned,
@@ -848,7 +820,7 @@ ${buildVisitLogRules()}
     nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
   }
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
-  nextStrategy = enforceNextStrategyEnding(nextStrategy);
+
 
   return {
     visitDate: today,
