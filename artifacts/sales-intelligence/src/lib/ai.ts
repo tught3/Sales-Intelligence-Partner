@@ -569,20 +569,29 @@ ${recentHints}${patternBlock}
 
 // 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
 const DEPT_PRODUCT_MAP: Array<{ keywords: string[]; primary: string[]; secondary: string[] }> = [
-  { keywords: ['산부인과', '산과', '부인과'], primary: ['페린젝트'], secondary: ['플라주OP', '이부프로펜프리믹스'] },
-  { keywords: ['정형외과'], primary: ['페린젝트'], secondary: ['이부프로펜프리믹스'] },
+  // 철결핍성 빈혈 중심
+  { keywords: ['산부인과', '산과', '부인과'], primary: ['페린젝트'], secondary: [] },
+  { keywords: ['정형외과'], primary: ['페린젝트'], secondary: ['이부프로펜프리믹스'] }, // 수술 후 통증도 씀
   { keywords: ['신장내과', '신장', '투석'], primary: ['페린젝트'], secondary: [] },
   { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], primary: ['페린젝트', '위너프에이플러스'], secondary: [] },
+  // 플라주OP 사용과: 응급·마취만 (수액 관리·수술 전후)
   { keywords: ['마취통증', '마취과', '통증의학'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: [] },
   { keywords: ['응급의학과', '응급'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: [] },
-  { keywords: ['흉부외과', '심혈관외과', '심장외과'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: ['위너프에이플러스'] },
+  // 흉부외과: 수술 후 영양 + 통증 (플라주OP 없음)
+  { keywords: ['흉부외과', '심혈관외과', '심장외과'], primary: ['위너프에이플러스', '이부프로펜프리믹스'], secondary: [] },
+  // 항생제 계열
   { keywords: ['감염내과', '감염'], primary: ['포스페넴', '프리페넴'], secondary: [] },
-  { keywords: ['비뇨의학과', '비뇨'], primary: ['포스페넴', '프리페넴'], secondary: ['페린젝트'] },
+  { keywords: ['비뇨의학과', '비뇨'], primary: ['포스페넴', '프리페넴'], secondary: ['페린젝트', '이부프로펜프리믹스'] }, // 요로결석 시술 후 통증
   { keywords: ['호흡기내과', '호흡기', '결핵'], primary: ['프리페넴'], secondary: [] },
+  // 영양·혈액 계열
   { keywords: ['종양혈액내과', '혈액종양', '혈액', '종양'], primary: ['위너프에이플러스', '페린젝트'], secondary: [] },
   { keywords: ['간담췌외과', '간담'], primary: ['위너프에이플러스'], secondary: [] },
-  { keywords: ['중환자의학과', '중환자', 'ICU'], primary: ['위너프에이플러스', '플라주OP'], secondary: ['포스페넴'] },
-  { keywords: ['외과', '일반외과', '복부외과', '신경외과'], primary: ['위너프에이플러스', '플라주OP'], secondary: ['이부프로펜프리믹스'] },
+  // 중환자: 영양 위주 (플라주OP 제거)
+  { keywords: ['중환자의학과', '중환자', 'ICU'], primary: ['위너프에이플러스'], secondary: ['포스페넴'] },
+  // 신경외과: 뇌·척추 수술 후 영양 (NSAID 출혈 위험으로 이부프로펜 제외)
+  { keywords: ['신경외과'], primary: ['위너프에이플러스'], secondary: [] },
+  // 외과 계열: 수술 후 영양 + 통증
+  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], primary: ['위너프에이플러스'], secondary: ['이부프로펜프리믹스'] },
 ];
 
 function getDeptFocusProducts(department: string): { primary: string[]; secondary: string[] } {
