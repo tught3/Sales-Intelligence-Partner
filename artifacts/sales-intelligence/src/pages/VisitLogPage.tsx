@@ -9,7 +9,7 @@ import {
   type Doctor,
   type VisitLog,
 } from "@/lib/storage";
-import { convertToVisitLog, autoGenerateVisitLog, processImportedRecords } from "@/lib/ai";
+import { convertToVisitLog, autoGenerateVisitLog, processImportedRecords, compressTextToLimit } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -140,9 +140,13 @@ export default function VisitLogPage() {
         if (detected.length) { setSelectedProducts(detected); prods = detected; }
       }
       if (snapshotDoctorId) {
+        // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
+        const finalLog = res.formattedLog.length > 230
+          ? compressTextToLimit(res.formattedLog, 230)
+          : res.formattedLog;
         const log: VisitLog = {
           id: generateId(), doctorId: snapshotDoctorId, visitDate: snapshotDate,
-          rawNotes: snapshotRawNotes, formattedLog: res.formattedLog,
+          rawNotes: snapshotRawNotes, formattedLog: finalLog,
           nextStrategy: res.nextStrategy, products: prods, createdAt: new Date().toISOString(),
         };
         const saveResult = visitLogStorage.save(log);
@@ -217,12 +221,16 @@ export default function VisitLogPage() {
         try {
           const res = await autoGenerateVisitLog(doctor, docPastLogs);
           if (!res.formattedLog || res.formattedLog.trim().length < 10) continue;
+          // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
+          const finalFormattedLog = res.formattedLog.length > 230
+            ? compressTextToLimit(res.formattedLog, 230)
+            : res.formattedLog;
           const log: VisitLog = {
             id: generateId(),
             doctorId: doctor.id,
             visitDate: res.visitDate,
             rawNotes: "",
-            formattedLog: res.formattedLog,
+            formattedLog: finalFormattedLog,
             nextStrategy: res.nextStrategy,
             products: res.products,
             createdAt: new Date().toISOString(),

@@ -679,7 +679,7 @@ function extractSection(response: string, sectionNames: string[]): string {
   return '';
 }
 
-function compressTextToLimit(text: string, limit: number): string {
+export function compressTextToLimit(text: string, limit: number): string {
   const source = text.trim().replace(/\s+/g, ' ');
   if (source.length <= limit) return source;
 
