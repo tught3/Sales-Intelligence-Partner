@@ -748,6 +748,12 @@ ${buildVisitLogRules()}
   }
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
+  // 최종 폴백: 여전히 비어있으면 하드코딩
+  if (!nextStrategy) {
+    const { primary } = getDeptFocusProducts(doctor.department);
+    const prod = selectedProducts[0] || primary[0] || '위너프에이플러스';
+    nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
+  }
 
   return {
     formattedLog: cleaned,
@@ -824,10 +830,16 @@ ${buildVisitLogRules()}
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   const productText = productMatch ? productMatch[1].trim() : '';
+  const KNOWN_PRODUCTS = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '이부프로펜프리믹스', '포스페넴', '프리페넴', '기타'];
   const products = productText
     .split(/[,，、]/)
     .map((p) => p.trim())
-    .filter((p) => ['위너프', '페린젝트', '플라주OP', '기타'].includes(p));
+    .filter((p) => KNOWN_PRODUCTS.some(k => p === k || p.startsWith(k) || k.startsWith(p)))
+    .map((p) => {
+      // 정규화: '위너프'는 '위너프에이플러스'로
+      if (p === '위너프') return '위너프에이플러스';
+      return p;
+    });
 
   let fullLog = logMatch
     ? logMatch[1].trim()
@@ -867,9 +879,16 @@ ${buildVisitLogRules()}
   }
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
+  // 최종 폴백: 여전히 비어있으면 하드코딩
+  if (!nextStrategy) {
+    const { primary } = getDeptFocusProducts(doctor.department);
+    const prod = selectedProducts[0] || primary[0] || '위너프에이플러스';
+    nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
+  }
+
   return {
     visitDate: today,
-    products: products.length > 0 ? products : ['위너프'],
+    products: products.length > 0 ? products : ['위너프에이플러스'],
     formattedLog: fullLog,
     nextStrategy,
   };
@@ -883,17 +902,19 @@ export async function generateNextVisitStrategy(
 
   const prompt = `${contextSection}
 
-위 모든 맥락을 종합하여 다음 방문용 짧은 실무 메모를 작성해주세요.
+위 맥락을 바탕으로 다음 방문 전략을 한 문장으로 작성하세요.
 
-작성 기준:
-- 실제 현장에서 바로 볼 수 있는 짧은 메모처럼 쓸 것
-- 분석 설명처럼 길게 풀지 말 것
-- 다음에 꺼낼 제품 포인트 1개, 반응 예상 1개, 준비할 자료 1개 정도만 담을 것
-- 회사 규칙과 제품 용어는 정확히 쓸 것
-- 큰따옴표("), 작은따옴표(') 모두 사용 금지
-- 120자 안팎으로 끝낼 것
+★ 형식 규칙 (반드시 준수):
+- 반드시 "다음방문시에는" 으로 시작할 것
+- 구체적인 제품명 + 액션 포함
+- 마지막은 "~할예정" 으로 끝낼 것
+- 큰따옴표("), 작은따옴표(') 사용 금지
+- 120자 이내
+- 본문 메모만 출력 (라벨, 설명 없이)
 
-응답은 메모 본문만 출력.`;
+예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 포인트 디테일할예정"`;
+
+  const result = await callAI(systemPrompt, prompt);
 
   const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
