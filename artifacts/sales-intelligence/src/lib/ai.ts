@@ -711,6 +711,19 @@ function compressTextToLimit(text: string, limit: number): string {
   return source.slice(0, limit);
 }
 
+// 병원에 아직 미도입된 제품 — "신약 신청 / 한 번 써봐달라" 방향으로 작성
+const INTRO_PRODUCTS = new Set(['플라주OP', '이부프로펜프리믹스']);
+
+function buildIntroNote(focusProducts: string[]): string {
+  const introOnes = focusProducts.filter(p => INTRO_PRODUCTS.has(p));
+  if (introOnes.length === 0) return '';
+  return `\n★ 미도입 제품 주의 (${introOnes.join(', ')}):
+이 제품은 병원에 아직 없는 상태입니다.
+→ "처방 늘려달라" / "지속 처방 부탁" 표현 절대 금지
+→ "한 번 써봐달라" / "신약 신청 부탁드린다" / "처음 시도해봐달라" 방향으로 작성
+→ 특장점 1개 심플하게 디테일하고, 도입 의향 확인하는 흐름으로 마무리`;
+}
+
 export async function convertToVisitLog(
   rawNotes: string,
   doctor: Doctor,
@@ -753,8 +766,13 @@ export async function convertToVisitLog(
     ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
     : '';
 
+  // 미도입 제품 여부 판단
+  const { primary: cvPrimary, secondary: cvSecondary } = getDeptFocusProducts(doctor.department);
+  const cvAllFocus = selectedProducts.length > 0 ? selectedProducts : [...cvPrimary, ...cvSecondary];
+  const cvIntroNote = buildIntroNote(cvAllFocus);
+
   const prompt = `${visitContextNote}${contextSection}
-${cvSnippetSection}${cvProductConstraint}
+${cvSnippetSection}${cvProductConstraint}${cvIntroNote}
 아래 [원본 메모]를 변환합니다.
 
 ★★ 변환 원칙 (반드시 준수):
@@ -870,8 +888,13 @@ export async function autoGenerateVisitLog(
     ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
     : '';
 
+  // 미도입 제품 여부 판단
+  const { primary: agPrimary, secondary: agSecondary } = getDeptFocusProducts(doctor.department);
+  const agAllFocus = selectedProducts.length > 0 ? selectedProducts : [...agPrimary, ...agSecondary];
+  const agIntroNote = buildIntroNote(agAllFocus);
+
   const prompt = `${visitContextNote}${contextSection}
-${agSnippetSection}${agProductConstraint}
+${agSnippetSection}${agProductConstraint}${agIntroNote}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원/과 특성에 맞게.)
 
