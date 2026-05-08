@@ -915,8 +915,6 @@ export async function generateNextVisitStrategy(
 예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 포인트 디테일할예정"`;
 
   const result = await callAI(systemPrompt, prompt);
-
-  const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeMemoTone(cleaned);
   if (cleaned.length > 120) {
