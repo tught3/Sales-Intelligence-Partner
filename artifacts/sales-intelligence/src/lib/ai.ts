@@ -839,9 +839,12 @@ ${buildVisitLogRules()}
     nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
   }
 
+  // ★ 저장 전 검토 에이전트
+  const validated = await validateAndFixVisitLog(systemPrompt, cleaned, nextStrategy, doctor);
+
   return {
-    formattedLog: cleaned,
-    nextStrategy,
+    formattedLog: validated.formattedLog,
+    nextStrategy: validated.nextStrategy,
   };
 }
 
@@ -975,11 +978,14 @@ ${buildVisitLogRules()}
     nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
   }
 
+  // ★ 저장 전 검토 에이전트
+  const agValidated = await validateAndFixVisitLog(buildSystemPrompt(), fullLog, nextStrategy, doctor);
+
   return {
     visitDate: today,
     products: products.length > 0 ? products : ['위너프에이플러스'],
-    formattedLog: fullLog,
-    nextStrategy,
+    formattedLog: agValidated.formattedLog,
+    nextStrategy: agValidated.nextStrategy,
   };
 }
 
@@ -1011,6 +1017,74 @@ export async function generateNextVisitStrategy(
   }
   if (cleaned.length > 120) cleaned = compressTextToLimit(cleaned, 120);
   return cleaned;
+}
+
+/**
+ * 저장 전 검토 에이전트: 모든 규칙 위반 체크 후 수정 → PASS 또는 최대 2라운드
+ */
+export async function validateAndFixVisitLog(
+  systemPrompt: string,
+  formattedLog: string,
+  nextStrategy: string,
+  doctor: Doctor
+): Promise<{ formattedLog: string; nextStrategy: string }> {
+  const MAX_ROUNDS = 2;
+  let log = formattedLog;
+  let strategy = nextStrategy;
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const reviewPrompt = `아래 영업일지를 검토하고, 문제가 있으면 즉시 수정한 버전을 출력하세요.
+
+[영업일지 본문] (${log.length}자)
+${log}
+
+[다음방문전략] (${strategy.length}자)
+${strategy}
+
+━━━ 검토 체크리스트 (하나라도 위반이면 FAIL) ━━━
+① 금지 어미: ~겠습니다, ~했습니다, ~합니다, ~입니다, ~드립니다 (어떤 형태든)
+② 금지 기호: ·  •  ↑  ↓  →  ←
+③ 따옴표: "  '
+④ 금지 표현: 짚음, 언급함, 설명함 → "디테일 진행함"으로
+⑤ 페린젝트 "단회투여" / "단회 투여" → 반드시 "1회 투여"로
+⑥ 보고서체 / 분석문: "분석하면", "정리하면", "전반적으로", "~겠습니다" 류
+⑦ 교수 성향·처방 경향 직접 서술: "보수적 성향", "처방에 소극적" 등 텍스트 직접 표현
+⑧ 본문 230자 초과 (현재 ${log.length}자)
+⑨ 다음방문전략 120자 초과 (현재 ${strategy.length}자)
+⑩ 다음방문전략이 "다음방문시에는" / "다음번에는" / "다음에는" 으로 시작 안 함
+⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
+
+첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
+FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
+
+===수정 영업일지===
+(PASS이면 원본 그대로, FAIL이면 수정본)
+
+===수정 다음방문전략===
+(PASS이면 원본 그대로, FAIL이면 수정본)`;
+
+    const result = await callAI(systemPrompt, reviewPrompt);
+    const firstLine = result.trim().split('\n')[0].trim().toUpperCase();
+    const passed = firstLine.startsWith('PASS');
+
+    const newLog = extractSection(result, ['===수정 영업일지===', '===수정 다음방문전략===']);
+    const newStrategy = extractSection(result, ['===수정 다음방문전략===']);
+
+    if (newLog.trim()) log = normalizeMemoTone(newLog.replace(/['"]/g, '').trim());
+    if (newStrategy.trim()) strategy = normalizeMemoTone(newStrategy.replace(/['"]/g, '').trim());
+
+    if (passed) break;
+  }
+
+  // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
+  if (log.length > 230) log = compressTextToLimit(log, 230);
+  if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
+  if (!strategy || strategy.trim().length < 5) {
+    const { primary } = getDeptFocusProducts(doctor.department);
+    strategy = `다음방문시에는 ${primary[0] || '위너프에이플러스'} 추가 디테일 진행할예정`;
+  }
+
+  return { formattedLog: log, nextStrategy: strategy };
 }
 
 export async function generateObjectionResponse(
