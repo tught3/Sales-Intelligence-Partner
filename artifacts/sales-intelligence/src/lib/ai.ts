@@ -722,6 +722,22 @@ ${buildVisitLogRules()}
   cleaned = normalizeMemoTone(cleaned);
   nextStrategy = normalizeMemoTone(nextStrategy);
 
+  // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
+  if (!nextStrategy) {
+    const markers = ['다음방문시에는', '다음번에는', '다음에는'];
+    const lines = cleaned.split('\n');
+    const splitIdx = lines.findIndex(l => markers.some(m => l.trim().startsWith(m)));
+    if (splitIdx > 0) {
+      nextStrategy = lines.slice(splitIdx).join('\n').trim();
+      cleaned = lines.slice(0, splitIdx).join('\n').trim();
+    }
+  }
+
+  // 그래도 없으면 별도 호출로 생성
+  if (!nextStrategy) {
+    nextStrategy = await generateNextVisitStrategy(doctor, pastLogs);
+  }
+
   if (cleaned.length > 230) {
     cleaned = await trimToLimit(systemPrompt, cleaned, 230, 0, '영업일지');
   }
@@ -825,6 +841,22 @@ ${buildVisitLogRules()}
   fullLog = normalizeMemoTone(fullLog);
   nextStrategy = normalizeMemoTone(nextStrategy);
 
+  // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
+  if (!nextStrategy) {
+    const markers = ['다음방문시에는', '다음번에는', '다음에는'];
+    const lines = fullLog.split('\n');
+    const splitIdx = lines.findIndex(l => markers.some(m => l.trim().startsWith(m)));
+    if (splitIdx > 0) {
+      nextStrategy = lines.slice(splitIdx).join('\n').trim();
+      fullLog = lines.slice(0, splitIdx).join('\n').trim();
+    }
+  }
+
+  // 그래도 없으면 별도 호출로 생성
+  if (!nextStrategy) {
+    nextStrategy = await generateNextVisitStrategy(doctor, pastLogs);
+  }
+
   if (fullLog.length > 230) {
     fullLog = await trimToLimit(buildSystemPrompt(), fullLog, 230, 0, '영업일지');
   }
@@ -834,7 +866,6 @@ ${buildVisitLogRules()}
     nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
   }
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
-
 
   return {
     visitDate: today,
