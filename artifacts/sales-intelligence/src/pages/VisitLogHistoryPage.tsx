@@ -42,7 +42,10 @@ export default function VisitLogHistoryPage() {
       const log = visitLogStorage.getAll().find(l => l.id === editId);
       if (log) {
         setEditingId(editId);
-        setEditText(log.formattedLog);
+        const combined = log.nextStrategy
+          ? `${log.formattedLog}\n${log.nextStrategy}`
+          : log.formattedLog;
+        setEditText(combined);
       }
     }
   }, [search]);
