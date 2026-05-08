@@ -686,7 +686,11 @@ export async function convertToVisitLog(
 
   const prompt = `${visitContextNote}${contextSection}
 ${cvSnippetSection}${cvProductConstraint}
-아래 메모를 바탕으로 영업일지를 작성하세요. (메모에 없는 내용 추가 금지)
+아래 [원본 메모]를 변환합니다.
+★★ 변환 원칙: 원본 메모의 사실(제품명, 반응, 수치, 상황 등)을 최대한 그대로 살릴 것. 내용을 AI가 만든 다른 내용으로 대체하지 말 것. 말투와 형식만 아래 규칙에 맞게 다듬을 것.
+
+[원본 메모]
+{{RAW_MEMO}}
 
 ${buildVisitLogFlow()}
 
@@ -699,8 +703,8 @@ ${buildVisitLogRules()}
 ===다음방문전략===
 (120자 이내. "다음방문시에는" / "다음번에는" / "다음에는" 중 하나로 시작. 구체적 제품명 + 진료과/환자군 연결)`;
 
-  const response = await callAI(systemPrompt, prompt);
-  let cleaned = extractSection(response, ['===영업일지===']);
+  const response = await callAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes));
+  let cleaned = extractSection(response, ['===영업일지===', '===다음방문전략===']);
   let nextStrategy = extractSection(response, ['===다음방문전략===']);
 
   cleaned = cleaned.replace(/['"]/g, '').trim();
