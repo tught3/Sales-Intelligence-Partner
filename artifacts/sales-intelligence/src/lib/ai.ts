@@ -471,20 +471,77 @@ function buildContextSection(
     context += `\n\n과거 상담/분석 기록 (${getConversationHistoryVisitCount(doctor)}회 분량, 최근 3개):\n${convSummary}`;
   }
 
-  // 사용자가 수정한 편집 패턴 수집 (최근 5개)
-  const editHintLogs = pastLogs.filter(l => l.aiEditHint).slice(0, 5);
-  const editHints = editHintLogs
-    .map((l, i) => `  ${i + 1}. ${l.aiEditHint}`)
-    .join('\n');
+  // 사용자 편집 패턴 수집 (최근 10개 로그)
+  const editHintLogs = pastLogs.filter(l => l.aiEditHint).slice(0, 10);
 
-  if (editHints) {
-    context = `★★★ 최최우선 - 사용자 직접 수정 학습 (이 규칙이 다른 모든 규칙보다 우선) ★★★
-이 교수의 AI 생성 일지를 사용자가 ${editHintLogs.length}회 직접 수정했습니다.
-수정 패턴 (반드시 모두 반영):
-${editHints}
+  if (editHintLogs.length > 0) {
+    const recentHints = editHintLogs.slice(0, 5)
+      .map((l, i) => `  ${i + 1}. [${l.visitDate}] ${l.aiEditHint}`)
+      .join('\n');
 
-→ 위 수정 패턴 중 단 하나도 위반하지 말 것
-→ 처음부터 사용자가 수정한 형태대로 작성할 것
+    // ── 반복 패턴 감지 ──────────────────────────────────────
+    const allHintTexts = editHintLogs.map(l => l.aiEditHint ?? '');
+
+    // 삭제 반복 감지: 같은 키워드가 2번 이상 삭제됨
+    const deletedPhrases: string[] = [];
+    allHintTexts.forEach(h => {
+      for (const m of h.matchAll(/삭제:\s*"([^"]+)"/g)) {
+        deletedPhrases.push(m[1].slice(0, 12));
+      }
+    });
+    const deletionCount = new Map<string, { count: number; sample: string }>();
+    deletedPhrases.forEach(phrase => {
+      const key = phrase.slice(0, 8);
+      const existing = deletionCount.get(key);
+      if (existing) existing.count++;
+      else deletionCount.set(key, { count: 1, sample: phrase });
+    });
+    const recurringDeletions = [...deletionCount.values()]
+      .filter(v => v.count >= 2)
+      .map(v => v.sample);
+
+    // 단축 반복 감지: 2번 이상 단축함
+    const shortenCount = allHintTexts.filter(h => h.includes('자 단축')).length;
+
+    // 추가 반복 감지: 2번 이상 추가한 내용
+    const addedPhrases: string[] = [];
+    allHintTexts.forEach(h => {
+      for (const m of h.matchAll(/추가:\s*"([^"]+)"/g)) {
+        addedPhrases.push(m[1].slice(0, 12));
+      }
+    });
+    const additionCount = new Map<string, { count: number; sample: string }>();
+    addedPhrases.forEach(phrase => {
+      const key = phrase.slice(0, 8);
+      const existing = additionCount.get(key);
+      if (existing) existing.count++;
+      else additionCount.set(key, { count: 1, sample: phrase });
+    });
+    const recurringAdditions = [...additionCount.values()]
+      .filter(v => v.count >= 2)
+      .map(v => v.sample);
+
+    const recurringLines: string[] = [];
+    if (recurringDeletions.length > 0) {
+      recurringLines.push(`  ⛔ 반복 삭제 (${recurringDeletions.length}회 이상 지운 내용): "${recurringDeletions.join('", "')}" 관련 표현 → 쓰지 말 것`);
+    }
+    if (shortenCount >= 2) {
+      recurringLines.push(`  ✂️ ${shortenCount}회 단축 수정 → 처음부터 불필요한 서술 없이 간결하게`);
+    }
+    if (recurringAdditions.length > 0) {
+      recurringLines.push(`  ✅ 반복 추가 (${recurringAdditions.length}회 이상 넣은 내용): "${recurringAdditions.join('", "')}" 관련 표현 → 처음부터 포함할 것`);
+    }
+
+    const patternBlock = recurringLines.length > 0
+      ? `\n⚠️ 반복 수정 패턴 — 이게 핵심 (특히 중요):\n${recurringLines.join('\n')}`
+      : '';
+
+    context = `★★★ 최최우선 — 사용자 수정 패턴 학습 (모든 규칙보다 우선) ★★★
+이 교수 일지를 ${editHintLogs.length}회 직접 수정함. 수정 이력:
+${recentHints}${patternBlock}
+
+→ 수정 이력의 의도를 파악해서 처음부터 그 방향으로 작성할 것
+→ 반복 패턴은 절대 위반 금지 (반복될수록 이유 있는 패턴)
 
 ────────────────────────────
 

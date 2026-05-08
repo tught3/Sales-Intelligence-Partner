@@ -21,6 +21,51 @@ import {
   X,
 } from "lucide-react";
 
+/** 편집 전후 텍스트를 비교해서 무엇이 삭제/추가됐는지 명확한 힌트 생성 */
+function generateEditDiff(original: string, edited: string): string {
+  if (!original || original.trim() === edited.trim()) return '';
+
+  // 콤마·줄바꿈 기준으로 의미 단위 청크 분리
+  const toChunks = (text: string): string[] =>
+    text.split(/(?:,\s*|\n)+/)
+      .map(s => s.trim())
+      .filter(s => s.length >= 5);
+
+  const origChunks = toChunks(original);
+  const editChunks = toChunks(edited);
+
+  // 청크 포함 여부 판단 (앞 10자 기준)
+  const isPresent = (chunk: string, list: string[]) => {
+    const key = chunk.slice(0, Math.min(10, chunk.length));
+    return list.some(item => item.includes(key) || item.startsWith(key));
+  };
+
+  const deleted = origChunks.filter(o => !isPresent(o, editChunks));
+  const added   = editChunks.filter(e => !isPresent(e, origChunks));
+
+  const parts: string[] = [];
+
+  if (deleted.length > 0) {
+    const samples = deleted.slice(0, 2).map(s => `"${s.slice(0, 20)}"`).join(', ');
+    parts.push(`삭제: ${samples}`);
+  }
+  if (added.length > 0) {
+    const samples = added.slice(0, 2).map(s => `"${s.slice(0, 20)}"`).join(', ');
+    parts.push(`추가: ${samples}`);
+  }
+
+  const lenDiff = edited.length - original.length;
+  if (deleted.length === 0 && added.length === 0) {
+    if (lenDiff < -10) parts.push(`${Math.abs(lenDiff)}자 단축`);
+    else if (lenDiff > 10) parts.push(`${lenDiff}자 확장`);
+    else parts.push('말투/표현 수정');
+  } else if (lenDiff < -20) {
+    parts.push(`(${Math.abs(lenDiff)}자 단축)`);
+  }
+
+  return parts.join(' / ');
+}
+
 export default function VisitLogHistoryPage() {
   const { toast } = useToast();
   const search = useSearch();
@@ -144,8 +189,8 @@ export default function VisitLogHistoryPage() {
       : '';
 
     const originalText = log.formattedLog + (log.nextStrategy ? '\n' + log.nextStrategy : '');
-    const hint = originalText !== editedText
-      ? `원본(${originalText.length}자): ${originalText.slice(0, 100)}${originalText.length > 100 ? '...' : ''} → 수정(${editedText.length}자): ${editedText.slice(0, 100)}${editedText.length > 100 ? '...' : ''}`
+    const hint = originalText.trim() !== editedText.trim()
+      ? generateEditDiff(originalText, editedText)
       : log.aiEditHint;
     const updated = { ...log, formattedLog: newFormattedLog, nextStrategy: newNextStrategy, aiEditHint: hint };
     const saveResult = visitLogStorage.save(updated);
