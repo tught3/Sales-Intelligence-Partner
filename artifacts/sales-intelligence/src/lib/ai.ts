@@ -187,19 +187,23 @@ function buildSnippetContext(department = ''): string {
   if (allSnippets.length === 0) return '';
 
   const isIcu = department && isIcuDepartment(department);
+  const allowedProducts = getAllowedProductsForDepartment(department);
+  const departmentSnippets = allSnippets.filter(s => allowedProducts.includes(s.product));
+  const usableSnippets = isIcu ? departmentSnippets : departmentSnippets.filter(s => !isIcuOnlySnippet(s));
+  if (usableSnippets.length === 0) return '';
   let selected;
   if (isIcu) {
-    const icuOnes = allSnippets.filter(s =>
-      ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    const icuOnes = usableSnippets.filter(s =>
+      hasIcuContext(s.content, s.context)
     );
-    const others = allSnippets.filter(s =>
-      !ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    const others = usableSnippets.filter(s =>
+      !hasIcuContext(s.content, s.context)
     );
     const icuPicked = [...icuOnes].sort(() => Math.random() - 0.5).slice(0, 5);
     const otherPicked = [...others].sort(() => Math.random() - 0.5).slice(0, 4);
     selected = [...icuPicked, ...otherPicked].sort(() => Math.random() - 0.5);
   } else {
-    selected = [...allSnippets].sort(() => Math.random() - 0.5).slice(0, 9);
+    selected = [...usableSnippets].sort(() => Math.random() - 0.5).slice(0, 9);
   }
 
   const lines = selected
@@ -215,9 +219,13 @@ function buildContextAwareSnippets(
   department = ''
 ): string {
   const allSnippets = selectedProducts.length > 0
-    ? snippetStorage.getAll().filter(s => selectedProducts.includes(s.product))
+    ? snippetStorage.getAll().filter(s => normalizeSelectedProductsForDepartment(selectedProducts, department).includes(s.product))
     : snippetStorage.getAll();
-  if (allSnippets.length === 0) return '';
+  const isIcu = department && isIcuDepartment(department);
+  const allowedProducts = getAllowedProductsForDepartment(department);
+  const departmentSnippets = allSnippets.filter(s => allowedProducts.includes(s.product));
+  const usableSnippets = isIcu ? departmentSnippets : departmentSnippets.filter(s => !isIcuOnlySnippet(s));
+  if (usableSnippets.length === 0) return '';
 
   // 최근 5회 방문 일지+다음전략 텍스트 합산
   const recentTexts = pastLogs.slice(0, 5)
@@ -230,13 +238,12 @@ function buildContextAwareSnippets(
     recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()));
 
   // ICU 과인 경우: ICU 스니펫 ~60% + 일반 ~40% 비율로 선택
-  const isIcu = department && isIcuDepartment(department);
   if (isIcu) {
-    const icuOnes = allSnippets.filter(s =>
-      ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    const icuOnes = usableSnippets.filter(s =>
+      hasIcuContext(s.content, s.context)
     );
-    const others = allSnippets.filter(s =>
-      !ICU_KEYWORDS.some(k => s.content.toLowerCase().includes(k) || (s.context ?? '').toLowerCase().includes(k))
+    const others = usableSnippets.filter(s =>
+      !hasIcuContext(s.content, s.context)
     );
     const icuCount = Math.ceil(count * 0.6);
     const generalCount = count - icuCount;
@@ -254,10 +261,10 @@ function buildContextAwareSnippets(
   const allProducts = [...primary, ...secondary];
 
   // 선택된 스니펫 풀: primary 제품 우선, secondary 그 다음, 나머지는 뒤로
-  const primarySnippets = allSnippets.filter(s => primary.includes(s.product));
-  const secondarySnippets = allSnippets.filter(s => secondary.includes(s.product));
+  const primarySnippets = usableSnippets.filter(s => primary.includes(s.product));
+  const secondarySnippets = usableSnippets.filter(s => secondary.includes(s.product));
   const otherSnippets = allProducts.length > 0
-    ? allSnippets.filter(s => !allProducts.includes(s.product))
+    ? usableSnippets.filter(s => !allProducts.includes(s.product))
     : [];
 
   // 각 그룹 내에서 미사용 우선 셔플
@@ -321,9 +328,28 @@ function buildVisitLogFlow(): string {
      절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, [갑자기 전혀 다른 주제]" — 이렇게 하면 안 됨.
 ② [오늘 핵심] 어떤 제품의 어떤 특장점을 전달했는지 구체적으로. 제공된 제품 특장점 화법 자연스럽게 녹여낼 것 (원문 복붙 금지).
    ★ 주제가 여러 개면 문맥에 맞게 자연스럽게 이어서 작성. 각 주제가 뚝 끊기지 않도록.
-③ [오브젝션 핸들링 - 30% 확률] 의사가 질문/반대 의견을 낼 수 있음. 교수 반박 패턴 있으면 활용, 없으면 해당 과/제품에 현실적으로 나올 법한 반박을 만들어서 포함. 형태: "~라고 하심. ~라고 말씀드림. 어느 정도 공감하심". 70%는 생략.
+③ [오브젝션 핸들링] 별도 지시가 있을 때만 포함. 포함 시 교수님의 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "~라고 하심. ~라고 안내함. 어느 정도 공감하심".
 ④ [교수 반응] 교수 반응 한 줄로.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+}
+
+function buildObjectionInstruction(includeObjection: boolean, department: string, products: string[]): string {
+  if (!includeObjection) {
+    return `\n★ 오브젝션 핸들링: 이번 일지에서는 생략. 질문/반대 의견을 새로 만들지 말 것.\n`;
+  }
+
+  return `\n★★★ 오브젝션 핸들링 필수:
+- 이번 일지에는 교수님의 질문 또는 반대 의견 1개를 반드시 포함.
+- 이어서 그 질문/반대 의견에 대한 내 답변도 반드시 포함.
+- 과(${department})와 품목(${products.join(', ')})에 현실적으로 맞는 내용만 사용.
+- 형식 예: 비용 부담 있다고 하심. 급여/환자군 기준으로 필요한 케이스부터 보시면 된다고 안내함.
+- 오브젝션과 답변을 포함해도 영업일지 본문 전체는 반드시 230자 이내.\n`;
+}
+
+function hasObjectionHandling(text: string): boolean {
+  const hasObjection = /질문|문의|우려|부담|반대|어렵|비싸|필요.*없|굳이|라고\s*하심|말씀하심/.test(text);
+  const hasAnswer = /안내함|말씀드림|답변드림|전달함|공감하심|납득하심/.test(text);
+  return hasObjection && hasAnswer;
 }
 
 function normalizeMemoTone(text: string): string {
@@ -567,51 +593,153 @@ ${recentHints}${patternBlock}
   return context;
 }
 
+type DeptProductRule = {
+  keywords: string[];
+  products: Array<{ name: string; weight?: number }>;
+  weighted?: boolean;
+};
+
 // 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
-const DEPT_PRODUCT_MAP: Array<{ keywords: string[]; primary: string[]; secondary: string[] }> = [
+const DEPT_PRODUCT_MAP: DeptProductRule[] = [
   // 철결핍성 빈혈 중심
-  { keywords: ['산부인과', '산과', '부인과'], primary: ['페린젝트'], secondary: [] },
-  { keywords: ['정형외과'], primary: ['페린젝트'], secondary: ['이부프로펜프리믹스'] }, // 수술 후 통증도 씀
-  { keywords: ['신장내과', '신장', '투석'], primary: ['페린젝트'], secondary: [] },
-  { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], primary: ['페린젝트', '위너프에이플러스'], secondary: [] },
+  { keywords: ['산부인과', '산과', '부인과'], products: [{ name: '페린젝트' }] },
+  { keywords: ['정형외과'], products: [{ name: '페린젝트', weight: 90 }, { name: '이부프로펜프리믹스', weight: 10 }], weighted: true },
+  { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], products: [{ name: '페린젝트' }, { name: '위너프에이플러스' }] },
   // 플라주OP 사용과: 응급·마취만 (수액 관리·수술 전후)
-  { keywords: ['마취통증', '마취과', '통증의학'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: [] },
-  { keywords: ['응급의학과', '응급'], primary: ['플라주OP', '이부프로펜프리믹스'], secondary: [] },
-  // 흉부외과: 수술 후 영양 + 통증 (플라주OP 없음)
-  { keywords: ['흉부외과', '심혈관외과', '심장외과'], primary: ['위너프에이플러스', '이부프로펜프리믹스'], secondary: [] },
+  { keywords: ['마취통증', '마취과', '통증의학'], products: [{ name: '플라주OP' }, { name: '이부프로펜프리믹스' }] },
+  { keywords: ['응급의학과', '응급'], products: [{ name: '플라주OP' }, { name: '이부프로펜프리믹스' }] },
+  { keywords: ['흉부외과', '심혈관외과', '심장외과'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
   // 항생제 계열
-  { keywords: ['감염내과', '감염'], primary: ['포스페넴', '프리페넴'], secondary: [] },
-  { keywords: ['비뇨의학과', '비뇨'], primary: ['포스페넴', '프리페넴'], secondary: ['페린젝트', '이부프로펜프리믹스'] }, // 요로결석 시술 후 통증
-  { keywords: ['호흡기내과', '호흡기', '결핵'], primary: ['프리페넴'], secondary: [] },
+  { keywords: ['감염내과', '감염'], products: [{ name: '포스페넴' }, { name: '프리페넴' }] },
+  { keywords: ['비뇨의학과', '비뇨'], products: [{ name: '포스페넴' }, { name: '프리페넴' }, { name: '페린젝트' }, { name: '이부프로펜프리믹스' }] },
+  { keywords: ['호흡기내과', '호흡기', '결핵'], products: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 30 }, { name: '프리페넴', weight: 10 }], weighted: true },
   // 영양·혈액 계열
-  { keywords: ['종양혈액내과', '혈액종양', '혈액', '종양'], primary: ['위너프에이플러스', '페린젝트'], secondary: [] },
-  { keywords: ['간담췌외과', '간담'], primary: ['위너프에이플러스'], secondary: [] },
-  // 중환자: 영양 위주 (플라주OP 제거)
-  { keywords: ['중환자의학과', '중환자', 'ICU'], primary: ['위너프에이플러스'], secondary: ['포스페넴'] },
-  // 신경외과: 뇌·척추 수술 후 영양 (NSAID 출혈 위험으로 이부프로펜 제외)
-  { keywords: ['신경외과'], primary: ['위너프에이플러스'], secondary: [] },
-  // 외과 계열: 수술 후 영양 + 통증
-  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], primary: ['위너프에이플러스'], secondary: ['이부프로펜프리믹스'] },
+  { keywords: ['종양혈액내과', '혈액종양', '혈액', '종양'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
+  { keywords: ['간담췌외과', '간담'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
+  { keywords: ['중환자의학과', '중환자', 'ICU'], products: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 20 }, { name: '포스페넴', weight: 10 }], weighted: true },
+  // 신경외과: 위너프에이플러스 + 페린젝트 중심
+  { keywords: ['신경외과'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
+  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], products: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 40 }, { name: '이부프로펜프리믹스', weight: 10 }], weighted: true },
 ];
 
+function getDeptProductRule(department: string): DeptProductRule {
+  return DEPT_PRODUCT_MAP.find((rule) => rule.keywords.some(k => department.includes(k))) ??
+    { keywords: [], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] };
+}
+
 function getDeptFocusProducts(department: string): { primary: string[]; secondary: string[] } {
-  for (const rule of DEPT_PRODUCT_MAP) {
-    if (rule.keywords.some(k => department.includes(k))) {
-      return { primary: rule.primary, secondary: rule.secondary };
-    }
+  const products = getDeptProductRule(department).products.map((product) => product.name);
+  return { primary: products, secondary: [] };
+}
+
+function getAllowedProductsForDepartment(department: string): string[] {
+  return [...new Set(getDeptProductRule(department).products.map((product) => product.name))];
+}
+
+function pickWeightedProductForDepartment(department: string): string {
+  const rule = getDeptProductRule(department);
+  const products = rule.products;
+  const totalWeight = products.reduce((sum, product) => sum + (product.weight ?? 1), 0);
+  let cursor = Math.random() * totalWeight;
+  for (const product of products) {
+    cursor -= product.weight ?? 1;
+    if (cursor <= 0) return product.name;
   }
-  // 기본값: 위너프에이플러스 + 페린젝트
-  return { primary: ['위너프에이플러스', '페린젝트'], secondary: [] };
+  return products[0]?.name ?? '위너프에이플러스';
+}
+
+function getActiveProductsForGeneration(selectedProducts: string[], department: string): string[] {
+  const selected = normalizeSelectedProductsForDepartment(selectedProducts, department);
+  if (selectedProducts.length > 0) return selected;
+  const rule = getDeptProductRule(department);
+  return rule.weighted ? [pickWeightedProductForDepartment(department)] : selected;
+}
+
+function formatProductWeights(department: string): string {
+  const rule = getDeptProductRule(department);
+  if (!rule.weighted) return '별도 가중치 없음';
+  return rule.products
+    .map((product) => `${product.name} ${product.weight ?? 0}%`)
+    .join(', ');
+}
+
+function normalizeSelectedProductsForDepartment(selectedProducts: string[], department: string): string[] {
+  const allowedProducts = getAllowedProductsForDepartment(department);
+  const normalized = selectedProducts
+    .map((product) => {
+      if (product === '위너프') return '위너프에이플러스';
+      if (product === '플라주') return '플라주OP';
+      return product;
+    })
+    .filter((product) => allowedProducts.includes(product));
+  return normalized.length > 0 ? normalized : allowedProducts;
+}
+
+function buildProductFitConstraint(department: string, selectedProducts: string[] = [], activeProductsOverride?: string[]): string {
+  const allowedProducts = getAllowedProductsForDepartment(department);
+  const activeProducts = activeProductsOverride ?? getActiveProductsForGeneration(selectedProducts, department);
+  const weightLine = formatProductWeights(department);
+  const ignoredProducts = selectedProducts
+    .map((product) => {
+      if (product === '위너프') return '위너프에이플러스';
+      if (product === '플라주') return '플라주OP';
+      return product;
+    })
+    .filter((product) => !allowedProducts.includes(product));
+  const ignoredLine = ignoredProducts.length > 0
+    ? `\n- 제외된 품목: ${[...new Set(ignoredProducts)].join(', ')}. 이 과(${department})에 맞지 않으므로 출력 금지.`
+    : '';
+
+  return `\n★★★ 과별 품목 제한:
+- 이 과(${department})에서 사용할 수 있는 품목만 출력: ${allowedProducts.join(', ')}
+- 기본 생성 가중치: ${weightLine}
+- 오늘 작성 후보 품목: ${activeProducts.join(', ')}
+- 위 목록 밖 품목은 제품 목록, 영업일지, 다음방문전략 어디에도 새로 넣지 말 것.${ignoredLine}\n`;
+}
+
+function removeDisallowedProductSentences(text: string, department: string): string {
+  const allowedProducts = getAllowedProductsForDepartment(department);
+  const disallowedProducts = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴']
+    .filter((product) => {
+      const normalized = product === '위너프'
+        ? '위너프에이플러스'
+        : product === '플라주'
+          ? '플라주OP'
+          : product;
+      return !allowedProducts.includes(normalized);
+    });
+  if (!disallowedProducts.some((product) => text.includes(product))) return text;
+
+  const kept = text
+    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .filter((sentence) => !disallowedProducts.some((product) => sentence.includes(product)));
+  return kept.join(' ').trim();
 }
 
 const ICU_DEPTS = [
-  '중환자', '응급', '외상', '신경외과', '흉부외과', '심혈관외과', '심장외과',
-  '마취', '호흡기', '감염', '외과', '내과', '신경과', '신장'
+  '중환자의학과', '중환자외과', '외상중환자외과', '응급외상중환자외과',
+  '호흡기내과', '호흡기', '신경외과', '흉부외과', '심혈관외과', '심장외과',
+  '응급의학과', '응급', '외상외과', '외상', 'GS', '일반외과'
 ];
-const ICU_KEYWORDS = ['icu', '중증', '수술', '패혈', '외상', '감염', '영양', '수액', '항생', '통증', 'eras'];
+const NON_ICU_DEPTS = ['정형외과', 'OS', '재활의학과', '피부과', '안과', '이비인후과'];
+const ICU_KEYWORDS = ['icu', '중환', '중증', '패혈', '외상', '인공호흡', 'ventilator'];
 
 function isIcuDepartment(department: string): boolean {
-  return ICU_DEPTS.some(d => department.includes(d));
+  const normalized = department.trim();
+  const upper = normalized.toUpperCase();
+  if (NON_ICU_DEPTS.some(d => upper.includes(d.toUpperCase()))) return false;
+  return ICU_DEPTS.some(d => upper.includes(d.toUpperCase()));
+}
+
+function hasIcuContext(content: string, context = ''): boolean {
+  const text = `${content} ${context}`.toLowerCase();
+  return ICU_KEYWORDS.some(k => text.includes(k.toLowerCase()));
+}
+
+function isIcuOnlySnippet(snippet: { content: string; context?: string }): boolean {
+  return hasIcuContext(snippet.content, snippet.context);
 }
 
 function buildIcuContextNote(department: string): string {
@@ -661,6 +789,40 @@ ${text}`;
 
   // 최후 수단: 마지막 완성된 문장에서 컷
   return compressTextToLimit(trimmed, limit);
+}
+
+async function ensureObjectionHandling(
+  systemPrompt: string,
+  formattedLog: string,
+  doctor: Doctor,
+  activeProducts: string[]
+): Promise<string> {
+  if (hasObjectionHandling(formattedLog)) return formattedLog;
+
+  const prompt = `아래 영업일지에 교수님의 질문/반대 의견 1개와 그에 대한 내 답변을 자연스럽게 넣어 다시 작성하세요.
+
+규칙:
+- 과: ${doctor.department}
+- 허용 품목: ${getAllowedProductsForDepartment(doctor.department).join(', ')}
+- 이번 중심 품목: ${activeProducts.join(', ')}
+- 품목 목록 밖 제품 언급 금지
+- 질문/반대 의견 + 답변을 둘 다 포함
+- 말투는 ~함, ~하심, ~안내함, ~말씀드림 형태
+- 전체 230자 이내
+- 큰따옴표("), 작은따옴표(') 금지
+- 본문만 출력
+
+원문:
+${formattedLog}`;
+
+  const result = await callAI(systemPrompt, prompt);
+  let cleaned = normalizeMemoTone(result.replace(/['"]/g, '').trim());
+  cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
+  if (cleaned.length > 230) {
+    cleaned = await trimToLimit(systemPrompt, cleaned, 230, 0, '영업일지');
+  }
+  if (cleaned.length > 230) cleaned = compressTextToLimit(cleaned, 230);
+  return cleaned;
 }
 
 function extractSection(response: string, sectionNames: string[]): string {
@@ -731,6 +893,10 @@ export async function convertToVisitLog(
   selectedProducts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
+  const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
+  const productFitConstraint = buildProductFitConstraint(doctor.department, selectedProducts, activeProducts);
+  const includeObjection = Math.random() < 0.3;
+  const objectionInstruction = buildObjectionInstruction(includeObjection, doctor.department, activeProducts);
   const visitCount = getDoctorVisitCount(doctor);
   const visitOrdinal = visitCount + 1;
   const lastVisitDate =
@@ -747,9 +913,9 @@ export async function convertToVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const cvSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 4, doctor.department);
+  const cvSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 4, doctor.department);
   const cvFocus = selectedProducts.length > 0
-    ? `★ 선택 제품(${selectedProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
+    ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
     : (() => {
         const { primary, secondary } = getDeptFocusProducts(doctor.department);
         const focus = secondary.length > 0
@@ -763,16 +929,16 @@ export async function convertToVisitLog(
   const cvSnippetSection = cvSnippetLines ? `${cvFocus}\n${cvSnippetLabel}${cvSnippetLines}\n` : `${cvFocus}\n`;
 
   const cvProductConstraint = selectedProducts.length > 0
-    ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
+    ? `\n★★★ 선택된 제품 중 과 적합 품목: ${activeProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
     : '';
 
   // 미도입 제품 여부 판단
   const { primary: cvPrimary, secondary: cvSecondary } = getDeptFocusProducts(doctor.department);
-  const cvAllFocus = selectedProducts.length > 0 ? selectedProducts : [...cvPrimary, ...cvSecondary];
+  const cvAllFocus = selectedProducts.length > 0 ? activeProducts : [...cvPrimary, ...cvSecondary];
   const cvIntroNote = buildIntroNote(cvAllFocus);
 
   const prompt = `${visitContextNote}${contextSection}
-${cvSnippetSection}${cvProductConstraint}${cvIntroNote}
+${productFitConstraint}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
 아래 [원본 메모]를 변환합니다.
 
 ★★ 변환 원칙 (반드시 준수):
@@ -780,7 +946,7 @@ ${cvSnippetSection}${cvProductConstraint}${cvIntroNote}
 2. 말투·어미를 아래 규칙(~함, ~보임, ~예정 등)에 맞게 다듬을 것.
 3. 원본 메모의 흐름이 어색하거나 주제가 뚝 끊기면 → 사실은 유지하되 순서/연결을 자연스럽게 재구성할 것.
 4. 원본에 제품 디테일이 없으면 → 이 과(${doctor.department})에 맞는 제품 디테일 포인트 1개만 자연스럽게 추가.
-5. 오브젝션 핸들링 → 30% 확률로 추가 (아래 흐름 규칙 참고).
+5. 오브젝션 핸들링 → 위 오브젝션 지시를 따를 것.
 6. 다음방문전략 → 반드시 작성 (필수).
 
 [원본 메모]
@@ -827,6 +993,10 @@ ${buildVisitLogRules()}
   }
   if (cleaned.length > 230) cleaned = compressTextToLimit(cleaned, 230);
 
+  if (includeObjection && !hasObjectionHandling(cleaned)) {
+    cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts);
+  }
+
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, 0, '다음방문전략');
   }
@@ -834,8 +1004,7 @@ ${buildVisitLogRules()}
 
   // 최종 폴백: 여전히 비어있으면 하드코딩
   if (!nextStrategy) {
-    const { primary } = getDeptFocusProducts(doctor.department);
-    const prod = selectedProducts[0] || primary[0] || '위너프에이플러스';
+    const prod = activeProducts[0] || '위너프에이플러스';
     nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
   }
 
@@ -854,6 +1023,10 @@ export async function autoGenerateVisitLog(
   selectedProducts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
+  const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
+  const productFitConstraint = buildProductFitConstraint(doctor.department, selectedProducts, activeProducts);
+  const includeObjection = Math.random() < 0.3;
+  const objectionInstruction = buildObjectionInstruction(includeObjection, doctor.department, activeProducts);
 
   const today = new Date().toISOString().split('T')[0];
   const lastVisitDate =
@@ -872,9 +1045,9 @@ export async function autoGenerateVisitLog(
 이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
     : '';
 
-  const agSnippetLines = buildContextAwareSnippets(pastLogs, selectedProducts, 4, doctor.department);
+  const agSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 4, doctor.department);
   const agFocus = selectedProducts.length > 0
-    ? `★ 선택 제품(${selectedProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
+    ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
     : (() => {
         const { primary, secondary } = getDeptFocusProducts(doctor.department);
         const focus = secondary.length > 0
@@ -888,16 +1061,16 @@ export async function autoGenerateVisitLog(
   const agSnippetSection = agSnippetLines ? `${agFocus}\n${agSnippetLabel}${agSnippetLines}\n` : `${agFocus}\n`;
 
   const agProductConstraint = selectedProducts.length > 0
-    ? `\n★★★ 선택된 제품: ${selectedProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
+    ? `\n★★★ 선택된 제품 중 과 적합 품목: ${activeProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
     : '';
 
   // 미도입 제품 여부 판단
   const { primary: agPrimary, secondary: agSecondary } = getDeptFocusProducts(doctor.department);
-  const agAllFocus = selectedProducts.length > 0 ? selectedProducts : [...agPrimary, ...agSecondary];
+  const agAllFocus = selectedProducts.length > 0 ? activeProducts : [...agPrimary, ...agSecondary];
   const agIntroNote = buildIntroNote(agAllFocus);
 
   const prompt = `${visitContextNote}${contextSection}
-${agSnippetSection}${agProductConstraint}${agIntroNote}
+${productFitConstraint}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원/과 특성에 맞게.)
 
@@ -922,7 +1095,8 @@ ${buildVisitLogRules()}
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   const productText = productMatch ? productMatch[1].trim() : '';
-  const KNOWN_PRODUCTS = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '이부프로펜프리믹스', '포스페넴', '프리페넴', '기타'];
+  const KNOWN_PRODUCTS = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '기타'];
+  const allowedProducts = getAllowedProductsForDepartment(doctor.department);
   const products = productText
     .split(/[,，、]/)
     .map((p) => p.trim())
@@ -930,8 +1104,10 @@ ${buildVisitLogRules()}
     .map((p) => {
       // 정규화: '위너프'는 '위너프에이플러스'로
       if (p === '위너프') return '위너프에이플러스';
+      if (p === '플라주') return '플라주OP';
       return p;
-    });
+    })
+    .filter((p) => allowedProducts.includes(p));
 
   let fullLog = logMatch
     ? logMatch[1].trim()
@@ -966,6 +1142,10 @@ ${buildVisitLogRules()}
   }
   if (fullLog.length > 230) fullLog = compressTextToLimit(fullLog, 230);
 
+  if (includeObjection && !hasObjectionHandling(fullLog)) {
+    fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts);
+  }
+
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
   }
@@ -983,7 +1163,7 @@ ${buildVisitLogRules()}
 
   return {
     visitDate: today,
-    products: products.length > 0 ? products : ['위너프에이플러스'],
+    products: products.length > 0 ? products : activeProducts,
     formattedLog: agValidated.formattedLog,
     nextStrategy: agValidated.nextStrategy,
   };
@@ -994,8 +1174,10 @@ export async function generateNextVisitStrategy(
   pastLogs: VisitLog[]
 ): Promise<string> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
+  const productFitConstraint = buildProductFitConstraint(doctor.department);
 
   const prompt = `${contextSection}
+${productFitConstraint}
 
 위 맥락을 바탕으로 다음 방문 전략을 한 문장으로 작성하세요.
 
@@ -1031,6 +1213,12 @@ export async function validateAndFixVisitLog(
   const MAX_ROUNDS = 2;
   let log = formattedLog;
   let strategy = nextStrategy;
+  const allowedProducts = getAllowedProductsForDepartment(doctor.department);
+  const disallowedProducts = ['위너프에이플러스', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴']
+    .filter((product) => {
+      const normalized = product === '플라주' ? '플라주OP' : product;
+      return !allowedProducts.includes(normalized);
+    });
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const reviewPrompt = `아래 영업일지를 검토하고, 문제가 있으면 즉시 수정한 버전을 출력하세요.
@@ -1053,6 +1241,7 @@ ${strategy}
 ⑨ 다음방문전략 120자 초과 (현재 ${strategy.length}자)
 ⑩ 다음방문전략이 "다음방문시에는" / "다음번에는" / "다음에는" 으로 시작 안 함
 ⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
+⑫ 과(${doctor.department})에 맞지 않는 품목 언급 금지. 허용 품목: ${allowedProducts.join(', ')}. 금지 품목: ${disallowedProducts.join(', ') || '없음'}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
 FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
@@ -1077,11 +1266,14 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   }
 
   // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
+  const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
+  log = removeDisallowedProductSentences(log, doctor.department) ||
+    `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 포인트 짧게 디테일 진행함`;
+  strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
   if (log.length > 230) log = compressTextToLimit(log, 230);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
   if (!strategy || strategy.trim().length < 5) {
-    const { primary } = getDeptFocusProducts(doctor.department);
-    strategy = `다음방문시에는 ${primary[0] || '위너프에이플러스'} 추가 디테일 진행할예정`;
+    strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} 추가 디테일 진행할예정`;
   }
 
   return { formattedLog: log, nextStrategy: strategy };

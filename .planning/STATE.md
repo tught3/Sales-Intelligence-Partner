@@ -21,9 +21,13 @@
 - Nearby UI copy in the visit-log and doctor-detail screens was also simplified so the app speaks more like a work memo and less like an analysis tool.
 - The memo tone has been tightened further so generated text prefers the user's endings like `~함`, `~예정`, `~부탁`, `~드림`, and `~필요`, while blocking `~습니다`-style endings and normalizing `단회투여` to `1회 투여`.
 - A visit-log restore attempted through PowerShell mangled Korean text into `?`; the records were then reloaded with Node `fetch` UTF-8 and restored correctly.
+- Visit-log generation now restricts ICU context to ICU-relevant departments instead of broad `외과`/`내과` substring matches, so 정형외과 no longer receives ICU guidance.
+- Visit-log generation now filters snippets, selected products, generated product lists, and review output by department-appropriate products; 플라주OP is limited to 응급/마취 contexts and excluded from 신경외과.
+- Department product routing now supports weighted product selection for generation: 정형외과 90/10 페린젝트/이부프로펜프리믹스, 호흡기 60/30/10 위너프에이플러스/페린젝트/프리페넴, 중환자 70/20/10 위너프에이플러스/페린젝트/포스페넴, 외과 50/40/10 위너프에이플러스/페린젝트/이부프로펜프리믹스. 신장내과-specific routing was removed.
+- Objection handling is now controlled in code with a 30% chance per memo conversion/auto-generation. When selected, the prompt requires both the objection/question and the answer inside the 230-character visit-log body, with a repair pass if the first result omits it.
 
 ## Immediate Next Step
-- Report the memo-style tightening with verification evidence and preserve the updated planning checkpoint.
+- Report the weighted department/product routing and objection handling update with typecheck evidence.
 
 ## Known Structure
 - `artifacts/api-server`
