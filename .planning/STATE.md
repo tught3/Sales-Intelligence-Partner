@@ -29,6 +29,7 @@
 - Auto-generation target selection now keeps the low-visit-count ordering, but within that ordering it deprioritizes any doctor who already received a memo conversion or auto-generated visit log during the current week.
 - Department-specific feature themes are now constrained too, so memo edit and auto-generation avoid cross-department spillover like IBD showing up in orthopedics.
 - New-drug review wording is now gated by an explicit 10% allow flag for non-introduced products only; introduced products never receive that wording, and recent detail points are used to deprioritize repeated snippets.
+- Visit-log body no longer forces a `다음 방문에는 ... 하겠다` ending. Next-visit plans are kept out of the memo body and normalized into the separate `nextStrategy` field.
 
 ## Immediate Next Step
 - Report the Gangwon hospital rule reset with typecheck evidence.

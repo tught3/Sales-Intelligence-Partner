@@ -355,7 +355,7 @@ function buildVisitLogRules(): string {
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 짧은 메모처럼
 글자수: 본문 230자 이내 / 다음방문전략 120자 이내
 다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 포인트 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
-본문 종결: 일지 마지막 문장은 반드시 "다음 방문에는 ... 하겠다" 형태로 끝낼 것
+본문 종결: 영업일지 본문에는 다음 방문 계획을 넣지 말 것. "다음 방문에는", "다음번에는", "다음방문시에는" 문장은 다음방문전략에만 작성
 미도입 제품: 대부분은 특장점 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
 따옴표: 큰따옴표("), 작은따옴표(') 절대 금지`;
 }
@@ -426,6 +426,10 @@ function normalizeMemoTone(text: string): string {
     [/어\s*보겠습니다/gi, '어볼 예정'],
     [/아\s*보겠습니다/gi, '아볼 예정'],
     [/해보겠습니다/gi, '해볼 예정'],
+    [/확인하겠다/gi, '확인할예정'],
+    [/전달하겠다/gi, '전달할예정'],
+    [/진행하겠다/gi, '진행할예정'],
+    [/하겠다/gi, '할예정'],
     [/겠습니다/gi, '겠음'],
     [/확인했습니다/gi, '확인함'],
     [/검토했습니다/gi, '검토함'],
@@ -469,31 +473,27 @@ function normalizeMemoTone(text: string): string {
     .trim();
 }
 
-function buildMemoEndingSentence(department: string, products: string[]): string {
-  const focusProducts = products.slice(0, 2).length > 0
-    ? products.slice(0, 2)
-    : getAllowedProductsForDepartment(department).slice(0, 2);
-  const productText = focusProducts.join(', ') || '위너프에이플러스';
-  return `다음 방문에는 ${productText} 반응 확인하겠다`;
+function removeNextVisitPlanFromLog(text: string): string {
+  return text
+    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .filter((sentence) => !/^(다음\s*방문에는|다음방문시에는|다음번에는|다음에는)/.test(sentence))
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
-function enforceMemoEnding(
-  text: string,
-  department: string,
-  products: string[],
-  limit = 230
-): string {
-  const ending = buildMemoEndingSentence(department, products);
-  const normalized = normalizeMemoTone(text).replace(/['"]/g, '').trim();
-  if (!normalized) return ending.slice(0, limit);
-
-  const start = normalized.lastIndexOf('다음 방문에는');
-  let core = start >= 0 ? normalized.slice(0, start).trim() : normalized;
-  core = core.replace(/[,\s]+$/g, '').trim();
-  const maxCoreLength = Math.max(0, limit - ending.length - 1);
-  core = compressTextToLimit(core, maxCoreLength);
-  const combined = core ? `${core} ${ending}` : ending;
-  return combined.length > limit ? compressTextToLimit(combined, limit) : combined;
+function normalizeNextStrategy(text: string): string {
+  if (!text.trim()) return '';
+  const normalized = normalizeMemoTone(text)
+    .replace(/^(다음\s*방문에는|다음번에는|다음에는)\s*/g, '다음방문시에는 ')
+    .replace(/^다음방문시\s*에는\s*/g, '다음방문시에는 ')
+    .replace(/하겠다/gi, '할예정')
+    .trim();
+  return normalized.startsWith('다음방문시에는')
+    ? normalized
+    : `다음방문시에는 ${normalized}`.trim();
 }
 
 function hasIntroProducts(products: string[]): boolean {
@@ -1173,7 +1173,7 @@ ${buildVisitLogRules()}
 (230자 이내. 빈 줄 없이 이어서 작성)
 
 ===다음방문전략===
-(120자 이내. "다음방문시에는" / "다음번에는" / "다음에는" 중 하나로 시작. 구체적 제품명 + 진료과/환자군 연결)`;
+(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
   const response = await callAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes));
   let cleaned = extractSection(response, ['===영업일지===', '===다음방문전략===']);
@@ -1184,7 +1184,8 @@ ${buildVisitLogRules()}
   cleaned = normalizeMemoTone(cleaned);
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
-  nextStrategy = normalizeMemoTone(nextStrategy);
+  cleaned = removeNextVisitPlanFromLog(cleaned);
+  nextStrategy = normalizeNextStrategy(nextStrategy);
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, cvAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1212,9 +1213,9 @@ ${buildVisitLogRules()}
     cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts, cvAllowNewDrugReview);
   }
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
+  cleaned = removeNextVisitPlanFromLog(cleaned);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
-  cleaned = enforceMemoEnding(cleaned, doctor.department, activeProducts);
 
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, 0, '다음방문전략');
@@ -1306,7 +1307,7 @@ ${buildVisitLogRules()}
 (230자 이내. 빈 줄 없이 이어서 작성)
 
 ===다음방문전략===
-(120자 이내. "다음방문시에는" / "다음번에는" / "다음에는" 중 하나로 시작. 구체적 제품명 + 진료과/환자군 연결)`;
+(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
   const response = await callAI(systemPrompt, prompt);
 
@@ -1341,7 +1342,8 @@ ${buildVisitLogRules()}
   fullLog = normalizeMemoTone(fullLog);
   fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
-  nextStrategy = normalizeMemoTone(nextStrategy);
+  fullLog = removeNextVisitPlanFromLog(fullLog);
+  nextStrategy = normalizeNextStrategy(nextStrategy);
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, agAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1369,9 +1371,9 @@ ${buildVisitLogRules()}
     fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts, agAllowNewDrugReview);
   }
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
+  fullLog = removeNextVisitPlanFromLog(fullLog);
   fullLog = removeDisallowedProductSentences(fullLog, doctor.department) || fullLog;
   fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
-  fullLog = enforceMemoEnding(fullLog, doctor.department, activeProducts);
 
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
@@ -1421,7 +1423,7 @@ ${themeConstraint}
 
   const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
-  cleaned = normalizeMemoTone(cleaned);
+  cleaned = normalizeNextStrategy(cleaned);
   cleaned = normalizeIntroProductLanguage(cleaned, getAllowedProductsForDepartment(doctor.department), false);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   if (cleaned.length > 120) {
@@ -1471,10 +1473,10 @@ ${strategy}
 ⑦ 교수 성향·처방 경향 직접 서술: "보수적 성향", "처방에 소극적" 등 텍스트 직접 표현
 ⑧ 본문 230자 초과 (현재 ${log.length}자)
 ⑨ 다음방문전략 120자 초과 (현재 ${strategy.length}자)
-⑩ 다음방문전략이 "다음방문시에는" / "다음번에는" / "다음에는" 으로 시작 안 함
+⑩ 다음방문전략이 "다음방문시에는" 으로 시작 안 함
 ⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
 ⑫ 과(${doctor.department})에 맞지 않는 품목 언급 금지. 허용 품목: ${allowedProducts.join(', ')}. 금지 품목: ${disallowedProducts.join(', ') || '없음'}
-⑬ 영업일지 본문 마지막 문장이 "다음 방문에는" 으로 시작하고 "~하겠다"로 끝나지 않음
+⑬ 영업일지 본문에 "다음 방문에는" / "다음방문시에는" / "다음번에는" / "다음에는" 으로 시작하는 다음 방문 계획 문장이 들어감
 ⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. "신약여부검토 요청"은 이번 허용 여부가 허용일 때만 사용
 ⑮ 과(${doctor.department})와 맞지 않는 특장점 테마 사용 금지. 제품 정보에 있더라도 다른 과 전용 질환명은 넣지 말 것
 ⑯ 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
@@ -1499,7 +1501,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
       log = normalizeMemoTone(newLog.replace(/['"]/g, '').trim());
       log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
     }
-    if (newStrategy.trim()) strategy = normalizeMemoTone(newStrategy.replace(/['"]/g, '').trim());
+    if (newStrategy.trim()) strategy = normalizeNextStrategy(newStrategy.replace(/['"]/g, '').trim());
     strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
 
     if (passed) break;
@@ -1508,15 +1510,16 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
   const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
   log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
+  log = removeNextVisitPlanFromLog(log);
   log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
   log = removeDisallowedProductSentences(log, doctor.department) ||
     `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 포인트 짧게 디테일 진행함`;
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
+  strategy = normalizeNextStrategy(strategy);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
   if (log.length > 230) log = compressTextToLimit(log, 230);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
-  log = enforceMemoEnding(log, doctor.department, finalAllowedProducts);
   if (!strategy || strategy.trim().length < 5) {
     const themeRule = getDeptFeatureRule(doctor.department);
     const theme = themeRule?.allowedThemes[0] || '환자군';
