@@ -91,6 +91,7 @@ export default function VisitLogPage() {
     if (selectedDept) list = list.filter(d => d.department === selectedDept);
     return list;
   }, [doctors, selectedHospital, selectedDept]);
+  const autoTargetCount = selectedHospital ? filteredDoctors.length : 0;
 
   const selectedDoctor = useMemo(
     () => doctors.find((d) => d.id === selectedDoctorId),
@@ -178,6 +179,10 @@ export default function VisitLogPage() {
   }
 
   async function handleBulkAutoGenerate() {
+    if (!selectedHospital) {
+      toast({ title: "자동 생성할 병원을 먼저 선택해주세요", variant: "destructive" });
+      return;
+    }
     if (filteredDoctors.length === 0) {
       toast({ title: "선택한 범위에 등록된 교수가 없습니다", variant: "destructive" });
       return;
@@ -356,16 +361,18 @@ export default function VisitLogPage() {
                     병원 선택
                   </Label>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleHospitalChange("")}
-                      className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
-                        !selectedHospital
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border text-muted-foreground hover:border-primary/50"
-                      }`}
-                    >
-                      전체
-                    </button>
+                    {activeTab !== 'auto' && (
+                      <button
+                        onClick={() => handleHospitalChange("")}
+                        className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
+                          !selectedHospital
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border text-muted-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        전체
+                      </button>
+                    )}
                     {hospitals.map((h) => (
                       <button
                         key={h}
@@ -440,9 +447,15 @@ export default function VisitLogPage() {
                   )}
                   {activeTab === 'auto' && (
                     <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded p-2.5 text-blue-700">
-                      💡 일괄 메모 생성은 교수 개별 선택 없이 진행됩니다. 위에서 선택한 병원
-                      {selectedDept ? ` ${selectedDept}` : ''}의 교수 {filteredDoctors.length}명 중
-                      <strong> 무작위로 N명</strong>을 뽑아 각각 일지를 생성합니다.
+                      {selectedHospital ? (
+                        <>
+                          💡 일괄 메모 생성은 교수 개별 선택 없이 진행됩니다. 위에서 선택한 병원
+                          {selectedDept ? ` ${selectedDept}` : ''}의 교수 {filteredDoctors.length}명 중
+                          <strong> 무작위로 N명</strong>을 뽑아 각각 일지를 생성합니다.
+                        </>
+                      ) : (
+                        <>자동 생성은 병원 1개를 먼저 선택해야 진행됩니다.</>
+                      )}
                     </div>
                   )}
                   {activeTab === 'manual' && selectedDoctor && (
@@ -561,8 +574,8 @@ export default function VisitLogPage() {
                       <div>
                         <p className="font-medium text-primary">일괄 메모 생성</p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          병원만 선택하고 개수를 정하면, 해당 병원
-                          {selectedDept ? ` ${selectedDept}` : ''}의 교수 중 무작위로 뽑아
+                          병원 1개를 선택하고 개수를 정하면, 해당 병원
+                          {selectedDept ? ` ${selectedDept}` : ''}의 교수 중 우선순위에 맞춰
                           각자에게 맞춘 영업 일지를 한 번에 생성합니다.
                         </p>
                       </div>
@@ -588,9 +601,12 @@ export default function VisitLogPage() {
                         ))}
                       </div>
                       <p className="text-[11px] text-muted-foreground">
-                        선택 범위에 등록된 교수: <strong>{filteredDoctors.length}명</strong>
-                        {filteredDoctors.length > 0 && filteredDoctors.length < bulkCount && (
-                          <span className="text-amber-600"> (요청 {bulkCount}건 중 {filteredDoctors.length}건만 생성됩니다)</span>
+                        선택 범위에 등록된 교수: <strong>{autoTargetCount}명</strong>
+                        {!selectedHospital && (
+                          <span className="text-amber-600"> (병원을 먼저 선택해야 합니다)</span>
+                        )}
+                        {autoTargetCount > 0 && autoTargetCount < bulkCount && (
+                          <span className="text-amber-600"> (요청 {bulkCount}건 중 {autoTargetCount}건만 생성됩니다)</span>
                         )}
                       </p>
                     </div>
@@ -604,13 +620,13 @@ export default function VisitLogPage() {
 
                     <Button
                       onClick={handleBulkAutoGenerate}
-                      disabled={filteredDoctors.length === 0 || isAutoGenerating}
+                      disabled={!selectedHospital || filteredDoctors.length === 0 || isAutoGenerating}
                       className="w-full gap-2"
                     >
                       {isAutoGenerating ? (
                         <><Loader2 className="w-4 h-4 animate-spin" />일괄 메모를 다듬는 중...</>
                       ) : (
-                        <><Wand2 className="w-4 h-4" />{Math.min(bulkCount, filteredDoctors.length || bulkCount)}건 자동 생성</>
+                        <><Wand2 className="w-4 h-4" />{Math.min(bulkCount, autoTargetCount || bulkCount)}건 자동 생성</>
                       )}
                     </Button>
 
