@@ -38,6 +38,7 @@
 - Gangwon upper-tertiary hospital rules are now the active baseline: `위너프` is normalized to `위너프에이플러스`, the memo body ends with `다음 방문에는 ... 하겠다`, and the department map now follows the user's hospital-specific target set.
 - Auto-generation target selection still prefers doctors with fewer visits, but it now pushes down anyone who already had a memo conversion or auto-generated visit log during the current week.
 - Department-specific feature themes are now constrained as well, so memo edit and auto-generation avoid mismatched detail points like IBD in orthopedics.
+- New-drug review wording is now controlled by an explicit 10% allow flag for non-introduced products only, and recent detail keywords are used to push repeated snippet points behind fresher detail points.
 
 ## Useful Entry Points
 - `package.json`

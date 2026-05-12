@@ -213,6 +213,44 @@ function buildSnippetContext(department = ''): string {
   return `\n활용 가능한 핵심 멘트 (이 중 오늘 과/맥락에 맞는 것 선택):\n${lines}\n`;
 }
 
+function getSnippetKeywords(text: string): string[] {
+  const normalized = text
+    .replace(/[^\p{L}\p{N}%]+/gu, ' ')
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 2);
+  const important = normalized.filter((word) =>
+    /[0-9%]/.test(word) ||
+    /아미노산|포도당|오메가|질소|단백|고함량|저인산|철결핍|빈혈|수혈|외래|내원|급여|혈색소|Hb|페리틴|통증|진통|해열|수술|회복|감염|항생|균형|수액|락테이트|마그네슘|세덱스|진정|호흡|ICU|중환|패혈/i.test(word)
+  );
+  return [...new Set(important)].slice(0, 10);
+}
+
+function buildRecentDetailMemory(pastLogs: VisitLog[]): string {
+  const recentText = pastLogs
+    .slice(0, 8)
+    .map((log) => `${log.formattedLog} ${log.nextStrategy ?? ''}`)
+    .join(' ');
+  const keywords = getSnippetKeywords(recentText);
+  if (keywords.length === 0) return '';
+
+  return `\n★★★ 최근 사용한 디테일 포인트:
+- 최근에 이미 쓴 키워드: ${keywords.join(', ')}
+- 위 키워드와 같은 포인트는 가능하면 반복하지 말고, 핵심멘트 라이브러리의 다른 포인트를 우선 사용할 것
+- 특히 위너프에이플러스 아미노산 25%/포도당 감소, 페린젝트 1회 투여는 최근에 보이면 같은 표현 반복 금지\n`;
+}
+
+function snippetOverlapScore(snippet: ReturnType<typeof snippetStorage.getAll>[number], recentTexts: string[]): number {
+  const content = `${snippet.content} ${snippet.context ?? ''}`.toLowerCase();
+  const keywords = getSnippetKeywords(content);
+  const keywordHits = keywords.filter((keyword) =>
+    recentTexts.some((text) => text.includes(keyword.toLowerCase()))
+  ).length;
+  const phrase = snippet.content.replace(/\s+/g, ' ').slice(0, 28).toLowerCase();
+  const phraseHit = phrase.length >= 12 && recentTexts.some((text) => text.includes(phrase)) ? 4 : 0;
+  return keywordHits + phraseHit;
+}
+
 function buildContextAwareSnippets(
   pastLogs: VisitLog[],
   selectedProducts: string[] = [],
@@ -233,10 +271,10 @@ function buildContextAwareSnippets(
     .map(l => `${l.formattedLog} ${l.nextStrategy ?? ''}`.toLowerCase());
 
   const shuffle = <T>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
-  const notUsed = (s: typeof allSnippets[number]) =>
-    !recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()));
-  const wasUsed = (s: typeof allSnippets[number]) =>
-    recentTexts.some(t => t.includes(s.content.slice(0, 15).toLowerCase()));
+  const sortByFreshness = (pool: typeof allSnippets) =>
+    shuffle(pool).sort((a, b) => snippetOverlapScore(a, recentTexts) - snippetOverlapScore(b, recentTexts));
+  const notUsed = (s: typeof allSnippets[number]) => snippetOverlapScore(s, recentTexts) === 0;
+  const wasUsed = (s: typeof allSnippets[number]) => snippetOverlapScore(s, recentTexts) > 0;
 
   // ICU 과인 경우: ICU 스니펫 ~60% + 일반 ~40% 비율로 선택
   if (isIcu) {
@@ -249,8 +287,8 @@ function buildContextAwareSnippets(
     const icuCount = Math.ceil(count * 0.6);
     const generalCount = count - icuCount;
 
-    const selectedIcu = [...shuffle(icuOnes.filter(notUsed)), ...shuffle(icuOnes.filter(wasUsed))].slice(0, icuCount);
-    const selectedGen = [...shuffle(others.filter(notUsed)), ...shuffle(others.filter(wasUsed))].slice(0, generalCount);
+    const selectedIcu = [...sortByFreshness(icuOnes.filter(notUsed)), ...sortByFreshness(icuOnes.filter(wasUsed))].slice(0, icuCount);
+    const selectedGen = [...sortByFreshness(others.filter(notUsed)), ...sortByFreshness(others.filter(wasUsed))].slice(0, generalCount);
     const selected = shuffle([...selectedIcu, ...selectedGen]);
     return selected
       .map(s => `  - [${s.product}] ${s.content}${s.context ? ` (상황: ${s.context})` : ''}`)
@@ -270,8 +308,8 @@ function buildContextAwareSnippets(
 
   // 각 그룹 내에서 미사용 우선 셔플
   const pickFrom = (pool: typeof allSnippets) => [
-    ...shuffle(pool.filter(notUsed)),
-    ...shuffle(pool.filter(wasUsed)),
+    ...sortByFreshness(pool.filter(notUsed)),
+    ...sortByFreshness(pool.filter(wasUsed)),
   ];
 
   // primary에서 최소 절반 이상, secondary 1개, 나머지는 other
@@ -458,16 +496,48 @@ function enforceMemoEnding(
   return combined.length > limit ? compressTextToLimit(combined, limit) : combined;
 }
 
-function normalizeIntroProductLanguage(text: string): string {
-  return text
-    .replace(/처방\s*늘려달라/gi, '신약여부검토 요청')
-    .replace(/지속\s*처방\s*부탁/gi, '신약여부검토 요청')
-    .replace(/한\s*번\s*써봐달라/gi, '신약여부검토 요청')
-    .replace(/신약\s*신청/gi, '신약여부검토 요청')
+function hasIntroProducts(products: string[]): boolean {
+  return products.some((p) => INTRO_PRODUCTS.has(p));
+}
+
+function normalizeIntroProductLanguage(
+  text: string,
+  activeProducts: string[] = [],
+  allowNewDrugReview = false
+): string {
+  const activeIntroProducts = activeProducts.filter((product) => INTRO_PRODUCTS.has(product));
+  const finalAllowNewDrugReview = allowNewDrugReview && activeIntroProducts.length > 0;
+  const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : '제품 포인트 재확인';
+  const activeIntroducedProducts = activeProducts.filter((product) => !INTRO_PRODUCTS.has(product));
+
+  const cleaned = text
+    .replace(/처방\s*늘려달라/gi, replacement)
+    .replace(/지속\s*처방\s*부탁/gi, replacement)
+    .replace(/한\s*번\s*써봐달라/gi, replacement)
+    .replace(/신약\s*신청/gi, replacement)
+    .replace(/신약\s*도입\s*여부\s*검토/gi, replacement)
+    .replace(/신약\s*도입\s*여부/gi, replacement)
+    .replace(/신약\s*여부\s*검토/gi, replacement)
+    .replace(/신약여부검토 요청\s*요청/gi, '신약여부검토 요청')
     .replace(/증량/gi, '')
-    .replace(/증액/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+    .replace(/증액/gi, '');
+
+  const sentences = cleaned
+    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .map((sentence) => {
+      if (!sentence.includes('신약여부검토 요청')) return sentence;
+      if (!finalAllowNewDrugReview) return sentence.replace(/신약여부검토 요청/g, '특장점 반응 확인');
+      const hasIntroProductInSentence = activeIntroProducts.some((product) => sentence.includes(product));
+      const hasIntroducedProductInSentence = activeIntroducedProducts.some((product) => sentence.includes(product));
+      if (hasIntroducedProductInSentence && !hasIntroProductInSentence) {
+        return sentence.replace(/신약여부검토 요청/g, '특장점 반응 확인');
+      }
+      return sentence;
+    });
+
+  return sentences.join(' ').replace(/\s{2,}/g, ' ').trim();
 }
 
 function buildContextSection(
@@ -815,7 +885,7 @@ function buildDepartmentFeatureConstraint(department: string): string {
 
 function removeDisallowedProductSentences(text: string, department: string): string {
   const allowedProducts = getAllowedProductsForDepartment(department);
-  const disallowedProducts = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴']
+  const disallowedProducts = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스']
     .filter((product) => {
       const normalized = product === '위너프'
         ? '위너프에이플러스'
@@ -926,7 +996,8 @@ async function ensureObjectionHandling(
   systemPrompt: string,
   formattedLog: string,
   doctor: Doctor,
-  activeProducts: string[]
+  activeProducts: string[],
+  allowNewDrugReview = false
 ): Promise<string> {
   if (hasObjectionHandling(formattedLog)) return formattedLog;
 
@@ -937,6 +1008,7 @@ async function ensureObjectionHandling(
 - 허용 품목: ${getAllowedProductsForDepartment(doctor.department).join(', ')}
 - 이번 중심 품목: ${activeProducts.join(', ')}
 - 과별 특장점 제한: ${buildDepartmentFeatureConstraint(doctor.department).replace(/\n+/g, ' ').trim()}
+- 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
 - 품목 목록 밖 제품 언급 금지
 - 질문/반대 의견 + 답변을 둘 다 포함
 - 말투는 ~함, ~하심, ~안내함, ~말씀드림 형태
@@ -949,6 +1021,7 @@ ${formattedLog}`;
 
   const result = await callAI(systemPrompt, prompt);
   let cleaned = normalizeMemoTone(result.replace(/['"]/g, '').trim());
+  cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, allowNewDrugReview);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
   if (cleaned.length > 230) {
     cleaned = await trimToLimit(systemPrompt, cleaned, 230, 0, '영업일지');
@@ -1024,10 +1097,6 @@ function buildIntroNote(focusProducts: string[], includeNewDrugReview = false): 
 → 도입 의향은 직접 묻지 말고 특장점만 자연스럽게 전달`;
 }
 
-function hasIntroProducts(products: string[]): boolean {
-  return products.some((p) => INTRO_PRODUCTS.has(p));
-}
-
 export async function convertToVisitLog(
   rawNotes: string,
   doctor: Doctor,
@@ -1075,13 +1144,13 @@ export async function convertToVisitLog(
     : '';
 
   // 미도입 제품 여부 판단
-  const { primary: cvPrimary, secondary: cvSecondary } = getDeptFocusProducts(doctor.department);
-  const cvAllFocus = selectedProducts.length > 0 ? activeProducts : [...cvPrimary, ...cvSecondary];
-  const cvIntroNote = buildIntroNote(cvAllFocus, hasIntroProducts(cvAllFocus) && Math.random() < 0.1);
+  const cvAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
+  const cvIntroNote = buildIntroNote(activeProducts, cvAllowNewDrugReview);
   const cvThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
+  const cvRecentDetailMemory = buildRecentDetailMemory(pastLogs);
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${cvThemeConstraint}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
+${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
 아래 [원본 메모]를 변환합니다.
 
 ★★ 변환 원칙 (반드시 준수):
@@ -1113,9 +1182,10 @@ ${buildVisitLogRules()}
   cleaned = cleaned.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   cleaned = normalizeMemoTone(cleaned);
-  cleaned = normalizeIntroProductLanguage(cleaned);
+  cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   nextStrategy = normalizeMemoTone(nextStrategy);
+  nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, cvAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
   if (!nextStrategy) {
@@ -1139,11 +1209,11 @@ ${buildVisitLogRules()}
   if (cleaned.length > 230) cleaned = compressTextToLimit(cleaned, 230);
 
   if (includeObjection && !hasObjectionHandling(cleaned)) {
-    cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts);
+    cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts, cvAllowNewDrugReview);
   }
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
-  cleaned = normalizeIntroProductLanguage(cleaned);
+  cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
   cleaned = enforceMemoEnding(cleaned, doctor.department, activeProducts);
 
   if (nextStrategy.length > 120) {
@@ -1158,7 +1228,7 @@ ${buildVisitLogRules()}
   }
 
   // ★ 저장 전 검토 에이전트
-  const validated = await validateAndFixVisitLog(systemPrompt, cleaned, nextStrategy, doctor);
+  const validated = await validateAndFixVisitLog(systemPrompt, cleaned, nextStrategy, doctor, activeProducts, cvAllowNewDrugReview);
 
   return {
     formattedLog: validated.formattedLog,
@@ -1214,13 +1284,13 @@ export async function autoGenerateVisitLog(
     : '';
 
   // 미도입 제품 여부 판단
-  const { primary: agPrimary, secondary: agSecondary } = getDeptFocusProducts(doctor.department);
-  const agAllFocus = selectedProducts.length > 0 ? activeProducts : [...agPrimary, ...agSecondary];
-  const agIntroNote = buildIntroNote(agAllFocus, hasIntroProducts(agAllFocus) && Math.random() < 0.1);
+  const agAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
+  const agIntroNote = buildIntroNote(activeProducts, agAllowNewDrugReview);
   const agThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
+  const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agThemeConstraint}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
+${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원/과 특성에 맞게.)
 
@@ -1269,9 +1339,10 @@ ${buildVisitLogRules()}
   fullLog = fullLog.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   fullLog = normalizeMemoTone(fullLog);
-  fullLog = normalizeIntroProductLanguage(fullLog);
+  fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
   nextStrategy = normalizeMemoTone(nextStrategy);
+  nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, agAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
   if (!nextStrategy) {
@@ -1295,11 +1366,11 @@ ${buildVisitLogRules()}
   if (fullLog.length > 230) fullLog = compressTextToLimit(fullLog, 230);
 
   if (includeObjection && !hasObjectionHandling(fullLog)) {
-    fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts);
+    fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts, agAllowNewDrugReview);
   }
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
   fullLog = removeDisallowedProductSentences(fullLog, doctor.department) || fullLog;
-  fullLog = normalizeIntroProductLanguage(fullLog);
+  fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
   fullLog = enforceMemoEnding(fullLog, doctor.department, activeProducts);
 
   if (nextStrategy.length > 120) {
@@ -1314,7 +1385,7 @@ ${buildVisitLogRules()}
   }
 
   // ★ 저장 전 검토 에이전트
-  const agValidated = await validateAndFixVisitLog(buildSystemPrompt(), fullLog, nextStrategy, doctor);
+  const agValidated = await validateAndFixVisitLog(buildSystemPrompt(), fullLog, nextStrategy, doctor, activeProducts, agAllowNewDrugReview);
 
   return {
     visitDate: today,
@@ -1351,6 +1422,7 @@ ${themeConstraint}
   const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeMemoTone(cleaned);
+  cleaned = normalizeIntroProductLanguage(cleaned, getAllowedProductsForDepartment(doctor.department), false);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   if (cleaned.length > 120) {
     cleaned = await trimToLimit(systemPrompt, cleaned, 120, 0, '다음방문전략');
@@ -1366,13 +1438,15 @@ export async function validateAndFixVisitLog(
   systemPrompt: string,
   formattedLog: string,
   nextStrategy: string,
-  doctor: Doctor
+  doctor: Doctor,
+  activeProducts: string[] = getAllowedProductsForDepartment(doctor.department),
+  allowNewDrugReview = false
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
   const MAX_ROUNDS = 2;
   let log = formattedLog;
   let strategy = nextStrategy;
   const allowedProducts = getAllowedProductsForDepartment(doctor.department);
-  const disallowedProducts = ['위너프에이플러스', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴']
+  const disallowedProducts = ['위너프에이플러스', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스']
     .filter((product) => {
       const normalized = product === '플라주' ? '플라주OP' : product;
       return !allowedProducts.includes(normalized);
@@ -1401,8 +1475,9 @@ ${strategy}
 ⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
 ⑫ 과(${doctor.department})에 맞지 않는 품목 언급 금지. 허용 품목: ${allowedProducts.join(', ')}. 금지 품목: ${disallowedProducts.join(', ') || '없음'}
 ⑬ 영업일지 본문 마지막 문장이 "다음 방문에는" 으로 시작하고 "~하겠다"로 끝나지 않음
-⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. 허용 문구는 필요 시 "신약여부검토 요청"만 사용
+⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. "신약여부검토 요청"은 이번 허용 여부가 허용일 때만 사용
 ⑮ 과(${doctor.department})와 맞지 않는 특장점 테마 사용 금지. 제품 정보에 있더라도 다른 과 전용 질환명은 넣지 말 것
+⑯ 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
 FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
@@ -1422,9 +1497,10 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
 
     if (newLog.trim()) {
       log = normalizeMemoTone(newLog.replace(/['"]/g, '').trim());
-      log = normalizeIntroProductLanguage(log);
+      log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
     }
     if (newStrategy.trim()) strategy = normalizeMemoTone(newStrategy.replace(/['"]/g, '').trim());
+    strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
 
     if (passed) break;
   }
@@ -1432,9 +1508,11 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
   const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
   log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
+  log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
   log = removeDisallowedProductSentences(log, doctor.department) ||
     `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 포인트 짧게 디테일 진행함`;
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
+  strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
   if (log.length > 230) log = compressTextToLimit(log, 230);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
