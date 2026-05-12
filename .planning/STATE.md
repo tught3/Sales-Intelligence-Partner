@@ -27,6 +27,7 @@
 - Objection handling is now controlled in code with a 30% chance per memo conversion/auto-generation. When selected, the prompt requires both the objection/question and the answer inside the 230-character visit-log body, with a repair pass if the first result omits it.
 - Gangwon upper-tertiary hospital rules are now the active routing baseline: `위너프` is normalized to `위너프에이플러스`, the memo body must end with `다음 방문에는 ... 하겠다`, and the department map now reflects the user's hospital-specific target set.
 - Auto-generation target selection now keeps the low-visit-count ordering, but within that ordering it deprioritizes any doctor who already received a memo conversion or auto-generated visit log during the current week.
+- Department-specific feature themes are now constrained too, so memo edit and auto-generation avoid cross-department spillover like IBD showing up in orthopedics.
 
 ## Immediate Next Step
 - Report the Gangwon hospital rule reset with typecheck evidence.

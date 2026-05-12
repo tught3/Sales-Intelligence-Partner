@@ -311,6 +311,7 @@ function buildVisitLogRules(): string {
 금지 기호: 중간점(·), 불릿(•), 화살표(↑↓→←) 모두 금지. 증감은 "증가", "감소"로, 문장 구분은 콤마(,)만
 금지 표현: 짚음, 언급함, 설명함 → 대신 "디테일 진행함", "디테일 안내함" 사용
 금지 표현: 흐름이어서, 흐름으로, 다시 봄, 다시 말씀드림 → 대신 "드렸는데", "재확인함" 사용
+과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 짧은 메모처럼
@@ -738,6 +739,80 @@ function buildProductFitConstraint(department: string, selectedProducts: string[
 - 위 목록 밖 품목은 제품 목록, 영업일지, 다음방문전략 어디에도 새로 넣지 말 것.${ignoredLine}\n`;
 }
 
+type DeptFeatureRule = {
+  keywords: string[];
+  allowedThemes: string[];
+  disallowedThemes: string[];
+};
+
+const DEPT_FEATURE_RULES: DeptFeatureRule[] = [
+  {
+    keywords: ['정형외과'],
+    allowedThemes: ['수술 전후 빈혈', 'Hb 회복', '수혈 부담 감소', '재활 회복', '통증 관리', '염증 관리', '출혈 관리', '외래 투여 편의'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
+  },
+  {
+    keywords: ['산부인과', '산과', '부인과'],
+    allowedThemes: ['산후 빈혈', '수술/시술 전후 빈혈', '출혈 후 회복', 'Hb 회복', '수혈 부담 감소', '외래 편의'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
+  },
+  {
+    keywords: ['소화기내과', '소화기', 'IBD', '위장관'],
+    allowedThemes: ['IBD', '위장관 출혈', '장관 영양', '수술 전후 빈혈', '수혈 부담 감소', '회복', '외래 편의'],
+    disallowedThemes: ['정형외과 환자군', '산부인과 환자군'],
+  },
+  {
+    keywords: ['호흡기내과', '호흡기', '결핵'],
+    allowedThemes: ['호흡기 감염', '폐렴', '결핵', '항생제 치료', '경구 섭취 어려움', '회복'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '대장', '장염', '정형외과', '산부인과'],
+  },
+  {
+    keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'],
+    allowedThemes: ['수술 전후 통증 조절', '마취 후 회복', '진통', 'opioid-sparing', '회복실', '수술실'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '대장', '정형외과 환자군'],
+  },
+  {
+    keywords: ['외과', '일반외과', '복부외과', '대장항문외과'],
+    allowedThemes: ['수술 전후', '출혈 관리', '회복', '위장관', '장관 영양', '대장항문', 'IBD', '복부 수술', '영양'],
+    disallowedThemes: [],
+  },
+  {
+    keywords: ['흉부외과', '심혈관외과', '심장외과'],
+    allowedThemes: ['흉부 수술', '심장 수술', '수술 전후 회복', '출혈 관리', 'ICU', '혈역학', '영양'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
+  },
+  {
+    keywords: ['간담췌외과', '간담'],
+    allowedThemes: ['간담췌 수술', '복부 대수술', '수술 전후', '출혈 관리', '영양', '회복'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
+  },
+  {
+    keywords: ['중환자의학과', '중환자', 'ICU'],
+    allowedThemes: ['ICU', '중증 환자', '혈역학', '감염', '영양', '회복', '수술 후'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
+  },
+  {
+    keywords: ['신경외과'],
+    allowedThemes: ['뇌수술', '척추수술', '수술 전후', 'ICU', '회복', '출혈 관리', '중증 환자'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '대장', '소화기내과', '정형외과'],
+  },
+];
+
+function getDeptFeatureRule(department: string): DeptFeatureRule | undefined {
+  const normalized = department.trim();
+  return DEPT_FEATURE_RULES.find((rule) => rule.keywords.some((k) => normalized.includes(k)));
+}
+
+function buildDepartmentFeatureConstraint(department: string): string {
+  const rule = getDeptFeatureRule(department);
+  if (!rule) return '';
+
+  return `\n★★★ 과별 특장점 제한:
+- 이 과(${department})에서는 다음 테마만 중심적으로 사용: ${rule.allowedThemes.join(', ')}
+- 이 과(${department})에 맞지 않는 테마는 제품 정보에 있어도 쓰지 말 것: ${rule.disallowedThemes.join(', ') || '없음'}
+- 과 전용 질환명이나 타 과 환자군 표현은 금지. 과와 직접 연결되는 환자군/상황만 디테일할 것.\n`;
+}
+
 function removeDisallowedProductSentences(text: string, department: string): string {
   const allowedProducts = getAllowedProductsForDepartment(department);
   const disallowedProducts = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴']
@@ -756,6 +831,21 @@ function removeDisallowedProductSentences(text: string, department: string): str
     .map((sentence) => sentence.trim())
     .filter(Boolean)
     .filter((sentence) => !disallowedProducts.some((product) => sentence.includes(product)));
+  return kept.join(' ').trim();
+}
+
+function removeDisallowedDepartmentThemeSentences(text: string, department: string): string {
+  const rule = getDeptFeatureRule(department);
+  if (!rule) return text;
+
+  const disallowedThemes = rule.disallowedThemes.filter(Boolean);
+  if (disallowedThemes.length === 0) return text;
+
+  const kept = text
+    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .filter((sentence) => !disallowedThemes.some((theme) => sentence.includes(theme)));
   return kept.join(' ').trim();
 }
 
@@ -846,6 +936,7 @@ async function ensureObjectionHandling(
 - 과: ${doctor.department}
 - 허용 품목: ${getAllowedProductsForDepartment(doctor.department).join(', ')}
 - 이번 중심 품목: ${activeProducts.join(', ')}
+- 과별 특장점 제한: ${buildDepartmentFeatureConstraint(doctor.department).replace(/\n+/g, ' ').trim()}
 - 품목 목록 밖 제품 언급 금지
 - 질문/반대 의견 + 답변을 둘 다 포함
 - 말투는 ~함, ~하심, ~안내함, ~말씀드림 형태
@@ -987,9 +1078,10 @@ export async function convertToVisitLog(
   const { primary: cvPrimary, secondary: cvSecondary } = getDeptFocusProducts(doctor.department);
   const cvAllFocus = selectedProducts.length > 0 ? activeProducts : [...cvPrimary, ...cvSecondary];
   const cvIntroNote = buildIntroNote(cvAllFocus, hasIntroProducts(cvAllFocus) && Math.random() < 0.1);
+  const cvThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
+${productFitConstraint}${cvThemeConstraint}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
 아래 [원본 메모]를 변환합니다.
 
 ★★ 변환 원칙 (반드시 준수):
@@ -1022,6 +1114,7 @@ ${buildVisitLogRules()}
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   cleaned = normalizeMemoTone(cleaned);
   cleaned = normalizeIntroProductLanguage(cleaned);
+  cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   nextStrategy = normalizeMemoTone(nextStrategy);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1048,6 +1141,8 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(cleaned)) {
     cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts);
   }
+  cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
+  cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
   cleaned = normalizeIntroProductLanguage(cleaned);
   cleaned = enforceMemoEnding(cleaned, doctor.department, activeProducts);
 
@@ -1122,9 +1217,10 @@ export async function autoGenerateVisitLog(
   const { primary: agPrimary, secondary: agSecondary } = getDeptFocusProducts(doctor.department);
   const agAllFocus = selectedProducts.length > 0 ? activeProducts : [...agPrimary, ...agSecondary];
   const agIntroNote = buildIntroNote(agAllFocus, hasIntroProducts(agAllFocus) && Math.random() < 0.1);
+  const agThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
+${productFitConstraint}${agThemeConstraint}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원/과 특성에 맞게.)
 
@@ -1174,6 +1270,7 @@ ${buildVisitLogRules()}
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   fullLog = normalizeMemoTone(fullLog);
   fullLog = normalizeIntroProductLanguage(fullLog);
+  fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
   nextStrategy = normalizeMemoTone(nextStrategy);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1200,6 +1297,8 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(fullLog)) {
     fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts);
   }
+  fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
+  fullLog = removeDisallowedProductSentences(fullLog, doctor.department) || fullLog;
   fullLog = normalizeIntroProductLanguage(fullLog);
   fullLog = enforceMemoEnding(fullLog, doctor.department, activeProducts);
 
@@ -1231,9 +1330,11 @@ export async function generateNextVisitStrategy(
 ): Promise<string> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
   const productFitConstraint = buildProductFitConstraint(doctor.department);
+  const themeConstraint = buildDepartmentFeatureConstraint(doctor.department);
 
   const prompt = `${contextSection}
 ${productFitConstraint}
+${themeConstraint}
 
 위 맥락을 바탕으로 다음 방문 전략을 한 문장으로 작성하세요.
 
@@ -1250,6 +1351,7 @@ ${productFitConstraint}
   const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeMemoTone(cleaned);
+  cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   if (cleaned.length > 120) {
     cleaned = await trimToLimit(systemPrompt, cleaned, 120, 0, '다음방문전략');
   }
@@ -1300,6 +1402,7 @@ ${strategy}
 ⑫ 과(${doctor.department})에 맞지 않는 품목 언급 금지. 허용 품목: ${allowedProducts.join(', ')}. 금지 품목: ${disallowedProducts.join(', ') || '없음'}
 ⑬ 영업일지 본문 마지막 문장이 "다음 방문에는" 으로 시작하고 "~하겠다"로 끝나지 않음
 ⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. 허용 문구는 필요 시 "신약여부검토 요청"만 사용
+⑮ 과(${doctor.department})와 맞지 않는 특장점 테마 사용 금지. 제품 정보에 있더라도 다른 과 전용 질환명은 넣지 말 것
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
 FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
@@ -1328,14 +1431,18 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
 
   // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
   const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
+  log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
   log = removeDisallowedProductSentences(log, doctor.department) ||
     `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 포인트 짧게 디테일 진행함`;
+  strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
   if (log.length > 230) log = compressTextToLimit(log, 230);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
   log = enforceMemoEnding(log, doctor.department, finalAllowedProducts);
   if (!strategy || strategy.trim().length < 5) {
-    strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} 추가 디테일 진행할예정`;
+    const themeRule = getDeptFeatureRule(doctor.department);
+    const theme = themeRule?.allowedThemes[0] || '환자군';
+    strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} ${theme} 추가 디테일 진행할예정`;
   }
 
   return { formattedLog: log, nextStrategy: strategy };
