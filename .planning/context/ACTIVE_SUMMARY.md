@@ -35,6 +35,8 @@
 - Product generation is now department-fit constrained across snippets, selected products, generated product lists, next strategies, and the validation pass. 플라주OP is limited to 응급/마취 contexts and excluded from 신경외과.
 - Department product routing now supports weighted selection for the user-specified departments, including 정형외과 90/10, 호흡기 60/30/10, 중환자 70/20/10, and 외과 50/40/10. 신장내과-specific routing was removed.
 - Memo edit and auto-generation now make the 30% objection-handling decision in code. When selected, the generated body must include both the professor's question/objection and the answer within the same 230-character visit log, with a repair call if omitted.
+- Gangwon upper-tertiary hospital rules are now the active baseline: `위너프` is normalized to `위너프에이플러스`, the memo body ends with `다음 방문에는 ... 하겠다`, and the department map now follows the user's hospital-specific target set.
+- Auto-generation target selection still prefers doctors with fewer visits, but it now pushes down anyone who already had a memo conversion or auto-generated visit log during the current week.
 
 ## Useful Entry Points
 - `package.json`

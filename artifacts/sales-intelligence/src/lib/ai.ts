@@ -163,6 +163,7 @@ function buildSystemPrompt(): string {
 - JW중외제약 제품 강점은 자연스럽게 녹여낼 것
 - ★ 큰따옴표(")와 작은따옴표(') 절대 금지. 강조는 따옴표 없이
 - 페린젝트: 반드시 1회 투여로 표기 (단회투여 금지)
+- 위너프: 모두 위너프에이플러스로 표기
 - 방문일지 본문 230자 이내, 다음 방문 전략은 짧고 실무적으로`;
 
   let prompt = base;
@@ -315,6 +316,8 @@ function buildVisitLogRules(): string {
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 짧은 메모처럼
 글자수: 본문 230자 이내 / 다음방문전략 120자 이내
 다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 포인트 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
+본문 종결: 일지 마지막 문장은 반드시 "다음 방문에는 ... 하겠다" 형태로 끝낼 것
+미도입 제품: 대부분은 특장점 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
 따옴표: 큰따옴표("), 작은따옴표(') 절대 금지`;
 }
 
@@ -328,7 +331,7 @@ function buildVisitLogFlow(): string {
      절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, [갑자기 전혀 다른 주제]" — 이렇게 하면 안 됨.
 ② [오늘 핵심] 어떤 제품의 어떤 특장점을 전달했는지 구체적으로. 제공된 제품 특장점 화법 자연스럽게 녹여낼 것 (원문 복붙 금지).
    ★ 주제가 여러 개면 문맥에 맞게 자연스럽게 이어서 작성. 각 주제가 뚝 끊기지 않도록.
-③ [오브젝션 핸들링] 별도 지시가 있을 때만 포함. 포함 시 교수님의 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "~라고 하심. ~라고 안내함. 어느 정도 공감하심".
+③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님의 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "~라고 하심. ~라고 안내함. 어느 정도 공감하심".
 ④ [교수 반응] 교수 반응 한 줄로.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 }
@@ -356,6 +359,7 @@ function normalizeMemoTone(text: string): string {
   const replacements: Array<[RegExp, string]> = [
     [/단회\s*투여/gi, '1회 투여'],
     [/단회투여/gi, '1회 투여'],
+    [/위너프(?!에이플러스)/g, '위너프에이플러스'],
     [/짚겠음/gi, '디테일 진행함'],
     [/짚을 예정/gi, '디테일 진행 예정'],
     [/짚어볼 예정/gi, '디테일 진행 예정'],
@@ -422,6 +426,45 @@ function normalizeMemoTone(text: string): string {
     .replace(/\s*,\s*/g, ', ')
     .replace(/\s+([.,!?])/g, '$1')
     .replace(/[.]{2,}/g, '.')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function buildMemoEndingSentence(department: string, products: string[]): string {
+  const focusProducts = products.slice(0, 2).length > 0
+    ? products.slice(0, 2)
+    : getAllowedProductsForDepartment(department).slice(0, 2);
+  const productText = focusProducts.join(', ') || '위너프에이플러스';
+  return `다음 방문에는 ${productText} 반응 확인하겠다`;
+}
+
+function enforceMemoEnding(
+  text: string,
+  department: string,
+  products: string[],
+  limit = 230
+): string {
+  const ending = buildMemoEndingSentence(department, products);
+  const normalized = normalizeMemoTone(text).replace(/['"]/g, '').trim();
+  if (!normalized) return ending.slice(0, limit);
+
+  const start = normalized.lastIndexOf('다음 방문에는');
+  let core = start >= 0 ? normalized.slice(0, start).trim() : normalized;
+  core = core.replace(/[,\s]+$/g, '').trim();
+  const maxCoreLength = Math.max(0, limit - ending.length - 1);
+  core = compressTextToLimit(core, maxCoreLength);
+  const combined = core ? `${core} ${ending}` : ending;
+  return combined.length > limit ? compressTextToLimit(combined, limit) : combined;
+}
+
+function normalizeIntroProductLanguage(text: string): string {
+  return text
+    .replace(/처방\s*늘려달라/gi, '신약여부검토 요청')
+    .replace(/지속\s*처방\s*부탁/gi, '신약여부검토 요청')
+    .replace(/한\s*번\s*써봐달라/gi, '신약여부검토 요청')
+    .replace(/신약\s*신청/gi, '신약여부검토 요청')
+    .replace(/증량/gi, '')
+    .replace(/증액/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -595,50 +638,46 @@ ${recentHints}${patternBlock}
 
 type DeptProductRule = {
   keywords: string[];
-  products: Array<{ name: string; weight?: number }>;
+  weightedProducts: Array<{ name: string; weight?: number }>;
+  extraProducts?: string[];
   weighted?: boolean;
 };
 
 // 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
 const DEPT_PRODUCT_MAP: DeptProductRule[] = [
-  // 철결핍성 빈혈 중심
-  { keywords: ['산부인과', '산과', '부인과'], products: [{ name: '페린젝트' }] },
-  { keywords: ['정형외과'], products: [{ name: '페린젝트', weight: 90 }, { name: '이부프로펜프리믹스', weight: 10 }], weighted: true },
-  { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], products: [{ name: '페린젝트' }, { name: '위너프에이플러스' }] },
-  // 플라주OP 사용과: 응급·마취만 (수액 관리·수술 전후)
-  { keywords: ['마취통증', '마취과', '통증의학'], products: [{ name: '플라주OP' }, { name: '이부프로펜프리믹스' }] },
-  { keywords: ['응급의학과', '응급'], products: [{ name: '플라주OP' }, { name: '이부프로펜프리믹스' }] },
-  { keywords: ['흉부외과', '심혈관외과', '심장외과'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
-  // 항생제 계열
-  { keywords: ['감염내과', '감염'], products: [{ name: '포스페넴' }, { name: '프리페넴' }] },
-  { keywords: ['비뇨의학과', '비뇨'], products: [{ name: '포스페넴' }, { name: '프리페넴' }, { name: '페린젝트' }, { name: '이부프로펜프리믹스' }] },
-  { keywords: ['호흡기내과', '호흡기', '결핵'], products: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 30 }, { name: '프리페넴', weight: 10 }], weighted: true },
-  // 영양·혈액 계열
-  { keywords: ['종양혈액내과', '혈액종양', '혈액', '종양'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
-  { keywords: ['간담췌외과', '간담'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
-  { keywords: ['중환자의학과', '중환자', 'ICU'], products: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 20 }, { name: '포스페넴', weight: 10 }], weighted: true },
-  // 신경외과: 위너프에이플러스 + 페린젝트 중심
-  { keywords: ['신경외과'], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] },
-  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], products: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 40 }, { name: '이부프로펜프리믹스', weight: 10 }], weighted: true },
+  { keywords: ['정형외과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '이부프로펜프리믹스', weight: 10 }], extraProducts: ['플라주OP'], weighted: true },
+  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '이부프로펜프리믹스', weight: 10 }], extraProducts: ['플라주OP'], weighted: true },
+  { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], weightedProducts: [{ name: '위너프에이플러스', weight: 40 }, { name: '페린젝트', weight: 40 }, { name: '플라주OP', weight: 20 }], weighted: true },
+  { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 30 }, { name: '프리페넴', weight: 10 }], extraProducts: ['플라주OP'], weighted: true },
+  { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '플라주OP', weight: 50 }, { name: '제이세덱스', weight: 50 }], weighted: true },
+  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 40 }, { name: '이부프로펜프리믹스', weight: 10 }], extraProducts: ['플라주OP', '프리페넴', '제이세덱스'], weighted: true },
+  { keywords: ['흉부외과', '심혈관외과', '심장외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
+  { keywords: ['간담췌외과', '간담'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
+  { keywords: ['중환자의학과', '중환자', 'ICU'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 20 }, { name: '포스페넴', weight: 10 }], weighted: true },
+  { keywords: ['신경외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
 ];
 
 function getDeptProductRule(department: string): DeptProductRule {
   return DEPT_PRODUCT_MAP.find((rule) => rule.keywords.some(k => department.includes(k))) ??
-    { keywords: [], products: [{ name: '위너프에이플러스' }, { name: '페린젝트' }] };
+    { keywords: [], weightedProducts: [{ name: '위너프에이플러스' }, { name: '페린젝트' }], weighted: false };
 }
 
 function getDeptFocusProducts(department: string): { primary: string[]; secondary: string[] } {
-  const products = getDeptProductRule(department).products.map((product) => product.name);
+  const products = getDeptProductRule(department).weightedProducts.map((product) => product.name);
   return { primary: products, secondary: [] };
 }
 
 function getAllowedProductsForDepartment(department: string): string[] {
-  return [...new Set(getDeptProductRule(department).products.map((product) => product.name))];
+  const rule = getDeptProductRule(department);
+  return [...new Set([
+    ...rule.weightedProducts.map((product) => product.name),
+    ...(rule.extraProducts ?? []),
+  ])];
 }
 
 function pickWeightedProductForDepartment(department: string): string {
   const rule = getDeptProductRule(department);
-  const products = rule.products;
+  const products = rule.weightedProducts;
   const totalWeight = products.reduce((sum, product) => sum + (product.weight ?? 1), 0);
   let cursor = Math.random() * totalWeight;
   for (const product of products) {
@@ -652,13 +691,15 @@ function getActiveProductsForGeneration(selectedProducts: string[], department: 
   const selected = normalizeSelectedProductsForDepartment(selectedProducts, department);
   if (selectedProducts.length > 0) return selected;
   const rule = getDeptProductRule(department);
-  return rule.weighted ? [pickWeightedProductForDepartment(department)] : selected;
+  if (rule.weighted) return [pickWeightedProductForDepartment(department)];
+  const allowed = getAllowedProductsForDepartment(department);
+  return allowed.slice(0, Math.min(2, allowed.length));
 }
 
 function formatProductWeights(department: string): string {
   const rule = getDeptProductRule(department);
   if (!rule.weighted) return '별도 가중치 없음';
-  return rule.products
+  return rule.weightedProducts
     .map((product) => `${product.name} ${product.weight ?? 0}%`)
     .join(', ');
 }
@@ -873,17 +914,27 @@ export function compressTextToLimit(text: string, limit: number): string {
   return source.slice(0, limit);
 }
 
-// 병원에 아직 미도입된 제품 — "신약 신청 / 한 번 써봐달라" 방향으로 작성
-const INTRO_PRODUCTS = new Set(['플라주OP', '이부프로펜프리믹스']);
+// 병원에 아직 미도입된 제품 — 특장점 중심, 가끔만 신약여부검토 요청
+const INTRO_PRODUCTS = new Set(['플라주OP', '이부프로펜프리믹스', '제이세덱스', '포스페넴']);
 
-function buildIntroNote(focusProducts: string[]): string {
+function buildIntroNote(focusProducts: string[], includeNewDrugReview = false): string {
   const introOnes = focusProducts.filter(p => INTRO_PRODUCTS.has(p));
   if (introOnes.length === 0) return '';
-  return `\n★ 미도입 제품 주의 (${introOnes.join(', ')}):
+  return includeNewDrugReview
+    ? `\n★ 미도입 제품 주의 (${introOnes.join(', ')}):
 이 제품은 병원에 아직 없는 상태입니다.
-→ "처방 늘려달라" / "지속 처방 부탁" 표현 절대 금지
-→ "한 번 써봐달라" / "신약 신청 부탁드린다" / "처음 시도해봐달라" 방향으로 작성
-→ 특장점 1개 심플하게 디테일하고, 도입 의향 확인하는 흐름으로 마무리`;
+→ "처방 늘려달라" / "증량" / "증액" / "지속 처방 부탁" 표현 절대 금지
+→ 특장점 1개만 짧게 디테일한 뒤, 본문 중 "신약여부검토 요청"을 1회만 자연스럽게 넣을 것
+→ 요청은 자주 넣지 말고, 오늘은 특장점 1개와 요청 1개만 섞어서 마무리`
+    : `\n★ 미도입 제품 주의 (${introOnes.join(', ')}):
+이 제품은 병원에 아직 없는 상태입니다.
+→ "처방 늘려달라" / "증량" / "증액" / "지속 처방 부탁" 표현 절대 금지
+→ 1~2개 특장점만 짧게 디테일하고, 신약여부검토 요청은 넣지 말 것
+→ 도입 의향은 직접 묻지 말고 특장점만 자연스럽게 전달`;
+}
+
+function hasIntroProducts(products: string[]): boolean {
+  return products.some((p) => INTRO_PRODUCTS.has(p));
 }
 
 export async function convertToVisitLog(
@@ -935,7 +986,7 @@ export async function convertToVisitLog(
   // 미도입 제품 여부 판단
   const { primary: cvPrimary, secondary: cvSecondary } = getDeptFocusProducts(doctor.department);
   const cvAllFocus = selectedProducts.length > 0 ? activeProducts : [...cvPrimary, ...cvSecondary];
-  const cvIntroNote = buildIntroNote(cvAllFocus);
+  const cvIntroNote = buildIntroNote(cvAllFocus, hasIntroProducts(cvAllFocus) && Math.random() < 0.1);
 
   const prompt = `${visitContextNote}${contextSection}
 ${productFitConstraint}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
@@ -970,6 +1021,7 @@ ${buildVisitLogRules()}
   cleaned = cleaned.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   cleaned = normalizeMemoTone(cleaned);
+  cleaned = normalizeIntroProductLanguage(cleaned);
   nextStrategy = normalizeMemoTone(nextStrategy);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -996,6 +1048,8 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(cleaned)) {
     cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts);
   }
+  cleaned = normalizeIntroProductLanguage(cleaned);
+  cleaned = enforceMemoEnding(cleaned, doctor.department, activeProducts);
 
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, 0, '다음방문전략');
@@ -1067,7 +1121,7 @@ export async function autoGenerateVisitLog(
   // 미도입 제품 여부 판단
   const { primary: agPrimary, secondary: agSecondary } = getDeptFocusProducts(doctor.department);
   const agAllFocus = selectedProducts.length > 0 ? activeProducts : [...agPrimary, ...agSecondary];
-  const agIntroNote = buildIntroNote(agAllFocus);
+  const agIntroNote = buildIntroNote(agAllFocus, hasIntroProducts(agAllFocus) && Math.random() < 0.1);
 
   const prompt = `${visitContextNote}${contextSection}
 ${productFitConstraint}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
@@ -1095,7 +1149,7 @@ ${buildVisitLogRules()}
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   const productText = productMatch ? productMatch[1].trim() : '';
-  const KNOWN_PRODUCTS = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '기타'];
+  const KNOWN_PRODUCTS = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스', '기타'];
   const allowedProducts = getAllowedProductsForDepartment(doctor.department);
   const products = productText
     .split(/[,，、]/)
@@ -1119,6 +1173,7 @@ ${buildVisitLogRules()}
   fullLog = fullLog.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   fullLog = normalizeMemoTone(fullLog);
+  fullLog = normalizeIntroProductLanguage(fullLog);
   nextStrategy = normalizeMemoTone(nextStrategy);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1145,6 +1200,8 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(fullLog)) {
     fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts);
   }
+  fullLog = normalizeIntroProductLanguage(fullLog);
+  fullLog = enforceMemoEnding(fullLog, doctor.department, activeProducts);
 
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
@@ -1153,8 +1210,7 @@ ${buildVisitLogRules()}
 
   // 최종 폴백: 여전히 비어있으면 하드코딩
   if (!nextStrategy) {
-    const { primary } = getDeptFocusProducts(doctor.department);
-    const prod = selectedProducts[0] || primary[0] || '위너프에이플러스';
+    const prod = activeProducts[0] || '위너프에이플러스';
     nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
   }
 
@@ -1242,6 +1298,8 @@ ${strategy}
 ⑩ 다음방문전략이 "다음방문시에는" / "다음번에는" / "다음에는" 으로 시작 안 함
 ⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
 ⑫ 과(${doctor.department})에 맞지 않는 품목 언급 금지. 허용 품목: ${allowedProducts.join(', ')}. 금지 품목: ${disallowedProducts.join(', ') || '없음'}
+⑬ 영업일지 본문 마지막 문장이 "다음 방문에는" 으로 시작하고 "~하겠다"로 끝나지 않음
+⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. 허용 문구는 필요 시 "신약여부검토 요청"만 사용
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
 FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
@@ -1259,7 +1317,10 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
     const newLog = extractSection(result, ['===수정 영업일지===', '===수정 다음방문전략===']);
     const newStrategy = extractSection(result, ['===수정 다음방문전략===']);
 
-    if (newLog.trim()) log = normalizeMemoTone(newLog.replace(/['"]/g, '').trim());
+    if (newLog.trim()) {
+      log = normalizeMemoTone(newLog.replace(/['"]/g, '').trim());
+      log = normalizeIntroProductLanguage(log);
+    }
     if (newStrategy.trim()) strategy = normalizeMemoTone(newStrategy.replace(/['"]/g, '').trim());
 
     if (passed) break;
@@ -1272,6 +1333,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
   if (log.length > 230) log = compressTextToLimit(log, 230);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
+  log = enforceMemoEnding(log, doctor.department, finalAllowedProducts);
   if (!strategy || strategy.trim().length < 5) {
     strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} 추가 디테일 진행할예정`;
   }
@@ -1295,7 +1357,7 @@ ${objection}
 - 교수 성향과 과거 방문 맥락을 고려한 접근법
 - 임상 데이터/근거 기반 답변
 - 핵심 멘트 중 활용할 수 있는 포인트 반영
-- JW중외제약 제품(위너프/페린젝트) 강점 연결
+- JW중외제약 제품(위너프에이플러스/페린젝트) 강점 연결
 - 2-3가지 대응 방안 제시
 - 큰따옴표("), 작은따옴표(') 모두 사용 금지`;
 

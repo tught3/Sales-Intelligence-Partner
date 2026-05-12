@@ -25,9 +25,11 @@
 - Visit-log generation now filters snippets, selected products, generated product lists, and review output by department-appropriate products; 플라주OP is limited to 응급/마취 contexts and excluded from 신경외과.
 - Department product routing now supports weighted product selection for generation: 정형외과 90/10 페린젝트/이부프로펜프리믹스, 호흡기 60/30/10 위너프에이플러스/페린젝트/프리페넴, 중환자 70/20/10 위너프에이플러스/페린젝트/포스페넴, 외과 50/40/10 위너프에이플러스/페린젝트/이부프로펜프리믹스. 신장내과-specific routing was removed.
 - Objection handling is now controlled in code with a 30% chance per memo conversion/auto-generation. When selected, the prompt requires both the objection/question and the answer inside the 230-character visit-log body, with a repair pass if the first result omits it.
+- Gangwon upper-tertiary hospital rules are now the active routing baseline: `위너프` is normalized to `위너프에이플러스`, the memo body must end with `다음 방문에는 ... 하겠다`, and the department map now reflects the user's hospital-specific target set.
+- Auto-generation target selection now keeps the low-visit-count ordering, but within that ordering it deprioritizes any doctor who already received a memo conversion or auto-generated visit log during the current week.
 
 ## Immediate Next Step
-- Report the weighted department/product routing and objection handling update with typecheck evidence.
+- Report the Gangwon hospital rule reset with typecheck evidence.
 
 ## Known Structure
 - `artifacts/api-server`
