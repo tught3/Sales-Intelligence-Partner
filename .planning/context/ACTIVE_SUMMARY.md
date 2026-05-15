@@ -42,6 +42,7 @@
 - The forced `다음 방문에는 ... 하겠다` memo ending has been removed; next-visit planning text is stripped from the body and kept in the separate `nextStrategy` field.
 - Auto-generation requires selecting one hospital first; the all-hospital option is hidden in the auto tab and the bulk generation button is disabled until a hospital is selected.
 - Visit-log generation now reduces unnecessary `포인트` wording and hard-cleans broken previous-visit transitions that do not include the prior-detail result or professor response.
+- Department routing now sets anesthesiology and emergency medicine to `플라주OP 70% / 제이세덱스 30%`.
 
 ## Useful Entry Points
 - `package.json`
