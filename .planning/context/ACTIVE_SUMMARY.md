@@ -41,6 +41,7 @@
 - New-drug review wording is now controlled by an explicit 10% allow flag for non-introduced products only, and recent detail keywords are used to push repeated snippet points behind fresher detail points.
 - The forced `다음 방문에는 ... 하겠다` memo ending has been removed; next-visit planning text is stripped from the body and kept in the separate `nextStrategy` field.
 - Auto-generation requires selecting one hospital first; the all-hospital option is hidden in the auto tab and the bulk generation button is disabled until a hospital is selected.
+- Visit-log generation now reduces unnecessary `포인트` wording and hard-cleans broken previous-visit transitions that do not include the prior-detail result or professor response.
 
 ## Useful Entry Points
 - `package.json`

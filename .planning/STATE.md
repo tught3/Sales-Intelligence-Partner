@@ -31,6 +31,7 @@
 - New-drug review wording is now gated by an explicit 10% allow flag for non-introduced products only; introduced products never receive that wording, and recent detail points are used to deprioritize repeated snippets.
 - Visit-log body no longer forces a `다음 방문에는 ... 하겠다` ending. Next-visit plans are kept out of the memo body and normalized into the separate `nextStrategy` field.
 - Auto-generation now requires selecting exactly one hospital scope first; the all-hospital option is hidden in the auto tab and generation is blocked until a hospital is selected.
+- Visit-log generation now suppresses unnecessary `포인트` wording and cleans invalid `지난번에 ... 했는데` transitions unless the prior-detail result or professor response is completed.
 
 ## Immediate Next Step
 - Report the Gangwon hospital rule reset with typecheck evidence.

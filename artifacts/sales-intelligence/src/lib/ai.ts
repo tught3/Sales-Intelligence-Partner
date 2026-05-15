@@ -100,7 +100,7 @@ ${additionalNotes}
 1. 기존 매뉴얼의 구조(■ 섹션 헤더, 【】 소제목 형태)를 그대로 유지할 것
 2. 기존 매뉴얼의 모든 핵심 정보를 절대 누락하지 말 것 (정보 손실 금지)
 3. 【추가 입력 우선 처리 규칙】
-   - 추가 입력에서 나온 특장점/포인트는 해당 섹션의 "맨 앞"에 배치
+   - 추가 입력에서 나온 특장점/디테일은 해당 섹션의 "맨 앞"에 배치
    - 추가 입력 내용은 축약하지 말고 디테일을 살려서 풍부하게 서술
    - 기존 매뉴얼의 일반론보다 추가 입력의 구체적/현장적 표현을 우선 사용
    - ★, ◎, ◆ 같은 별도의 강조 마크/이모지를 임의로 붙이지 말 것 (기존 매뉴얼에 이미 있는 ■, 【】 같은 구조 기호만 그대로 유지)
@@ -234,9 +234,9 @@ function buildRecentDetailMemory(pastLogs: VisitLog[]): string {
   const keywords = getSnippetKeywords(recentText);
   if (keywords.length === 0) return '';
 
-  return `\n★★★ 최근 사용한 디테일 포인트:
+  return `\n★★★ 최근 사용한 디테일:
 - 최근에 이미 쓴 키워드: ${keywords.join(', ')}
-- 위 키워드와 같은 포인트는 가능하면 반복하지 말고, 핵심멘트 라이브러리의 다른 포인트를 우선 사용할 것
+- 위 키워드와 같은 내용은 가능하면 반복하지 말고, 핵심멘트 라이브러리의 다른 디테일을 우선 사용할 것
 - 특히 위너프에이플러스 아미노산 25%/포도당 감소, 페린젝트 1회 투여는 최근에 보이면 같은 표현 반복 금지\n`;
 }
 
@@ -354,7 +354,7 @@ function buildVisitLogRules(): string {
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 짧은 메모처럼
 글자수: 본문 230자 이내 / 다음방문전략 120자 이내
-다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 포인트 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
+다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 조성 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
 본문 종결: 영업일지 본문에는 다음 방문 계획을 넣지 말 것. "다음 방문에는", "다음번에는", "다음방문시에는" 문장은 다음방문전략에만 작성
 미도입 제품: 대부분은 특장점 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
 따옴표: 큰따옴표("), 작은따옴표(') 절대 금지`;
@@ -362,12 +362,12 @@ function buildVisitLogRules(): string {
 
 function buildVisitLogFlow(): string {
   return `━━━ 일지 흐름 (이 순서로 자연스럽게 이어서 작성) ━━━
-① [이전 연결 - 선택] 지난 방문과 연결할 내용이 있을 때만. 없으면 생략.
+① [이전 연결 - 선택] 지난 방문 기록에서 실제로 이어 물어볼 내용이 있을 때만 "지난번에", "지난 방문에" 사용. 없으면 생략.
    ★★ 반드시 지켜야 할 흐름 규칙:
      "지난번에 ~했는데" 또는 "지난번에 ~드렸는데"로 시작했으면,
-     바로 다음 문장은 반드시 그것에 대한 결과/반응이어야 함.
-     예: "지난번에 페린젝트 급여조건 디테일 드렸는데 [→ 이번에 처방해보셨는지/반응이 어떠신지 등 그 결과로 이어짐]"
-     절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, [갑자기 전혀 다른 주제]" — 이렇게 하면 안 됨.
+     바로 이어서 반드시 그것에 대한 확인 결과/교수 반응을 끝까지 쓸 것.
+     예: "지난번에 페린젝트 급여조건 디테일 드렸는데, 처방 케이스 있는지 확인했으나 아직 없다고 하심. 이후 외래 투여 편의성 디테일 진행함"
+     절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, 위너프에이플러스 질소균형 디테일 진행함" — 과거 내용의 결과 없이 새 주제로 점프 금지.
 ② [오늘 핵심] 어떤 제품의 어떤 특장점을 전달했는지 구체적으로. 제공된 제품 특장점 화법 자연스럽게 녹여낼 것 (원문 복붙 금지).
    ★ 주제가 여러 개면 문맥에 맞게 자연스럽게 이어서 작성. 각 주제가 뚝 끊기지 않도록.
 ③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님의 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "~라고 하심. ~라고 안내함. 어느 정도 공감하심".
@@ -473,6 +473,50 @@ function normalizeMemoTone(text: string): string {
     .trim();
 }
 
+function reducePointWordUsage(text: string): string {
+  return text
+    .replace(/제품\s*포인트/g, '제품 내용')
+    .replace(/처방\s*포인트/g, '처방 관련 내용')
+    .replace(/디테일\s*포인트/g, '디테일')
+    .replace(/짧은\s*포인트/g, '짧게')
+    .replace(/포인트를/g, '내용을')
+    .replace(/포인트는/g, '내용은')
+    .replace(/포인트/g, '내용')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function cleanPreviousVisitConnection(text: string): string {
+  const previousPattern = /(지난번에|지난\s*방문(?:에)?|지난방문(?:에)?|이전\s*방문(?:에)?)/;
+  if (!previousPattern.test(text)) return text;
+
+  const resultPattern = /(확인|여쭤|문의|처방|사용|반응|케이스|없다고|있다고|하심|말씀|보임|관심|부담|어렵|검토|공감|납득|아직|이후|그\s*후|그후)/;
+  const connectorPattern = /(했는데|드렸는데|안내했는데|진행했는데|전달했는데|설명했는데|디테일했는데)/;
+
+  return text
+    .split(/(?<=[.。!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .map((sentence) => {
+      if (!previousPattern.test(sentence)) return sentence;
+      const connectorMatch = sentence.match(connectorPattern);
+      if (!connectorMatch || connectorMatch.index === undefined) {
+        return resultPattern.test(sentence) ? sentence : '';
+      }
+      const afterConnector = sentence.slice(connectorMatch.index + connectorMatch[0].length);
+      if (resultPattern.test(afterConnector)) return sentence;
+      return afterConnector.trim();
+    })
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function normalizeGeneratedMemoText(text: string): string {
+  return cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text)));
+}
+
 function removeNextVisitPlanFromLog(text: string): string {
   return text
     .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
@@ -486,7 +530,7 @@ function removeNextVisitPlanFromLog(text: string): string {
 
 function normalizeNextStrategy(text: string): string {
   if (!text.trim()) return '';
-  const normalized = normalizeMemoTone(text)
+  const normalized = reducePointWordUsage(normalizeMemoTone(text))
     .replace(/^(다음\s*방문에는|다음번에는|다음에는)\s*/g, '다음방문시에는 ')
     .replace(/^다음방문시\s*에는\s*/g, '다음방문시에는 ')
     .replace(/하겠다/gi, '할예정')
@@ -507,7 +551,7 @@ function normalizeIntroProductLanguage(
 ): string {
   const activeIntroProducts = activeProducts.filter((product) => INTRO_PRODUCTS.has(product));
   const finalAllowNewDrugReview = allowNewDrugReview && activeIntroProducts.length > 0;
-  const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : '제품 포인트 재확인';
+  const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : '특장점 반응 확인';
   const activeIntroducedProducts = activeProducts.filter((product) => !INTRO_PRODUCTS.has(product));
 
   const cleaned = text
@@ -946,8 +990,8 @@ function isIcuOnlySnippet(snippet: { content: string; context?: string }): boole
 function buildIcuContextNote(department: string): string {
   if (!isIcuDepartment(department)) return '';
   return `[중요] 이 과(${department})는 ICU/중증 환자를 담당합니다.
-제품 디테일 포인트 중 ICU/중증/수술/감염 관련 포인트를 다른 포인트보다 비중 있게 활용할 것.
-단, ICU 포인트만 고집하지 말고 환자군과 맥락에 따라 적절히 섞어서 사용할 것.`;
+제품 디테일 중 ICU/중증/수술/감염 관련 내용을 다른 내용보다 비중 있게 활용할 것.
+단, ICU 내용만 고집하지 말고 환자군과 맥락에 따라 적절히 섞어서 사용할 것.`;
 }
 
 function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt: string; contextSection: string } {
@@ -1020,7 +1064,7 @@ async function ensureObjectionHandling(
 ${formattedLog}`;
 
   const result = await callAI(systemPrompt, prompt);
-  let cleaned = normalizeMemoTone(result.replace(/['"]/g, '').trim());
+  let cleaned = normalizeGeneratedMemoText(result.replace(/['"]/g, '').trim());
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, allowNewDrugReview);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
   if (cleaned.length > 230) {
@@ -1121,7 +1165,7 @@ export async function convertToVisitLog(
 이 교수와는 이미 ${visitCount}회 방문한 기록이 있습니다.
 마지막 방문: ${lastVisitDate} / 오늘은 ${visitOrdinal}번째 방문입니다.
 절대로 첫 방문, 첫 인사, 처음 뵙겠습니다 같은 표현을 쓰지 말 것.
-이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
+단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
     : '';
 
   const cvSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 4, doctor.department);
@@ -1135,8 +1179,8 @@ export async function convertToVisitLog(
         return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
       })();
   const cvSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선):\n`
-    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선):\n`;
+    ? `\n오늘 활용할 제품 디테일 후보 (ICU/중증 관련 내용 비중 높게, 이전 방문 미사용 내용 우선):\n`
+    : `\n오늘 활용할 제품 디테일 후보 (이전 방문에서 다루지 않은 새 내용 우선):\n`;
   const cvSnippetSection = cvSnippetLines ? `${cvFocus}\n${cvSnippetLabel}${cvSnippetLines}\n` : `${cvFocus}\n`;
 
   const cvProductConstraint = selectedProducts.length > 0
@@ -1157,7 +1201,7 @@ ${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvSnippetSec
 1. 원본 메모의 내용(상황, 반응, 제품명, 수치 등)은 그대로 유지. 다른 내용으로 대체 금지.
 2. 말투·어미를 아래 규칙(~함, ~보임, ~예정 등)에 맞게 다듬을 것.
 3. 원본 메모의 흐름이 어색하거나 주제가 뚝 끊기면 → 사실은 유지하되 순서/연결을 자연스럽게 재구성할 것.
-4. 원본에 제품 디테일이 없으면 → 이 과(${doctor.department})에 맞는 제품 디테일 포인트 1개만 자연스럽게 추가.
+4. 원본에 제품 디테일이 없으면 → 이 과(${doctor.department})에 맞는 제품 디테일 1개만 자연스럽게 추가.
 5. 오브젝션 핸들링 → 위 오브젝션 지시를 따를 것.
 6. 다음방문전략 → 반드시 작성 (필수).
 
@@ -1181,11 +1225,11 @@ ${buildVisitLogRules()}
 
   cleaned = cleaned.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
-  cleaned = normalizeMemoTone(cleaned);
+  cleaned = normalizeGeneratedMemoText(cleaned);
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   cleaned = removeNextVisitPlanFromLog(cleaned);
-  nextStrategy = normalizeNextStrategy(nextStrategy);
+  nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy));
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, cvAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1212,6 +1256,7 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(cleaned)) {
     cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts, cvAllowNewDrugReview);
   }
+  cleaned = normalizeGeneratedMemoText(cleaned);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   cleaned = removeNextVisitPlanFromLog(cleaned);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
@@ -1220,6 +1265,7 @@ ${buildVisitLogRules()}
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, 0, '다음방문전략');
   }
+  nextStrategy = normalizeIntroProductLanguage(normalizeNextStrategy(nextStrategy), activeProducts, cvAllowNewDrugReview);
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
   // 최종 폴백: 여전히 비어있으면 하드코딩
@@ -1262,7 +1308,7 @@ export async function autoGenerateVisitLog(
 이 교수와는 이미 ${visitCount}회 방문한 기록이 있습니다.
 마지막 방문: ${lastVisitDate} / 오늘은 ${visitOrdinal}번째 방문입니다.
 절대로 첫 방문, 첫 인사, 처음 뵙겠습니다 같은 표현을 쓰지 말 것.
-이전 방문에서 나눴던 대화의 연속선에서 작성하세요.\n\n`
+단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
     : '';
 
   const agSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 4, doctor.department);
@@ -1276,8 +1322,8 @@ export async function autoGenerateVisitLog(
         return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
       })();
   const agSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 포인트 (ICU/중증 관련 포인트 비중 높게, 이전 방문 미사용 포인트 우선):\n`
-    : `\n오늘 활용할 제품 디테일 포인트 (이전 방문에서 다루지 않은 새 포인트 우선):\n`;
+    ? `\n오늘 활용할 제품 디테일 후보 (ICU/중증 관련 내용 비중 높게, 이전 방문 미사용 내용 우선):\n`
+    : `\n오늘 활용할 제품 디테일 후보 (이전 방문에서 다루지 않은 새 내용 우선):\n`;
   const agSnippetSection = agSnippetLines ? `${agFocus}\n${agSnippetLabel}${agSnippetLines}\n` : `${agFocus}\n`;
 
   const agProductConstraint = selectedProducts.length > 0
@@ -1339,11 +1385,11 @@ ${buildVisitLogRules()}
 
   fullLog = fullLog.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
-  fullLog = normalizeMemoTone(fullLog);
+  fullLog = normalizeGeneratedMemoText(fullLog);
   fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
   fullLog = removeNextVisitPlanFromLog(fullLog);
-  nextStrategy = normalizeNextStrategy(nextStrategy);
+  nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy));
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, agAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1370,6 +1416,7 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(fullLog)) {
     fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts, agAllowNewDrugReview);
   }
+  fullLog = normalizeGeneratedMemoText(fullLog);
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
   fullLog = removeNextVisitPlanFromLog(fullLog);
   fullLog = removeDisallowedProductSentences(fullLog, doctor.department) || fullLog;
@@ -1378,6 +1425,7 @@ ${buildVisitLogRules()}
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
   }
+  nextStrategy = normalizeIntroProductLanguage(normalizeNextStrategy(nextStrategy), activeProducts, agAllowNewDrugReview);
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
   // 최종 폴백: 여전히 비어있으면 하드코딩
@@ -1419,7 +1467,7 @@ ${themeConstraint}
 - 120자 이내
 - 본문 메모만 출력 (라벨, 설명 없이)
 
-예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 포인트 디테일할예정"`;
+예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 디테일할예정"`;
 
   const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
@@ -1480,6 +1528,8 @@ ${strategy}
 ⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. "신약여부검토 요청"은 이번 허용 여부가 허용일 때만 사용
 ⑮ 과(${doctor.department})와 맞지 않는 특장점 테마 사용 금지. 제품 정보에 있더라도 다른 과 전용 질환명은 넣지 말 것
 ⑯ 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
+⑰ "포인트"라는 단어를 불필요하게 사용함. 진짜 핵심 포인트를 짚는 문맥이 아니면 "내용", "디테일", "근거"로 수정
+⑱ "지난번에", "지난 방문에"로 시작한 뒤 과거 내용의 확인 결과/교수 반응 없이 바로 새 제품 디테일로 넘어감
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
 FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
@@ -1498,7 +1548,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
     const newStrategy = extractSection(result, ['===수정 다음방문전략===']);
 
     if (newLog.trim()) {
-      log = normalizeMemoTone(newLog.replace(/['"]/g, '').trim());
+      log = normalizeGeneratedMemoText(newLog.replace(/['"]/g, '').trim());
       log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
     }
     if (newStrategy.trim()) strategy = normalizeNextStrategy(newStrategy.replace(/['"]/g, '').trim());
@@ -1509,11 +1559,12 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
 
   // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
   const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
+  log = normalizeGeneratedMemoText(log);
   log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
   log = removeNextVisitPlanFromLog(log);
   log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
   log = removeDisallowedProductSentences(log, doctor.department) ||
-    `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 포인트 짧게 디테일 진행함`;
+    `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 내용 짧게 디테일 진행함`;
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
   strategy = normalizeNextStrategy(strategy);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
@@ -1544,7 +1595,7 @@ ${objection}
 이 반박에 대한 효과적인 대응책을 작성해주세요:
 - 교수 성향과 과거 방문 맥락을 고려한 접근법
 - 임상 데이터/근거 기반 답변
-- 핵심 멘트 중 활용할 수 있는 포인트 반영
+- 핵심 멘트 중 활용할 수 있는 내용 반영
 - JW중외제약 제품(위너프에이플러스/페린젝트) 강점 연결
 - 2-3가지 대응 방안 제시
 - 큰따옴표("), 작은따옴표(') 모두 사용 금지`;
@@ -1875,7 +1926,7 @@ ${logInfo || '방문 기록 없음'}
 
 응답 형식:
 ===과특성===
-(이 과의 영업 관점에서의 특성. 예: 주로 어떤 환자를 보는지, TPN/FCM 수요가 있는지, 교수들의 공통 성향, 영업 포인트 등. 3-5줄로 간결하게)
+(이 과의 영업 관점에서의 특성. 예: 주로 어떤 환자를 보는지, TPN/FCM 수요가 있는지, 교수들의 공통 성향, 영업 기회 등. 3-5줄로 간결하게)
 
 ===경쟁제품===
 (이 과에서 경쟁하는 제품명이 있다면 쉼표로 구분. 방문 기록에서 언급된 경쟁사/경쟁 제품 기반. 없으면 없음)
