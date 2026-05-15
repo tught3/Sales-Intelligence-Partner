@@ -37,6 +37,11 @@
 ## Immediate Next Step
 - Report the Gangwon hospital rule reset with typecheck evidence.
 
+## Latest Checkpoint
+- Visit-log generation now catches bare `지난번 ...` openings and removes the previous-visit framing when there is no actual feedback/result before the new detail.
+- If a previous sentence says the same product is already in use, generation no longer keeps `오늘은 같은 제품 중심으로`; it is normalized toward usage reaction, reorder volume, or applicable patient-group follow-up.
+- Bulk auto-generation passes already-generated logs from the same batch into the next generation and validation pass so repeated objection/answer/detail phrases are avoided within one hospital run.
+
 ## Known Structure
 - `artifacts/api-server`
 - `artifacts/sales-intelligence`

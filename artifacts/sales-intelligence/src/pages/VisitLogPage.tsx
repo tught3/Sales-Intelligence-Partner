@@ -239,7 +239,8 @@ export default function VisitLogPage() {
         setBulkProgress({ current: i + 1, total: targets.length, doctorName: doctor.name });
         const docPastLogs = visitLogStorage.getByDoctorId(doctor.id);
         try {
-          const res = await autoGenerateVisitLog(doctor, docPastLogs);
+          const batchAvoidTexts = generated.map(({ log }) => `${log.formattedLog} ${log.nextStrategy ?? ""}`);
+          const res = await autoGenerateVisitLog(doctor, docPastLogs, [], batchAvoidTexts);
           if (!res.formattedLog || res.formattedLog.trim().length < 10) continue;
           // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
           const finalFormattedLog = res.formattedLog.length > 230

@@ -368,6 +368,7 @@ function buildVisitLogFlow(): string {
      바로 이어서 반드시 그것에 대한 확인 결과/교수 반응을 끝까지 쓸 것.
      예: "지난번에 페린젝트 급여조건 디테일 드렸는데, 처방 케이스 있는지 확인했으나 아직 없다고 하심. 이후 외래 투여 편의성 디테일 진행함"
      절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, 위너프에이플러스 질소균형 디테일 진행함" — 과거 내용의 결과 없이 새 주제로 점프 금지.
+     절대 안 되는 예: "지난번 위너프에이플러스 사용 중이시라 오늘은 위너프에이플러스 중심으로..." — 이미 사용 중인 같은 제품을 다시 중심이라고 반복 금지. 사용 반응/재방문량/적용 환자군 확인으로 이어갈 것.
 ② [오늘 핵심] 어떤 제품의 어떤 특장점을 전달했는지 구체적으로. 제공된 제품 특장점 화법 자연스럽게 녹여낼 것 (원문 복붙 금지).
    ★ 주제가 여러 개면 문맥에 맞게 자연스럽게 이어서 작성. 각 주제가 뚝 끊기지 않도록.
 ③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님의 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "~라고 하심. ~라고 안내함. 어느 정도 공감하심".
@@ -487,10 +488,10 @@ function reducePointWordUsage(text: string): string {
 }
 
 function cleanPreviousVisitConnection(text: string): string {
-  const previousPattern = /(지난번에|지난\s*방문(?:에)?|지난방문(?:에)?|이전\s*방문(?:에)?)/;
+  const previousPattern = /(지난번(?:에)?|지난\s*방문(?:에)?|지난방문(?:에)?|이전\s*방문(?:에)?)/;
   if (!previousPattern.test(text)) return text;
 
-  const resultPattern = /(확인|여쭤|문의|처방|사용|반응|케이스|없다고|있다고|하심|말씀|보임|관심|부담|어렵|검토|공감|납득|아직|이후|그\s*후|그후)/;
+  const resultPattern = /(확인|여쭤|문의|처방\s*케이스|사용\s*중|반응|케이스|없다고|있다고|하심|말씀|보임|관심|부담|어렵|검토|공감|납득|아직|이후|그\s*후|그후)/;
   const connectorPattern = /(했는데|드렸는데|안내했는데|진행했는데|전달했는데|설명했는데|디테일했는데)/;
 
   return text
@@ -505,7 +506,9 @@ function cleanPreviousVisitConnection(text: string): string {
       }
       const afterConnector = sentence.slice(connectorMatch.index + connectorMatch[0].length);
       if (resultPattern.test(afterConnector)) return sentence;
-      return afterConnector.trim();
+      return afterConnector
+        .replace(/^(오늘은|금일은|이번에는)\s*/, '')
+        .trim();
     })
     .filter(Boolean)
     .join(' ')
@@ -513,8 +516,51 @@ function cleanPreviousVisitConnection(text: string): string {
     .trim();
 }
 
+function normalizeProductKey(text: string): string {
+  const compact = text.replace(/\s+/g, '');
+  if (compact.includes('위너프')) return '위너프에이플러스';
+  if (compact.includes('페린젝트')) return '페린젝트';
+  if (compact.includes('프리페넴')) return '프리페넴';
+  if (compact.includes('플라주')) return '플라주OP';
+  if (compact.includes('이부프로펜')) return '이부프로펜프리믹스';
+  if (compact.includes('제이세덱스')) return '제이세덱스';
+  if (compact.includes('포스페넴')) return '포스페넴';
+  return compact;
+}
+
+function containsProductKey(text: string, productKey: string): boolean {
+  const compact = text.replace(/\s+/g, '');
+  if (productKey === '위너프에이플러스') return compact.includes('위너프');
+  if (productKey === '플라주OP') return compact.includes('플라주');
+  if (productKey === '이부프로펜프리믹스') return compact.includes('이부프로펜');
+  return compact.includes(productKey);
+}
+
+function cleanRedundantPreviousUseFocus(text: string): string {
+  const productPattern = '(위너프\\s*에이플러스|위너프|페린젝트|프리페넴|플라주OP|플라주|이부프로펜\\s*프리믹스|이부프로펜프리믹스|제이세덱스|포스페넴)';
+  const focusPattern = new RegExp(`(오늘은|금일은|이번에는)\\s*${productPattern}\\s*중심으로`, 'g');
+
+  return text
+    .split(/(?<=[.。!?])\s+|\n+/)
+    .map((sentence) => {
+      if (!/(지난번(?:에)?|지난\s*방문(?:에)?|지난방문(?:에)?|이전\s*방문(?:에)?)/.test(sentence) || !/사용\s*중/.test(sentence)) {
+        return sentence;
+      }
+
+      return sentence.replace(focusPattern, (match, timing, product, offset) => {
+        const previousPart = sentence.slice(0, offset);
+        const productKey = normalizeProductKey(product);
+        if (!previousPart || !containsProductKey(previousPart, productKey)) return match;
+        return `${timing} 실제 사용 반응 확인 후`;
+      });
+    })
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function normalizeGeneratedMemoText(text: string): string {
-  return cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text)));
+  return cleanRedundantPreviousUseFocus(cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text))));
 }
 
 function removeNextVisitPlanFromLog(text: string): string {
@@ -1037,14 +1083,46 @@ ${text}`;
   return compressTextToLimit(trimmed, limit);
 }
 
+function buildBatchAvoidanceNote(avoidTexts: string[]): string {
+  const compact = avoidTexts
+    .map((text) => reducePointWordUsage(text).replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(-5);
+  if (compact.length === 0) return '';
+
+  return `\n★★★ 이번 일괄 생성 중 이미 사용한 표현:
+${compact.map((text, index) => `${index + 1}. ${text.slice(0, 180)}`).join('\n')}
+- 위 문장과 같은 오브젝션/답변/디테일 흐름 반복 금지
+- 특히 "비용 부담" + "필요한 케이스부터 보자" 같은 조합을 연속 생성 금지
+- 다른 환자군, 다른 반응, 다른 디테일로 작성\n`;
+}
+
+function normalizeBatchRepeatedLanguage(text: string, avoidTexts: string[]): string {
+  if (avoidTexts.length === 0) return text;
+  const joined = avoidTexts.join(' ');
+  let result = text;
+  if (joined.includes('비용 부담') && result.includes('비용 부담')) {
+    result = result
+      .replace(/비용\s*부담\s*언급\s*있어/gi, '적용 환자군 문의 있어')
+      .replace(/비용\s*부담/gi, '적용 환자군')
+      .replace(/필요한\s*케이스부터\s*보자고\s*안내함/gi, '해당 환자군 기준으로 안내함');
+  }
+  if (joined.includes('필요한 케이스부터') && result.includes('필요한 케이스부터')) {
+    result = result.replace(/필요한\s*케이스부터/gi, '해당 환자군부터');
+  }
+  return result.replace(/\s{2,}/g, ' ').trim();
+}
+
 async function ensureObjectionHandling(
   systemPrompt: string,
   formattedLog: string,
   doctor: Doctor,
   activeProducts: string[],
-  allowNewDrugReview = false
+  allowNewDrugReview = false,
+  avoidTexts: string[] = []
 ): Promise<string> {
   if (hasObjectionHandling(formattedLog)) return formattedLog;
+  const avoidNote = buildBatchAvoidanceNote(avoidTexts);
 
   const prompt = `아래 영업일지에 교수님의 질문/반대 의견 1개와 그에 대한 내 답변을 자연스럽게 넣어 다시 작성하세요.
 
@@ -1056,10 +1134,12 @@ async function ensureObjectionHandling(
 - 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
 - 품목 목록 밖 제품 언급 금지
 - 질문/반대 의견 + 답변을 둘 다 포함
+- 비용 부담 예시는 반복되기 쉬우므로 최근/일괄 생성에 이미 있으면 쓰지 말 것
 - 말투는 ~함, ~하심, ~안내함, ~말씀드림 형태
 - 전체 230자 이내
 - 큰따옴표("), 작은따옴표(') 금지
 - 본문만 출력
+${avoidNote}
 
 원문:
 ${formattedLog}`;
@@ -1287,7 +1367,8 @@ ${buildVisitLogRules()}
 export async function autoGenerateVisitLog(
   doctor: Doctor,
   pastLogs: VisitLog[],
-  selectedProducts: string[] = []
+  selectedProducts: string[] = [],
+  batchAvoidTexts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
@@ -1336,9 +1417,10 @@ export async function autoGenerateVisitLog(
   const agIntroNote = buildIntroNote(activeProducts, agAllowNewDrugReview);
   const agThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
   const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
+  const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
+${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agBatchAvoidNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원/과 특성에 맞게.)
 
@@ -1415,9 +1497,10 @@ ${buildVisitLogRules()}
   if (fullLog.length > 230) fullLog = compressTextToLimit(fullLog, 230);
 
   if (includeObjection && !hasObjectionHandling(fullLog)) {
-    fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts, agAllowNewDrugReview);
+    fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts, agAllowNewDrugReview, batchAvoidTexts);
   }
   fullLog = normalizeGeneratedMemoText(fullLog);
+  fullLog = normalizeBatchRepeatedLanguage(fullLog, batchAvoidTexts);
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
   fullLog = removeNextVisitPlanFromLog(fullLog);
   fullLog = removeDisallowedProductSentences(fullLog, doctor.department) || fullLog;
@@ -1436,13 +1519,13 @@ ${buildVisitLogRules()}
   }
 
   // ★ 저장 전 검토 에이전트
-  const agValidated = await validateAndFixVisitLog(buildSystemPrompt(), fullLog, nextStrategy, doctor, activeProducts, agAllowNewDrugReview);
+  const agValidated = await validateAndFixVisitLog(buildSystemPrompt(), fullLog, nextStrategy, doctor, activeProducts, agAllowNewDrugReview, batchAvoidTexts);
 
   return {
     visitDate: today,
     products: products.length > 0 ? products : activeProducts,
-    formattedLog: agValidated.formattedLog,
-    nextStrategy: agValidated.nextStrategy,
+    formattedLog: normalizeBatchRepeatedLanguage(agValidated.formattedLog, batchAvoidTexts),
+    nextStrategy: normalizeBatchRepeatedLanguage(agValidated.nextStrategy, batchAvoidTexts),
   };
 }
 
@@ -1491,7 +1574,8 @@ export async function validateAndFixVisitLog(
   nextStrategy: string,
   doctor: Doctor,
   activeProducts: string[] = getAllowedProductsForDepartment(doctor.department),
-  allowNewDrugReview = false
+  allowNewDrugReview = false,
+  avoidTexts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
   const MAX_ROUNDS = 2;
   let log = formattedLog;
@@ -1502,6 +1586,7 @@ export async function validateAndFixVisitLog(
       const normalized = product === '플라주' ? '플라주OP' : product;
       return !allowedProducts.includes(normalized);
     });
+  const batchAvoidNote = buildBatchAvoidanceNote(avoidTexts);
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const reviewPrompt = `아래 영업일지를 검토하고, 문제가 있으면 즉시 수정한 버전을 출력하세요.
@@ -1531,6 +1616,9 @@ ${strategy}
 ⑯ 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
 ⑰ "포인트"라는 단어를 불필요하게 사용함. 진짜 핵심 포인트를 짚는 문맥이 아니면 "내용", "디테일", "근거"로 수정
 ⑱ "지난번에", "지난 방문에"로 시작한 뒤 과거 내용의 확인 결과/교수 반응 없이 바로 새 제품 디테일로 넘어감
+⑲ 지난번에 특정 제품을 사용 중이라고 해놓고 오늘 같은 제품을 다시 "중심으로" 진행한다고 반복함. 이 경우 사용 반응/재방문량/적용 환자군 확인으로 이어갈 것
+⑳ 이번 일괄 생성에서 이미 사용한 오브젝션/답변/디테일 흐름과 거의 같은 문장을 반복함
+${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
 FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
