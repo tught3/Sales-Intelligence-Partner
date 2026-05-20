@@ -59,7 +59,7 @@ export default function SettingsPage() {
   const [migrating, setMigrating] = useState(false);
   const [localDataExists, setLocalDataExists] = useState(() => {
     try {
-      const keys = ['jw_doctors', 'jw_visit_logs', 'jw_golden_snippets', 'jw_hospital_profiles', 'jw_department_profiles', 'jw_company_manuals'];
+      const keys = ['jw_doctors', 'jw_visit_logs', 'jw_golden_snippets', 'jw_company_manuals'];
       return keys.some(k => {
         const raw = localStorage.getItem(k);
         if (!raw) return false;
@@ -77,8 +77,6 @@ export default function SettingsPage() {
         jw_doctors: 'doctors',
         jw_visit_logs: 'visitLogs',
         jw_golden_snippets: 'snippets',
-        jw_hospital_profiles: 'hospitals',
-        jw_department_profiles: 'departments',
         jw_company_manuals: 'manuals',
       };
       let totalCount = 0;
@@ -651,14 +649,12 @@ export default function SettingsPage() {
                   <li>다음 방문 전략 수립</li>
                   <li>반박 대응책 생성</li>
                   <li>핵심 멘트 분석</li>
-                  <li>병원 전략 분석</li>
                 </ul>
               </div>
               <div>
                 <p className="font-medium text-foreground mb-1">AI 맥락 참조 순서:</p>
                 <ol className="space-y-0.5 list-decimal list-inside">
                   <li>회사 매뉴얼 (이 페이지)</li>
-                  <li>병원/과 특성 데이터</li>
                   <li>교수 성향 & 반박 패턴</li>
                   <li>최근 방문 기록 (5회)</li>
                 </ol>

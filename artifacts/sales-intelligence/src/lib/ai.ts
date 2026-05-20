@@ -1,7 +1,9 @@
-﻿import type { Doctor, VisitLog, HospitalProfile, DepartmentProfile } from './storage';
-import { manualStorage, hospitalStorage, departmentStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
+﻿import type { Doctor, VisitLog } from './storage';
+import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
 
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
+const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP'] as const;
+const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const res = await fetch(`${API_BASE}/api/ai/chat`, {
@@ -157,14 +159,14 @@ function buildSystemPrompt(): string {
 
 중요 원칙:
 - 회사 규칙과 매뉴얼이 제품 설명보다 우선
-- 결과물은 실무 메모처럼 짧고 구체적으로 쓸 것
+- 결과물은 실무 메모처럼 간결하고 구체적으로 쓸 것
 - 응답은 자연스러운 한국어, 영업사원이 실제 쓰는 말투로
 - 교수/의사 성향, 병원 특성, 과 특성, 과거 대화 맥락 반드시 반영
 - JW중외제약 제품 강점은 자연스럽게 녹여낼 것
 - ★ 큰따옴표(")와 작은따옴표(') 절대 금지. 강조는 따옴표 없이
 - 페린젝트: 반드시 1회 투여로 표기 (단회투여 금지)
-- 위너프: 모두 위너프에이플러스로 표기
-- 방문일지 본문 230자 이내, 다음 방문 전략은 짧고 실무적으로`;
+- 위너프와 위너프에이플러스는 구분해서 표기. 고단백/아미노산 25% 증가/포도당 감소/4세대/중증환자는 위너프에이플러스, 오메가3·오메가6 지질 조성/시장 1위/기존 3챔버 TPN은 위너프
+- 방문일지 본문 230자 이내, 다음 방문 전략은 실무적으로`;
 
   let prompt = base;
 
@@ -228,7 +230,7 @@ function getSnippetKeywords(text: string): string[] {
 
 function buildRecentDetailMemory(pastLogs: VisitLog[]): string {
   const recentText = pastLogs
-    .slice(0, 8)
+    .slice(0, 12)
     .map((log) => `${log.formattedLog} ${log.nextStrategy ?? ''}`)
     .join(' ');
   const keywords = getSnippetKeywords(recentText);
@@ -236,8 +238,8 @@ function buildRecentDetailMemory(pastLogs: VisitLog[]): string {
 
   return `\n★★★ 최근 사용한 디테일:
 - 최근에 이미 쓴 키워드: ${keywords.join(', ')}
-- 위 키워드와 같은 내용은 가능하면 반복하지 말고, 핵심멘트 라이브러리의 다른 디테일을 우선 사용할 것
-- 특히 위너프에이플러스 아미노산 25%/포도당 감소, 페린젝트 1회 투여는 최근에 보이면 같은 표현 반복 금지\n`;
+- 위 키워드와 같은 내용은 반복하지 말고, 아래 핵심멘트 후보 중 다른 디테일을 우선 사용할 것
+- 최근 방문과 같은 수치/근거/환자군/오브젝션 흐름으로 돌아가지 말 것\n`;
 }
 
 function snippetOverlapScore(snippet: ReturnType<typeof snippetStorage.getAll>[number], recentTexts: string[]): number {
@@ -254,7 +256,7 @@ function snippetOverlapScore(snippet: ReturnType<typeof snippetStorage.getAll>[n
 function buildContextAwareSnippets(
   pastLogs: VisitLog[],
   selectedProducts: string[] = [],
-  count = 4,
+  count = 8,
   department = ''
 ): string {
   const allSnippets = selectedProducts.length > 0
@@ -266,8 +268,8 @@ function buildContextAwareSnippets(
   const usableSnippets = isIcu ? departmentSnippets : departmentSnippets.filter(s => !isIcuOnlySnippet(s));
   if (usableSnippets.length === 0) return '';
 
-  // 최근 5회 방문 일지+다음전략 텍스트 합산
-  const recentTexts = pastLogs.slice(0, 5)
+  // 최근 방문 일지+다음전략 텍스트를 넓게 보고, 같은 디테일 재사용을 뒤로 보낸다.
+  const recentTexts = pastLogs.slice(0, 16)
     .map(l => `${l.formattedLog} ${l.nextStrategy ?? ''}`.toLowerCase());
 
   const shuffle = <T>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
@@ -312,9 +314,9 @@ function buildContextAwareSnippets(
     ...sortByFreshness(pool.filter(wasUsed)),
   ];
 
-  // primary에서 최소 절반 이상, secondary 1개, 나머지는 other
-  const primaryCount = Math.ceil(count * 0.6);
-  const secondaryCount = secondary.length > 0 ? Math.min(1, count - primaryCount) : 0;
+  // primary가 지나치게 후보를 독점하지 않게 하고, 보조 제품/기타 후보도 조금 열어둔다.
+  const primaryCount = Math.ceil(count * 0.5);
+  const secondaryCount = secondary.length > 0 ? Math.min(2, count - primaryCount) : 0;
   const otherCount = count - primaryCount - secondaryCount;
 
   const selected = [
@@ -330,10 +332,10 @@ function buildContextAwareSnippets(
 function buildUserMemoStyleSection(): string {
   const recentLogs = visitLogStorage.getRecent(30);
   const styleExamples = recentLogs
-    .map((log) => (log.formattedLog?.trim() || log.rawNotes?.trim() || ''))
+    .map((log) => reducePointWordUsage(log.formattedLog?.trim() || log.rawNotes?.trim() || ''))
     .filter((text) => text.length > 30)
     .filter((text) => text.length <= 300)
-    .filter((text) => !/분석|정리하면|전반적으로|프로토콜|보고서|첫 방문|데이터중시|보수적 성향|겠습니다/.test(text))
+    .filter((text) => !/분석|정리하면|전반적으로|프로토콜|보고서|첫 방문|데이터중시|보수적 성향|겠습니다|포인트/.test(text))
     .slice(0, 6);
 
   if (styleExamples.length === 0) return '';
@@ -349,10 +351,10 @@ function buildVisitLogRules(): string {
 금지 기호: 중간점(·), 불릿(•), 화살표(↑↓→←) 모두 금지. 증감은 "증가", "감소"로, 문장 구분은 콤마(,)만
 금지 표현: 짚음, 언급함, 설명함 → 대신 "디테일 진행함", "디테일 안내함" 사용
 금지 표현: 흐름이어서, 흐름으로, 다시 봄, 다시 말씀드림 → 대신 "드렸는데", "재확인함" 사용
-과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것
+과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것. 같은 문장에 비슷한 테마를 두 개 이상 라벨처럼 이어 붙이지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
-형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 짧은 메모처럼
+형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 메모처럼
 글자수: 본문 230자 이내 / 다음방문전략 120자 이내
 다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 조성 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
 본문 종결: 영업일지 본문에는 다음 방문 계획을 넣지 말 것. "다음 방문에는", "다음번에는", "다음방문시에는" 문장은 다음방문전략에만 작성
@@ -366,12 +368,12 @@ function buildVisitLogFlow(): string {
    ★★ 반드시 지켜야 할 흐름 규칙:
      "지난번에 ~했는데" 또는 "지난번에 ~드렸는데"로 시작했으면,
      바로 이어서 반드시 그것에 대한 확인 결과/교수 반응을 끝까지 쓸 것.
-     예: "지난번에 페린젝트 급여조건 디테일 드렸는데, 처방 케이스 있는지 확인했으나 아직 없다고 하심. 이후 외래 투여 편의성 디테일 진행함"
+     예: "지난번에 페린젝트 급여조건 디테일 드렸는데, 처방 케이스 있는지 확인했으나 교수님께서 아직 없다고 하심. 이후 외래 투여 편의성 디테일 진행함"
      절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, 위너프에이플러스 질소균형 디테일 진행함" — 과거 내용의 결과 없이 새 주제로 점프 금지.
      절대 안 되는 예: "지난번 위너프에이플러스 사용 중이시라 오늘은 위너프에이플러스 중심으로..." — 이미 사용 중인 같은 제품을 다시 중심이라고 반복 금지. 사용 반응/재방문량/적용 환자군 확인으로 이어갈 것.
 ② [오늘 핵심] 어떤 제품의 어떤 특장점을 전달했는지 구체적으로. 제공된 제품 특장점 화법 자연스럽게 녹여낼 것 (원문 복붙 금지).
    ★ 주제가 여러 개면 문맥에 맞게 자연스럽게 이어서 작성. 각 주제가 뚝 끊기지 않도록.
-③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님의 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "~라고 하심. ~라고 안내함. 어느 정도 공감하심".
+③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님께서 하신 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "교수님께서 ~라고 하심. ~라고 안내함. 어느 정도 공감하심".
 ④ [교수 반응] 교수 반응 한 줄로.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 }
@@ -382,24 +384,56 @@ function buildObjectionInstruction(includeObjection: boolean, department: string
   }
 
   return `\n★★★ 오브젝션 핸들링 필수:
-- 이번 일지에는 교수님의 질문 또는 반대 의견 1개를 반드시 포함.
+- 이번 일지에는 교수님께서 하신 질문 또는 반대 의견 1개를 반드시 포함.
 - 이어서 그 질문/반대 의견에 대한 내 답변도 반드시 포함.
 - 과(${department})와 품목(${products.join(', ')})에 현실적으로 맞는 내용만 사용.
 - 형식 예: 비용 부담 있다고 하심. 급여/환자군 기준으로 필요한 케이스부터 보시면 된다고 안내함.
+- 문장 시작은 반드시 교수님께서 로 시작하고, 교수는 / 교수님은 / 교수는 말씀하심 같은 시작은 쓰지 말 것.
+- 위너프에이플러스를 디테일하는 경우 기존 비교 대상은 위너프 또는 기존 3챔버 TPN이어야 하며, 위너프에이플러스 자체와 비교하지 말 것.
 - 오브젝션과 답변을 포함해도 영업일지 본문 전체는 반드시 230자 이내.\n`;
 }
 
 function hasObjectionHandling(text: string): boolean {
   const hasObjection = /질문|문의|우려|부담|반대|어렵|비싸|필요.*없|굳이|라고\s*하심|말씀하심/.test(text);
   const hasAnswer = /안내함|말씀드림|답변드림|전달함|공감하심|납득하심/.test(text);
-  return hasObjection && hasAnswer;
+  const hasRespectfulSpeaker = /교수님께서/.test(text);
+  return hasObjection && hasAnswer && hasRespectfulSpeaker;
+}
+
+function normalizeObjectionLanguage(text: string, activeProducts: string[] = []): string {
+  const requiresWinufContrast = activeProducts.includes('위너프에이플러스');
+  const objectionCue = /라고\s*하심|말씀|질문|문의|반대|우려|부담|비싸|어렵|필요|굳이|비교|차이|공감|납득|없다고|있다고|괜찮다고/;
+
+  return text
+    .split(/(?<=[.。!?])\s+|\n+/)
+    .map((sentence) => {
+      let result = sentence.trim();
+      if (!result) return result;
+
+      const hasProfessorStart = /^교수(?:님)?\s*(?:께서는|께서|은|는|이|가)?\s*/.test(result);
+      if (hasProfessorStart && objectionCue.test(result)) {
+        result = result.replace(/^교수(?:님)?\s*(?:께서는|께서|은|는|이|가)?\s*/, '교수님께서 ');
+      }
+
+      if (requiresWinufContrast) {
+        result = result
+          .replace(/기존\s*위너프에이플러스\s*(?:와|와의|랑|하고)?/gi, '기존 위너프와')
+          .replace(/위너프에이플러스\s*(?:와|와의|랑|하고)?\s*실제\s*차이/gi, '위너프와의 차이')
+          .replace(/위너프에이플러스\s*비교/gi, '위너프와 비교');
+      }
+
+      return result.replace(/\s{2,}/g, ' ').trim();
+    })
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function normalizeMemoTone(text: string): string {
   const replacements: Array<[RegExp, string]> = [
     [/단회\s*투여/gi, '1회 투여'],
     [/단회투여/gi, '1회 투여'],
-    [/위너프(?!에이플러스)/g, '위너프에이플러스'],
+    [/플라주(?!OP)/g, '플라주OP'],
     [/짚겠음/gi, '디테일 진행함'],
     [/짚을 예정/gi, '디테일 진행 예정'],
     [/짚어볼 예정/gi, '디테일 진행 예정'],
@@ -479,12 +513,23 @@ function reducePointWordUsage(text: string): string {
     .replace(/제품\s*포인트/g, '제품 내용')
     .replace(/처방\s*포인트/g, '처방 관련 내용')
     .replace(/디테일\s*포인트/g, '디테일')
-    .replace(/짧은\s*포인트/g, '짧게')
+    .replace(/짧은\s*포인트/g, '간단한 표현')
+    .replace(/차별화\s*포인트/g, '차별점')
+    .replace(/매력\s*포인트/g, '강점')
+    .replace(/활용\s*포인트/g, '활용 내용')
     .replace(/포인트를/g, '내용을')
     .replace(/포인트는/g, '내용은')
     .replace(/포인트/g, '내용')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+function normalizeSnippetProductName(product: string): string {
+  const compact = product.replace(/\s+/g, '').trim();
+  if (!compact) return '공통';
+  if (compact.includes('위너프에이플러스')) return '위너프에이플러스';
+  if (compact.includes('위너프')) return '위너프';
+  return product.trim();
 }
 
 function cleanPreviousVisitConnection(text: string): string {
@@ -518,7 +563,8 @@ function cleanPreviousVisitConnection(text: string): string {
 
 function normalizeProductKey(text: string): string {
   const compact = text.replace(/\s+/g, '');
-  if (compact.includes('위너프')) return '위너프에이플러스';
+  if (compact.includes('위너프에이플러스')) return '위너프에이플러스';
+  if (compact.includes('위너프')) return '위너프';
   if (compact.includes('페린젝트')) return '페린젝트';
   if (compact.includes('프리페넴')) return '프리페넴';
   if (compact.includes('플라주')) return '플라주OP';
@@ -530,7 +576,8 @@ function normalizeProductKey(text: string): string {
 
 function containsProductKey(text: string, productKey: string): boolean {
   const compact = text.replace(/\s+/g, '');
-  if (productKey === '위너프에이플러스') return compact.includes('위너프');
+  if (productKey === '위너프에이플러스') return compact.includes('위너프에이플러스');
+  if (productKey === '위너프') return compact.includes('위너프') && !compact.includes('위너프에이플러스');
   if (productKey === '플라주OP') return compact.includes('플라주');
   if (productKey === '이부프로펜프리믹스') return compact.includes('이부프로펜');
   return compact.includes(productKey);
@@ -559,12 +606,13 @@ function cleanRedundantPreviousUseFocus(text: string): string {
     .trim();
 }
 
-function normalizeGeneratedMemoText(text: string): string {
-  return cleanRedundantPreviousUseFocus(cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text))));
+function normalizeGeneratedMemoText(text: string, department = ''): string {
+  const cleaned = cleanRedundantPreviousUseFocus(cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text))));
+  return department ? normalizeDepartmentThemeStacks(cleaned, department) : cleaned;
 }
 
-function removeNextVisitPlanFromLog(text: string): string {
-  return text
+function removeNextVisitPlanFromLog(text: string, department = ''): string {
+  const cleaned = text
     .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean)
@@ -572,18 +620,95 @@ function removeNextVisitPlanFromLog(text: string): string {
     .join(' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
+  return department ? normalizeDepartmentThemeStacks(cleaned, department) : cleaned;
 }
 
-function normalizeNextStrategy(text: string): string {
+function getThemeVariants(theme: string): string[] {
+  const base = theme.trim();
+  if (!base) return [];
+
+  const variants = new Set<string>([base, base.replace(/\s+/g, '')]);
+  if (base.includes('/')) {
+    const [leftRaw, ...rightParts] = base.split('/');
+    const left = leftRaw.trim();
+    const right = rightParts.join('/').trim();
+    if (left && right) {
+      variants.add(`${left} ${right}`.trim());
+      variants.add(`${left}${right}`.trim());
+      const rightTokens = right.split(/\s+/).filter(Boolean);
+      if (rightTokens.length > 0) {
+        variants.add(`${left} ${rightTokens.join(' ')}`.trim());
+        variants.add(`${left}${rightTokens.join('')}`.trim());
+      }
+    }
+  }
+
+  return [...variants].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
+function findThemeMatches(sentence: string, rule: DeptFeatureRule): Array<{ theme: string; index: number; variant: string }> {
+  const matches: Array<{ theme: string; index: number; variant: string }> = [];
+  for (const theme of rule.allowedThemes) {
+    for (const variant of getThemeVariants(theme)) {
+      const index = sentence.indexOf(variant);
+      if (index >= 0) {
+        matches.push({ theme, index, variant });
+        break;
+      }
+    }
+  }
+  return matches.sort((a, b) => a.index - b.index || b.variant.length - a.variant.length);
+}
+
+function normalizeDepartmentThemeStacks(text: string, department: string): string {
+  const rule = getDeptFeatureRule(department);
+  if (!rule) return text;
+
+  return text
+    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
+    .map((sentence) => {
+      let result = sentence.trim();
+      if (!result) return result;
+
+      const matches = findThemeMatches(result, rule);
+      if (matches.length <= 1) return result;
+
+      const first = matches[0];
+      const second = matches[1];
+      const between = result.slice(first.index + first.variant.length, second.index);
+      if (/[,，;；:：/·•]|(?:및|그리고|또는|와|과|함께)/.test(between)) {
+        return result;
+      }
+
+      for (const match of matches.slice(1)) {
+        for (const variant of getThemeVariants(match.theme)) {
+          result = result.split(variant).join(' ');
+        }
+      }
+
+      return result
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+([.。!?])/g, '$1')
+        .replace(/\s+([,，])/g, '$1')
+        .trim();
+    })
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function normalizeNextStrategy(text: string, department = ''): string {
   if (!text.trim()) return '';
   const normalized = reducePointWordUsage(normalizeMemoTone(text))
     .replace(/^(다음\s*방문에는|다음번에는|다음에는)\s*/g, '다음방문시에는 ')
     .replace(/^다음방문시\s*에는\s*/g, '다음방문시에는 ')
     .replace(/하겠다/gi, '할예정')
     .trim();
-  return normalized.startsWith('다음방문시에는')
-    ? normalized
-    : `다음방문시에는 ${normalized}`.trim();
+  const themed = department ? normalizeDepartmentThemeStacks(normalized, department) : normalized;
+  return themed.startsWith('다음방문시에는')
+    ? themed
+    : `다음방문시에는 ${themed}`.trim();
 }
 
 function hasIntroProducts(products: string[]): boolean {
@@ -630,12 +755,7 @@ function normalizeIntroProductLanguage(
   return sentences.join(' ').replace(/\s{2,}/g, ' ').trim();
 }
 
-function buildContextSection(
-  doctor: Doctor,
-  pastLogs: VisitLog[],
-  hospital?: HospitalProfile,
-  department?: DepartmentProfile
-): string {
+function buildContextSection(doctor: Doctor, pastLogs: VisitLog[]): string {
   const traitText = doctor.traits.map((t) => t.label).join(', ');
   const objectionText = doctor.objections
     .map((o) => `  - 반박: ${o.content} → 대응: ${o.response}`)
@@ -660,19 +780,6 @@ function buildContextSection(
 
   if (objectionText) {
     context += `\n\n자주 하는 반박 패턴:\n${objectionText}`;
-  }
-
-  if (hospital) {
-    context += `\n\n병원 특성 (${hospital.name}):
-- 유형: ${hospital.hospitalType === 'tertiary' ? '상급종합병원' : hospital.hospitalType === 'secondary' ? '종합병원' : hospital.hospitalType === 'clinic' ? '의원' : '기타'}
-- 특성: ${hospital.characteristics}
-- 경쟁사 강도: ${hospital.competitorStrength}`;
-  }
-
-  if (department) {
-    context += `\n\n과 특성 (${department.departmentName}):
-- 특성: ${department.characteristics}
-- 주요 경쟁 제품: ${department.competitorProducts || '없음'}`;
   }
 
   if (pastLogs.length > 0) {
@@ -806,22 +913,22 @@ type DeptProductRule = {
 
 // 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
 const DEPT_PRODUCT_MAP: DeptProductRule[] = [
-  { keywords: ['정형외과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '이부프로펜프리믹스', weight: 10 }], extraProducts: ['플라주OP'], weighted: true },
-  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '이부프로펜프리믹스', weight: 10 }], extraProducts: ['플라주OP'], weighted: true },
+  { keywords: ['정형외과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '플라주OP', weight: 10 }], weighted: true },
+  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '플라주OP', weight: 10 }], weighted: true },
   { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], weightedProducts: [{ name: '위너프에이플러스', weight: 40 }, { name: '페린젝트', weight: 40 }, { name: '플라주OP', weight: 20 }], weighted: true },
-  { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 30 }, { name: '프리페넴', weight: 10 }], extraProducts: ['플라주OP'], weighted: true },
-  { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '플라주OP', weight: 70 }, { name: '제이세덱스', weight: 30 }], weighted: true },
-  { keywords: ['응급의학과', '응급'], weightedProducts: [{ name: '플라주OP', weight: 70 }, { name: '제이세덱스', weight: 30 }], weighted: true },
-  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 40 }, { name: '이부프로펜프리믹스', weight: 10 }], extraProducts: ['플라주OP', '프리페넴', '제이세덱스'], weighted: true },
+  { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 30 }, { name: '플라주OP', weight: 10 }], weighted: true },
+  { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
+  { keywords: ['응급의학과', '응급'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
+  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 40 }, { name: '플라주OP', weight: 10 }], weighted: true },
   { keywords: ['흉부외과', '심혈관외과', '심장외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
   { keywords: ['간담췌외과', '간담'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
-  { keywords: ['중환자의학과', '중환자', 'ICU'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 20 }, { name: '포스페넴', weight: 10 }], weighted: true },
+  { keywords: ['중환자의학과', '중환자', 'ICU'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 20 }, { name: '플라주OP', weight: 10 }], weighted: true },
   { keywords: ['신경외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
 ];
 
 function getDeptProductRule(department: string): DeptProductRule {
   return DEPT_PRODUCT_MAP.find((rule) => rule.keywords.some(k => department.includes(k))) ??
-    { keywords: [], weightedProducts: [{ name: '위너프에이플러스' }, { name: '페린젝트' }], weighted: false };
+    { keywords: [], weightedProducts: VISIT_GENERATION_PRODUCTS.map((name) => ({ name })), weighted: false };
 }
 
 function getDeptFocusProducts(department: string): { primary: string[]; secondary: string[] } {
@@ -831,15 +938,17 @@ function getDeptFocusProducts(department: string): { primary: string[]; secondar
 
 function getAllowedProductsForDepartment(department: string): string[] {
   const rule = getDeptProductRule(department);
-  return [...new Set([
+  const products = [
     ...rule.weightedProducts.map((product) => product.name),
     ...(rule.extraProducts ?? []),
-  ])];
+    ...VISIT_GENERATION_PRODUCTS,
+  ].filter((product) => VISIT_GENERATION_PRODUCT_SET.has(product));
+  return [...new Set(products.length > 0 ? products : VISIT_GENERATION_PRODUCTS)];
 }
 
 function pickWeightedProductForDepartment(department: string): string {
   const rule = getDeptProductRule(department);
-  const products = rule.weightedProducts;
+  const products = rule.weightedProducts.filter((product) => VISIT_GENERATION_PRODUCT_SET.has(product.name));
   const totalWeight = products.reduce((sum, product) => sum + (product.weight ?? 1), 0);
   let cursor = Math.random() * totalWeight;
   for (const product of products) {
@@ -870,10 +979,10 @@ function normalizeSelectedProductsForDepartment(selectedProducts: string[], depa
   const allowedProducts = getAllowedProductsForDepartment(department);
   const normalized = selectedProducts
     .map((product) => {
-      if (product === '위너프') return '위너프에이플러스';
       if (product === '플라주') return '플라주OP';
       return product;
     })
+    .filter((product) => VISIT_GENERATION_PRODUCT_SET.has(product))
     .filter((product) => allowedProducts.includes(product));
   return normalized.length > 0 ? normalized : allowedProducts;
 }
@@ -884,7 +993,6 @@ function buildProductFitConstraint(department: string, selectedProducts: string[
   const weightLine = formatProductWeights(department);
   const ignoredProducts = selectedProducts
     .map((product) => {
-      if (product === '위너프') return '위너프에이플러스';
       if (product === '플라주') return '플라주OP';
       return product;
     })
@@ -914,7 +1022,7 @@ const DEPT_FEATURE_RULES: DeptFeatureRule[] = [
   },
   {
     keywords: ['산부인과', '산과', '부인과'],
-    allowedThemes: ['산후 빈혈', '수술/시술 전후 빈혈', '출혈 후 회복', 'Hb 회복', '수혈 부담 감소', '외래 편의'],
+    allowedThemes: ['산후 빈혈', '수술 전후 빈혈', '출혈 후 회복', 'Hb 회복', '수혈 부담 감소', '외래 편의'],
     disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
   },
   {
@@ -971,6 +1079,7 @@ function buildDepartmentFeatureConstraint(department: string): string {
   return `\n★★★ 과별 특장점 제한:
 - 이 과(${department})에서는 다음 테마만 중심적으로 사용: ${rule.allowedThemes.join(', ')}
 - 이 과(${department})에 맞지 않는 테마는 제품 정보에 있어도 쓰지 말 것: ${rule.disallowedThemes.join(', ') || '없음'}
+- 허용 테마는 참고용이며, 한 문장에 테마는 하나만 사용. 비슷한 테마를 라벨처럼 연달아 붙이지 말 것.
 - 과 전용 질환명이나 타 과 환자군 표현은 금지. 과와 직접 연결되는 환자군/상황만 디테일할 것.\n`;
 }
 
@@ -978,9 +1087,7 @@ function removeDisallowedProductSentences(text: string, department: string): str
   const allowedProducts = getAllowedProductsForDepartment(department);
   const disallowedProducts = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스']
     .filter((product) => {
-      const normalized = product === '위너프'
-        ? '위너프에이플러스'
-        : product === '플라주'
+      const normalized = product === '플라주'
           ? '플라주OP'
           : product;
       return !allowedProducts.includes(normalized);
@@ -1042,12 +1149,8 @@ function buildIcuContextNote(department: string): string {
 }
 
 function buildFullContext(doctor: Doctor, pastLogs: VisitLog[]): { systemPrompt: string; contextSection: string } {
-  const hospital = hospitalStorage.getByName(doctor.hospital);
-  const deptProfile = hospital
-    ? departmentStorage.getByHospitalAndName(hospital.id, doctor.department)
-    : undefined;
   const systemPrompt = buildSystemPrompt();
-  const contextSection = buildContextSection(doctor, pastLogs, hospital, deptProfile);
+  const contextSection = buildContextSection(doctor, pastLogs);
   return { systemPrompt, contextSection };
 }
 
@@ -1145,7 +1248,8 @@ ${avoidNote}
 ${formattedLog}`;
 
   const result = await callAI(systemPrompt, prompt);
-  let cleaned = normalizeGeneratedMemoText(result.replace(/['"]/g, '').trim());
+  let cleaned = normalizeGeneratedMemoText(result.replace(/['"]/g, '').trim(), doctor.department);
+  cleaned = normalizeObjectionLanguage(cleaned, activeProducts);
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, allowNewDrugReview);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
   if (cleaned.length > 230) {
@@ -1213,12 +1317,12 @@ function buildIntroNote(focusProducts: string[], includeNewDrugReview = false): 
     ? `\n★ 미도입 제품 주의 (${introOnes.join(', ')}):
 이 제품은 병원에 아직 없는 상태입니다.
 → "처방 늘려달라" / "증량" / "증액" / "지속 처방 부탁" 표현 절대 금지
-→ 특장점 1개만 짧게 디테일한 뒤, 본문 중 "신약여부검토 요청"을 1회만 자연스럽게 넣을 것
+→ 특장점 1개만 간단히 디테일한 뒤, 본문 중 "신약여부검토 요청"을 1회만 자연스럽게 넣을 것
 → 요청은 자주 넣지 말고, 오늘은 특장점 1개와 요청 1개만 섞어서 마무리`
     : `\n★ 미도입 제품 주의 (${introOnes.join(', ')}):
 이 제품은 병원에 아직 없는 상태입니다.
 → "처방 늘려달라" / "증량" / "증액" / "지속 처방 부탁" 표현 절대 금지
-→ 1~2개 특장점만 짧게 디테일하고, 신약여부검토 요청은 넣지 말 것
+→ 1~2개 특장점만 간단히 디테일하고, 신약여부검토 요청은 넣지 말 것
 → 도입 의향은 직접 묻지 말고 특장점만 자연스럽게 전달`;
 }
 
@@ -1249,7 +1353,7 @@ export async function convertToVisitLog(
 단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
     : '';
 
-  const cvSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 4, doctor.department);
+  const cvSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 8, doctor.department);
   const cvFocus = selectedProducts.length > 0
     ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
     : (() => {
@@ -1260,8 +1364,8 @@ export async function convertToVisitLog(
         return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
       })();
   const cvSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 후보 (ICU/중증 관련 내용 비중 높게, 이전 방문 미사용 내용 우선):\n`
-    : `\n오늘 활용할 제품 디테일 후보 (이전 방문에서 다루지 않은 새 내용 우선):\n`;
+    ? `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택, ICU/중증 관련 내용 우선):\n`
+    : `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택):\n`;
   const cvSnippetSection = cvSnippetLines ? `${cvFocus}\n${cvSnippetLabel}${cvSnippetLines}\n` : `${cvFocus}\n`;
 
   const cvProductConstraint = selectedProducts.length > 0
@@ -1283,6 +1387,7 @@ ${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvSnippetSec
 2. 말투·어미를 아래 규칙(~함, ~보임, ~예정 등)에 맞게 다듬을 것.
 3. 원본 메모의 흐름이 어색하거나 주제가 뚝 끊기면 → 사실은 유지하되 순서/연결을 자연스럽게 재구성할 것.
 4. 원본에 제품 디테일이 없으면 → 이 과(${doctor.department})에 맞는 제품 디테일 1개만 자연스럽게 추가.
+   단, 아래 후보에 있는 최근 미사용 디테일을 우선 사용하고 최근 방문과 같은 디테일로 대체하지 말 것.
 5. 오브젝션 핸들링 → 위 오브젝션 지시를 따를 것.
 6. 다음방문전략 → 반드시 작성 (필수).
 
@@ -1306,11 +1411,12 @@ ${buildVisitLogRules()}
 
   cleaned = cleaned.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
-  cleaned = normalizeGeneratedMemoText(cleaned);
+  cleaned = normalizeGeneratedMemoText(cleaned, doctor.department);
+  cleaned = normalizeObjectionLanguage(cleaned, activeProducts);
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
-  cleaned = removeNextVisitPlanFromLog(cleaned);
-  nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy));
+  cleaned = removeNextVisitPlanFromLog(cleaned, doctor.department);
+  nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy, doctor.department));
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, cvAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1337,16 +1443,16 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(cleaned)) {
     cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts, cvAllowNewDrugReview);
   }
-  cleaned = normalizeGeneratedMemoText(cleaned);
+  cleaned = normalizeGeneratedMemoText(cleaned, doctor.department);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
-  cleaned = removeNextVisitPlanFromLog(cleaned);
+  cleaned = removeNextVisitPlanFromLog(cleaned, doctor.department);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
 
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(systemPrompt, nextStrategy, 120, 0, '다음방문전략');
   }
-  nextStrategy = normalizeIntroProductLanguage(normalizeNextStrategy(nextStrategy), activeProducts, cvAllowNewDrugReview);
+  nextStrategy = normalizeIntroProductLanguage(normalizeNextStrategy(nextStrategy, doctor.department), activeProducts, cvAllowNewDrugReview);
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
   // 최종 폴백: 여전히 비어있으면 하드코딩
@@ -1393,7 +1499,7 @@ export async function autoGenerateVisitLog(
 단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
     : '';
 
-  const agSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 4, doctor.department);
+  const agSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 8, doctor.department);
   const agFocus = selectedProducts.length > 0
     ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
     : (() => {
@@ -1404,8 +1510,8 @@ export async function autoGenerateVisitLog(
         return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
       })();
   const agSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 후보 (ICU/중증 관련 내용 비중 높게, 이전 방문 미사용 내용 우선):\n`
-    : `\n오늘 활용할 제품 디테일 후보 (이전 방문에서 다루지 않은 새 내용 우선):\n`;
+    ? `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택, ICU/중증 관련 내용 우선):\n`
+    : `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택):\n`;
   const agSnippetSection = agSnippetLines ? `${agFocus}\n${agSnippetLabel}${agSnippetLines}\n` : `${agFocus}\n`;
 
   const agProductConstraint = selectedProducts.length > 0
@@ -1422,7 +1528,8 @@ export async function autoGenerateVisitLog(
   const prompt = `${visitContextNote}${contextSection}
 ${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agBatchAvoidNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
-(전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원/과 특성에 맞게.)
+(전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원명과 과명에 맞게.)
+아래 제품 디테일 후보 중 최근 방문에서 덜 쓴 내용 1개 이상을 반드시 반영하고, 최근 방문과 같은 수치/근거/환자군 조합으로 대체하지 마세요.
 
 ${buildVisitLogFlow()}
 
@@ -1445,18 +1552,17 @@ ${buildVisitLogRules()}
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   const productText = productMatch ? productMatch[1].trim() : '';
-  const KNOWN_PRODUCTS = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스', '기타'];
+  const KNOWN_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP', '플라주'];
   const allowedProducts = getAllowedProductsForDepartment(doctor.department);
   const products = productText
     .split(/[,，、]/)
     .map((p) => p.trim())
     .filter((p) => KNOWN_PRODUCTS.some(k => p === k || p.startsWith(k) || k.startsWith(p)))
     .map((p) => {
-      // 정규화: '위너프'는 '위너프에이플러스'로
-      if (p === '위너프') return '위너프에이플러스';
       if (p === '플라주') return '플라주OP';
       return p;
     })
+    .filter((p) => VISIT_GENERATION_PRODUCT_SET.has(p))
     .filter((p) => allowedProducts.includes(p));
 
   let fullLog = logMatch
@@ -1468,11 +1574,11 @@ ${buildVisitLogRules()}
 
   fullLog = fullLog.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
-  fullLog = normalizeGeneratedMemoText(fullLog);
+  fullLog = normalizeGeneratedMemoText(fullLog, doctor.department);
   fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
-  fullLog = removeNextVisitPlanFromLog(fullLog);
-  nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy));
+  fullLog = removeNextVisitPlanFromLog(fullLog, doctor.department);
+  nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy, doctor.department));
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, agAllowNewDrugReview);
 
   // nextStrategy 누락 시: formattedLog 끝에 묻혀있는 경우 분리
@@ -1499,17 +1605,18 @@ ${buildVisitLogRules()}
   if (includeObjection && !hasObjectionHandling(fullLog)) {
     fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts, agAllowNewDrugReview, batchAvoidTexts);
   }
-  fullLog = normalizeGeneratedMemoText(fullLog);
+  fullLog = normalizeGeneratedMemoText(fullLog, doctor.department);
+  fullLog = normalizeObjectionLanguage(fullLog, activeProducts);
   fullLog = normalizeBatchRepeatedLanguage(fullLog, batchAvoidTexts);
   fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
-  fullLog = removeNextVisitPlanFromLog(fullLog);
+  fullLog = removeNextVisitPlanFromLog(fullLog, doctor.department);
   fullLog = removeDisallowedProductSentences(fullLog, doctor.department) || fullLog;
   fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
 
   if (nextStrategy.length > 120) {
     nextStrategy = await trimToLimit(buildSystemPrompt(), nextStrategy, 120, 0, '다음방문전략');
   }
-  nextStrategy = normalizeIntroProductLanguage(normalizeNextStrategy(nextStrategy), activeProducts, agAllowNewDrugReview);
+  nextStrategy = normalizeIntroProductLanguage(normalizeNextStrategy(nextStrategy, doctor.department), activeProducts, agAllowNewDrugReview);
   if (nextStrategy.length > 120) nextStrategy = compressTextToLimit(nextStrategy, 120);
 
   // 최종 폴백: 여전히 비어있으면 하드코딩
@@ -1555,7 +1662,7 @@ ${themeConstraint}
 
   const result = await callAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
-  cleaned = normalizeNextStrategy(cleaned);
+  cleaned = normalizeNextStrategy(cleaned, doctor.department);
   cleaned = normalizeIntroProductLanguage(cleaned, getAllowedProductsForDepartment(doctor.department), false);
   cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
   if (cleaned.length > 120) {
@@ -1581,7 +1688,7 @@ export async function validateAndFixVisitLog(
   let log = formattedLog;
   let strategy = nextStrategy;
   const allowedProducts = getAllowedProductsForDepartment(doctor.department);
-  const disallowedProducts = ['위너프에이플러스', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스']
+  const disallowedProducts = ['위너프', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스']
     .filter((product) => {
       const normalized = product === '플라주' ? '플라주OP' : product;
       return !allowedProducts.includes(normalized);
@@ -1614,10 +1721,13 @@ ${strategy}
 ⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. "신약여부검토 요청"은 이번 허용 여부가 허용일 때만 사용
 ⑮ 과(${doctor.department})와 맞지 않는 특장점 테마 사용 금지. 제품 정보에 있더라도 다른 과 전용 질환명은 넣지 말 것
 ⑯ 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
-⑰ "포인트"라는 단어를 불필요하게 사용함. 진짜 핵심 포인트를 짚는 문맥이 아니면 "내용", "디테일", "근거"로 수정
+⑰ "포인트"라는 단어를 사용함. 해당 단어는 쓰지 말고 "내용", "디테일", "근거", "차별점"으로 수정
 ⑱ "지난번에", "지난 방문에"로 시작한 뒤 과거 내용의 확인 결과/교수 반응 없이 바로 새 제품 디테일로 넘어감
 ⑲ 지난번에 특정 제품을 사용 중이라고 해놓고 오늘 같은 제품을 다시 "중심으로" 진행한다고 반복함. 이 경우 사용 반응/재방문량/적용 환자군 확인으로 이어갈 것
 ⑳ 이번 일괄 생성에서 이미 사용한 오브젝션/답변/디테일 흐름과 거의 같은 문장을 반복함
+㉑ 같은 문장에 비슷한 특장점 테마를 두 개 이상 라벨처럼 이어 붙임. 예: "산부인과 수술 전후 빈혈 산후 빈혈 케이스" 같은 형태 금지
+㉒ 오브젝션 문장이 "교수님께서"로 시작하지 않음. "교수는", "교수님은" 같은 시작 금지
+㉓ 위너프에이플러스를 디테일하는데 같은 위너프에이플러스 자체를 기존 비교 대상으로 삼음. 이 경우 비교 대상은 위너프 또는 기존 3챔버 TPN이어야 함
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
@@ -1637,10 +1747,11 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
     const newStrategy = extractSection(result, ['===수정 다음방문전략===']);
 
     if (newLog.trim()) {
-      log = normalizeGeneratedMemoText(newLog.replace(/['"]/g, '').trim());
+      log = normalizeGeneratedMemoText(newLog.replace(/['"]/g, '').trim(), doctor.department);
+      log = normalizeObjectionLanguage(log, activeProducts);
       log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
     }
-    if (newStrategy.trim()) strategy = normalizeNextStrategy(newStrategy.replace(/['"]/g, '').trim());
+    if (newStrategy.trim()) strategy = normalizeNextStrategy(newStrategy.replace(/['"]/g, '').trim(), doctor.department);
     strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
 
     if (passed) break;
@@ -1648,14 +1759,15 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
 
   // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
   const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
-  log = normalizeGeneratedMemoText(log);
+  log = normalizeGeneratedMemoText(log, doctor.department);
+  log = normalizeObjectionLanguage(log, activeProducts);
   log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
-  log = removeNextVisitPlanFromLog(log);
+  log = removeNextVisitPlanFromLog(log, doctor.department);
   log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
   log = removeDisallowedProductSentences(log, doctor.department) ||
-    `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 내용 짧게 디테일 진행함`;
+    `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 내용을 간단히 디테일 진행함`;
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
-  strategy = normalizeNextStrategy(strategy);
+  strategy = normalizeNextStrategy(strategy, doctor.department);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
   if (log.length > 230) log = compressTextToLimit(log, 230);
@@ -1746,6 +1858,7 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
 - 너무 길지 않게, 1~2문장으로 간결하게
 - 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필, 편의성 강조 등)을 커버할 것
 - 담당 교수들의 성향을 고려한 멘트도 포함할 것
+- "포인트"라는 단어는 content, context, tags 어디에도 절대 쓰지 말 것. 필요하면 "내용", "디테일", "근거", "차별점"으로 바꿀 것
 - 멘트 본문(content)에는 큰따옴표("), 작은따옴표(') 모두 사용 금지 (단, 아래 JSON 구조의 키와 값 구분자는 예외)
 
 응답 형식 (반드시 이 JSON 배열 형식만 출력, 다른 텍스트 없이):
@@ -1753,7 +1866,7 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
   {
     'content': '멘트 내용',
     'context': '활용 상황 (예: 첫 처방 유도, 가격 반박 시)',
-    'product': '위너프' 또는 '페린젝트' 또는 '공통',
+    'product': '위너프' 또는 '위너프에이플러스' 또는 '페린젝트' 또는 '공통',
     'tags': ['태그1', '태그2']
   }
 ]`;
@@ -1772,10 +1885,10 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
   }>;
 
   return parsed.map(item => ({
-    content: (item.content || '').replace(/['"]/g, ''),
-    context: (item.context || '').replace(/['"]/g, ''),
-    product: ['위너프', '페린젝트', '공통'].includes(item.product) ? item.product : '공통',
-    tags: Array.isArray(item.tags) ? item.tags : [],
+    content: reducePointWordUsage((item.content || '').replace(/['"]/g, '')),
+    context: reducePointWordUsage((item.context || '').replace(/['"]/g, '')),
+    product: ['위너프', '위너프에이플러스', '페린젝트', '공통'].includes(normalizeSnippetProductName(item.product)) ? normalizeSnippetProductName(item.product) : '공통',
+    tags: Array.isArray(item.tags) ? item.tags.map((tag) => reducePointWordUsage(String(tag))) : [],
   }));
 }
 
@@ -1819,7 +1932,7 @@ export async function generateSnippetsForProduct(productName: string): Promise<A
 
   const existingForProduct = snippetStorage
     .getAll()
-    .filter((s) => s.product === productName)
+    .filter((s) => s.product === normalizeSnippetProductName(productName))
     .slice(0, 10)
     .map((s) => `- ${s.content}`)
     .join('\n');
@@ -1839,6 +1952,7 @@ ${existingForProduct ? `\n[이미 등록된 ${productName} 멘트 (중복 금지
 - 1~2문장으로 간결하게
 - 제품의 특장점, 임상 데이터, 차별점, 편의성 등 다양한 각도에서 커버
 - 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필 등) 포함
+- "포인트"라는 단어는 content, context, tags 어디에도 절대 쓰지 말 것. 필요하면 "내용", "디테일", "근거", "차별점"으로 바꿀 것
 - 멘트 본문(content)에는 큰따옴표("), 작은따옴표(') 모두 사용 금지
 
 응답 형식 (반드시 이 JSON 배열 형식만 출력, 다른 텍스트 없이):
@@ -1865,172 +1979,11 @@ ${existingForProduct ? `\n[이미 등록된 ${productName} 멘트 (중복 금지
   }>;
 
   return parsed.map((item) => ({
-    content: (item.content || '').replace(/['"]/g, ''),
-    context: (item.context || '').replace(/['"]/g, ''),
-    product: productName,
-    tags: Array.isArray(item.tags) ? item.tags : [],
+    content: reducePointWordUsage((item.content || '').replace(/['"]/g, '')),
+    context: reducePointWordUsage((item.context || '').replace(/['"]/g, '')),
+    product: normalizeSnippetProductName(productName),
+    tags: Array.isArray(item.tags) ? item.tags.map((tag) => reducePointWordUsage(String(tag))) : [],
   }));
-}
-
-export async function analyzeHospitalContext(
-  hospitalName: string,
-  doctors: Doctor[],
-  logs: VisitLog[]
-): Promise<string> {
-  const systemPrompt = buildSystemPrompt();
-  const hospitalProfile = hospitalStorage.getByName(hospitalName);
-  const hospital = hospitalProfile;
-  const deptNames = [...new Set(doctors.map((d) => d.department))];
-  const recentLogs = logs.slice(0, 10);
-  const snippetContext = buildSnippetContext();
-
-  const deptDetails = deptNames.map(deptName => {
-    const dept = hospital ? departmentStorage.getByHospitalAndName(hospital.id, deptName) : undefined;
-    const deptDoctors = doctors.filter(d => d.department === deptName);
-    return `  - ${deptName}: ${dept?.characteristics || '특성 미입력'} / 교수 ${deptDoctors.length}명 (${deptDoctors.map(d => d.name).join(', ')})`;
-  }).join('\n');
-
-  const doctorDetails = doctors.map(d => {
-    const traits = d.traits.map(t => t.label).join(', ');
-    return `- ${d.name} (${d.department}, ${d.position}): 성향=${traits || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}`;
-  }).join('\n');
-
-  const prompt = `병원: ${hospitalName}
-병원 특성: ${hospitalProfile?.characteristics || '미입력'}
-경쟁사 강도: ${hospitalProfile?.competitorStrength || '미입력'}
-담당 교수 수: ${doctors.length}명
-과별 현황:
-${deptDetails}
-
-교수별 정보:
-${doctorDetails}
-${snippetContext}
-최근 방문 기록:
-${recentLogs.map((l) => {
-  const doc = doctors.find((d) => d.id === l.doctorId);
-  return `- ${l.visitDate} ${doc?.name ?? ''} 교수: ${l.formattedLog.slice(0, 150)}`;
-}).join('\n')}
-
-위 병원에 대한 종합 영업 전략 분석을 작성해주세요:
-1. 병원 내 JW 제품 현황 및 기회
-2. 과별 우선순위 전략
-3. 경쟁사 대응 방안
-4. 3개월 내 실행 계획
-- 큰따옴표("), 작은따옴표(') 모두 사용 금지`;
-
-  return callAI(systemPrompt, prompt);
-}
-
-export async function autoInferHospitalProfile(
-  hospitalName: string
-): Promise<{ characteristics: string; competitorStrength: string }> {
-  const systemPrompt = buildSystemPrompt();
-  const allDoctors = doctorStorage.getAll().filter(d => d.hospital === hospitalName);
-  const allLogs = visitLogStorage.getAll();
-  const hospitalLogs = allLogs.filter(l => allDoctors.some(d => d.id === l.doctorId));
-  const snippetContext = buildSnippetContext();
-
-  const deptNames = [...new Set(allDoctors.map(d => d.department))];
-
-  const doctorInfo = allDoctors.map(d => {
-    const traits = d.traits.map(t => t.label).join(', ');
-    const objections = d.objections.map(o => `반박: ${o.content}`).join('; ');
-    return `- ${d.name} (${d.department}, ${d.position}): 성향=${traits || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}, 관심분야=${d.interestAreas || '미기록'}${objections ? `, 반박패턴: ${objections}` : ''}`;
-  }).join('\n');
-
-  const recentLogs = hospitalLogs
-    .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
-    .slice(0, 10);
-
-  const logInfo = recentLogs.map(l => {
-    const doc = allDoctors.find(d => d.id === l.doctorId);
-    return `- ${l.visitDate} ${doc?.name ?? ''} (${doc?.department ?? ''}): ${l.formattedLog.slice(0, 200)}`;
-  }).join('\n');
-
-  const prompt = `병원명: ${hospitalName}
-소속 과: ${deptNames.join(', ') || '정보 없음'}
-담당 교수 ${allDoctors.length}명:
-${doctorInfo || '등록된 교수 없음'}
-${snippetContext}
-최근 방문 기록:
-${logInfo || '방문 기록 없음'}
-
-위 정보를 종합하여 이 병원의 특성을 유추해주세요.
-
-응답 형식:
-===병원특성===
-(이 병원의 영업 관점에서의 특성. 예: 어떤 제품에 관심이 높은지, 교수들의 전반적 성향, 처방 환경, 영업 접근 시 유의사항 등. 3-5줄로 간결하게)
-
-===경쟁사강도===
-(상/중/하 중 하나. 방문 기록과 교수 반응에서 경쟁사 언급 빈도를 기반으로 판단)
-
-★ 큰따옴표("), 작은따옴표(') 모두 사용 금지.`;
-
-  const response = await callAI(systemPrompt, prompt);
-
-  const charMatch = response.match(/===병원특성===\s*([\s\S]*?)(?:===경쟁사강도===|$)/);
-  const compMatch = response.match(/===경쟁사강도===\s*([\s\S]*?)$/);
-
-  const characteristics = charMatch ? charMatch[1].replace(/['"]/g, '').trim() : '';
-  const rawStrength = compMatch ? compMatch[1].trim() : '중';
-  const competitorStrength = rawStrength.includes('상') ? '상' : rawStrength.includes('하') ? '하' : '중';
-
-  return { characteristics, competitorStrength };
-}
-
-export async function autoInferDepartmentProfile(
-  hospitalName: string,
-  departmentName: string
-): Promise<{ characteristics: string; competitorProducts: string }> {
-  const systemPrompt = buildSystemPrompt();
-  const allDoctors = doctorStorage.getAll().filter(d => d.hospital === hospitalName && d.department === departmentName);
-  const allLogs = visitLogStorage.getAll();
-  const deptLogs = allLogs.filter(l => allDoctors.some(d => d.id === l.doctorId));
-  const snippetContext = buildSnippetContext();
-
-  const doctorInfo = allDoctors.map(d => {
-    const traits = d.traits.map(t => t.label).join(', ');
-    const objections = d.objections.map(o => `반박: ${o.content} → 대응: ${o.response}`).join('; ');
-    return `- ${d.name} (${d.position}): 성향=${traits || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}, 관심분야=${d.interestAreas || '미기록'}${objections ? `, 반박패턴: ${objections}` : ''}`;
-  }).join('\n');
-
-  const recentLogs = deptLogs
-    .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
-    .slice(0, 10);
-
-  const logInfo = recentLogs.map(l => {
-    const doc = allDoctors.find(d => d.id === l.doctorId);
-    return `- ${l.visitDate} ${doc?.name ?? ''}: ${l.formattedLog.slice(0, 200)}`;
-  }).join('\n');
-
-  const prompt = `병원: ${hospitalName}
-과: ${departmentName}
-소속 교수 ${allDoctors.length}명:
-${doctorInfo || '등록된 교수 없음'}
-${snippetContext}
-최근 방문 기록:
-${logInfo || '방문 기록 없음'}
-
-위 정보를 종합하여 이 과의 영업 관련 특성을 유추해주세요.
-
-응답 형식:
-===과특성===
-(이 과의 영업 관점에서의 특성. 예: 주로 어떤 환자를 보는지, TPN/FCM 수요가 있는지, 교수들의 공통 성향, 영업 기회 등. 3-5줄로 간결하게)
-
-===경쟁제품===
-(이 과에서 경쟁하는 제품명이 있다면 쉼표로 구분. 방문 기록에서 언급된 경쟁사/경쟁 제품 기반. 없으면 없음)
-
-★ 큰따옴표("), 작은따옴표(') 모두 사용 금지.`;
-
-  const response = await callAI(systemPrompt, prompt);
-
-  const charMatch = response.match(/===과특성===\s*([\s\S]*?)(?:===경쟁제품===|$)/);
-  const compMatch = response.match(/===경쟁제품===\s*([\s\S]*?)$/);
-
-  const characteristics = charMatch ? charMatch[1].replace(/['"]/g, '').trim() : '';
-  const competitorProducts = compMatch ? compMatch[1].replace(/['"]/g, '').trim() : '없음';
-
-  return { characteristics, competitorProducts };
 }
 
 export async function processImportedRecords(text: string): Promise<string> {

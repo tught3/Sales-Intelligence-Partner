@@ -11,7 +11,6 @@ import DoctorDetailPage from "@/pages/DoctorDetailPage";
 import VisitLogPage from "@/pages/VisitLogPage";
 import SnippetsPage from "@/pages/SnippetsPage";
 import DashboardPage from "@/pages/DashboardPage";
-import HospitalsPage from "@/pages/HospitalsPage";
 import ProductsPage from "@/pages/ProductsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import BulkImportPage from "@/pages/BulkImportPage";
@@ -28,7 +27,6 @@ function Router() {
         <Route path="/doctors/:id" component={DoctorDetailPage} />
         <Route path="/visit-log" component={VisitLogPage} />
         <Route path="/visit-log-history" component={VisitLogHistoryPage} />
-        <Route path="/hospitals" component={HospitalsPage} />
         <Route path="/products" component={ProductsPage} />
         <Route path="/snippets" component={SnippetsPage} />
         <Route path="/settings" component={SettingsPage} />

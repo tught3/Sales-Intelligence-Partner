@@ -30,6 +30,52 @@ const TAG_SUGGESTIONS = [
   "임상 데이터", "환자 경험", "초기 처방", "용량 조절",
 ];
 
+function normalizeSnippetText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .trim();
+}
+
+function snippetSimilarity(a: string, b: string): number {
+  const left = normalizeSnippetText(a);
+  const right = normalizeSnippetText(b);
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  if (longer.includes(shorter) && shorter.length >= 12) return 1;
+
+  const grams = (value: string) => {
+    const size = Math.min(3, value.length);
+    const result = new Set<string>();
+    for (let i = 0; i <= value.length - size; i++) {
+      result.add(value.slice(i, i + size));
+    }
+    return result;
+  };
+
+  const leftGrams = grams(left);
+  const rightGrams = grams(right);
+  let overlap = 0;
+  for (const gram of leftGrams) {
+    if (rightGrams.has(gram)) overlap++;
+  }
+  return overlap / Math.max(leftGrams.size, rightGrams.size, 1);
+}
+
+function isDuplicateSnippet(
+  candidate: Pick<GoldenSnippet, "content" | "context" | "product">,
+  existing: Array<Pick<GoldenSnippet, "content" | "context" | "product">>
+): boolean {
+  const candidateText = `${candidate.product} ${candidate.content} ${candidate.context}`;
+  return existing.some((snippet) => {
+    const existingText = `${snippet.product} ${snippet.content} ${snippet.context}`;
+    return snippetSimilarity(candidateText, existingText) >= 0.82;
+  });
+}
+
 function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
     <div className="flex gap-0.5">
@@ -117,6 +163,8 @@ export default function SnippetsPage() {
     setGenerating(true);
     try {
       const items = await generateSnippetsFromManuals();
+      const existing = snippetStorage.getAll();
+      const accepted: GoldenSnippet[] = [];
       let count = 0;
       for (const item of items) {
         const snippet: GoldenSnippet = {
@@ -128,7 +176,11 @@ export default function SnippetsPage() {
           effectiveness: 4,
           createdAt: new Date().toISOString(),
         };
+        if (isDuplicateSnippet(snippet, [...existing, ...accepted])) {
+          continue;
+        }
         snippetStorage.save(snippet);
+        accepted.push(snippet);
         count++;
       }
       setSnippets(snippetStorage.getAll());
@@ -364,7 +416,7 @@ export default function SnippetsPage() {
                     </blockquote>
 
                     <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <Badge variant={snippet.product === "위너프" ? "default" : snippet.product === "페린젝트" ? "secondary" : "outline"} className="text-xs">
+                      <Badge variant={snippet.product === "위너프" || snippet.product === "위너프에이플러스" ? "default" : snippet.product === "페린젝트" ? "secondary" : "outline"} className="text-xs">
                         {snippet.product}
                       </Badge>
                       {snippet.context && (

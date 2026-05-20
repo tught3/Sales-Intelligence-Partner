@@ -67,13 +67,37 @@ function prepVisitLog(v: any) {
 function prepSnippet(s: any) {
   return {
     id: s.id,
-    content: s.content || "",
-    context: s.context || "",
-    tags: s.tags || [],
-    product: s.product || "",
+    content: cleanPointWord(s.content || ""),
+    context: cleanPointWord(s.context || ""),
+    tags: Array.isArray(s.tags) ? s.tags.map((tag: any) => cleanPointWord(String(tag))) : [],
+    product: normalizeSnippetProduct(s.product || ""),
     effectiveness: s.effectiveness ?? 5,
     createdAt: toDate(s.createdAt ?? s.created_at),
   };
+}
+
+function normalizeSnippetProduct(product: string) {
+  const compact = product.replace(/\s+/g, "").trim();
+  if (!compact) return "";
+  if (compact.includes("위너프에이플러스")) return "위너프에이플러스";
+  if (compact.includes("위너프")) return "위너프";
+  return product.trim();
+}
+
+function cleanPointWord(value: string) {
+  return value
+    .replace(/제품\s*포인트/g, "제품 내용")
+    .replace(/처방\s*포인트/g, "처방 관련 내용")
+    .replace(/디테일\s*포인트/g, "디테일")
+    .replace(/짧은\s*포인트/g, "짧게")
+    .replace(/차별화\s*포인트/g, "차별점")
+    .replace(/매력\s*포인트/g, "강점")
+    .replace(/활용\s*포인트/g, "활용 내용")
+    .replace(/포인트를/g, "내용을")
+    .replace(/포인트는/g, "내용은")
+    .replace(/포인트/g, "내용")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function prepHospital(h: any) {

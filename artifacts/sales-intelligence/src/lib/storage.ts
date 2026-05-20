@@ -39,30 +39,6 @@ export interface Doctor {
   updatedAt: string;
 }
 
-export interface HospitalProfile {
-  id: string;
-  name: string;
-  region: string;
-  hospitalType: 'tertiary' | 'secondary' | 'clinic' | 'other';
-  characteristics: string;
-  keyDepartments: string;
-  competitorStrength: string;
-  notes: string;
-  updatedAt: string;
-}
-
-export interface DepartmentProfile {
-  id: string;
-  hospitalId: string;
-  hospitalName: string;
-  departmentName: string;
-  characteristics: string;
-  mainProducts: string[];
-  competitorProducts: string;
-  notes: string;
-  updatedAt: string;
-}
-
 export interface GoldenSnippet {
   id: string;
   content: string;
@@ -107,16 +83,12 @@ const cache: {
   doctors: Doctor[];
   visitLogs: VisitLog[];
   snippets: GoldenSnippet[];
-  hospitals: HospitalProfile[];
-  departments: DepartmentProfile[];
   manuals: CompanyManual[];
   loaded: boolean;
 } = {
   doctors: [],
   visitLogs: [],
   snippets: [],
-  hospitals: [],
-  departments: [],
   manuals: [],
   loaded: false,
 };
@@ -309,31 +281,18 @@ function conversationRecordToVisitLog(doctor: Doctor, record: ConversationRecord
 function normalizeSnippet(s: any): GoldenSnippet {
   return {
     ...s,
+    product: normalizeSnippetProduct(s.product ?? ''),
     tags: s.tags ?? [],
     createdAt: toISOStr(s.createdAt ?? s.created_at),
   };
 }
 
-function normalizeHospital(h: any): HospitalProfile {
-  return {
-    ...h,
-    hospitalType: h.hospitalType ?? h.hospital_type ?? 'other',
-    keyDepartments: h.keyDepartments ?? h.key_departments ?? '',
-    competitorStrength: h.competitorStrength ?? h.competitor_strength ?? '',
-    updatedAt: toISOStr(h.updatedAt ?? h.updated_at),
-  };
-}
-
-function normalizeDepartment(d: any): DepartmentProfile {
-  return {
-    ...d,
-    hospitalId: d.hospitalId ?? d.hospital_id ?? '',
-    hospitalName: d.hospitalName ?? d.hospital_name ?? '',
-    departmentName: d.departmentName ?? d.department_name ?? '',
-    mainProducts: d.mainProducts ?? d.main_products ?? [],
-    competitorProducts: d.competitorProducts ?? d.competitor_products ?? '',
-    updatedAt: toISOStr(d.updatedAt ?? d.updated_at),
-  };
+function normalizeSnippetProduct(product: string): string {
+  const compact = product.replace(/\s+/g, '').trim();
+  if (!compact) return '';
+  if (compact.includes('위너프에이플러스')) return '위너프에이플러스';
+  if (compact.includes('위너프')) return '위너프';
+  return product.trim();
 }
 
 function normalizeManual(m: any): CompanyManual {
@@ -391,19 +350,15 @@ async function migrateConversationHistoryToVisitLogs(): Promise<void> {
 export async function initStorage(): Promise<void> {
   if (cache.loaded) return;
   try {
-    const [docs, logs, snips, hosps, depts, mans] = await Promise.all([
+    const [docs, logs, snips, mans] = await Promise.all([
       api('/doctors'),
       api('/visit-logs'),
       api('/snippets'),
-      api('/hospitals'),
-      api('/departments'),
       api('/manuals'),
     ]);
     cache.doctors = (docs || []).map(normalizeDoctor);
     cache.visitLogs = (logs || []).map(normalizeVisitLog);
     cache.snippets = (snips || []).map(normalizeSnippet);
-    cache.hospitals = (hosps || []).map(normalizeHospital);
-    cache.departments = (depts || []).map(normalizeDepartment);
     cache.manuals = (mans || []).map(normalizeManual);
     await migrateConversationHistoryToVisitLogs();
     cache.loaded = true;
@@ -576,94 +531,25 @@ export const snippetStorage = {
     return cache.snippets.filter((s) => s.product === product);
   },
   save(snippet: GoldenSnippet): void {
-    const idx = cache.snippets.findIndex((s) => s.id === snippet.id);
+    const normalized = normalizeSnippet(snippet);
+    const idx = cache.snippets.findIndex((s) => s.id === normalized.id);
     if (idx >= 0) {
-      cache.snippets[idx] = snippet;
+      cache.snippets[idx] = normalized;
     } else {
-      cache.snippets.push(snippet);
+      cache.snippets.push(normalized);
     }
     api('/snippets', 'POST', {
-      id: snippet.id,
-      content: snippet.content,
-      context: snippet.context,
-      tags: snippet.tags,
-      product: snippet.product,
-      effectiveness: snippet.effectiveness,
+      id: normalized.id,
+      content: normalized.content,
+      context: normalized.context,
+      tags: normalized.tags,
+      product: normalized.product,
+      effectiveness: normalized.effectiveness,
     }).catch(console.error);
   },
   delete(id: string): void {
     cache.snippets = cache.snippets.filter((s) => s.id !== id);
     api(`/snippets/${id}`, 'DELETE').catch(console.error);
-  },
-};
-
-export const hospitalStorage = {
-  getAll(): HospitalProfile[] {
-    return [...cache.hospitals];
-  },
-  getById(id: string): HospitalProfile | undefined {
-    return cache.hospitals.find((h) => h.id === id);
-  },
-  getByName(name: string): HospitalProfile | undefined {
-    return cache.hospitals.find((h) => h.name === name);
-  },
-  save(profile: HospitalProfile): void {
-    const now = new Date().toISOString();
-    const idx = cache.hospitals.findIndex((h) => h.id === profile.id);
-    if (idx >= 0) {
-      cache.hospitals[idx] = { ...profile, updatedAt: now };
-    } else {
-      cache.hospitals.push({ ...profile, updatedAt: now });
-    }
-    api('/hospitals', 'POST', {
-      id: profile.id,
-      name: profile.name,
-      region: profile.region,
-      hospitalType: profile.hospitalType,
-      characteristics: profile.characteristics,
-      keyDepartments: profile.keyDepartments,
-      competitorStrength: profile.competitorStrength,
-      notes: profile.notes,
-    }).catch(console.error);
-  },
-  delete(id: string): void {
-    cache.hospitals = cache.hospitals.filter((h) => h.id !== id);
-    api(`/hospitals/${id}`, 'DELETE').catch(console.error);
-  },
-};
-
-export const departmentStorage = {
-  getAll(): DepartmentProfile[] {
-    return [...cache.departments];
-  },
-  getByHospital(hospitalId: string): DepartmentProfile[] {
-    return cache.departments.filter((d) => d.hospitalId === hospitalId);
-  },
-  getByHospitalAndName(hospitalId: string, departmentName: string): DepartmentProfile | undefined {
-    return cache.departments.find((d) => d.hospitalId === hospitalId && d.departmentName === departmentName);
-  },
-  save(profile: DepartmentProfile): void {
-    const now = new Date().toISOString();
-    const idx = cache.departments.findIndex((d) => d.id === profile.id);
-    if (idx >= 0) {
-      cache.departments[idx] = { ...profile, updatedAt: now };
-    } else {
-      cache.departments.push({ ...profile, updatedAt: now });
-    }
-    api('/departments', 'POST', {
-      id: profile.id,
-      hospitalId: profile.hospitalId,
-      hospitalName: profile.hospitalName,
-      departmentName: profile.departmentName,
-      characteristics: profile.characteristics,
-      mainProducts: profile.mainProducts,
-      competitorProducts: profile.competitorProducts,
-      notes: profile.notes,
-    }).catch(console.error);
-  },
-  delete(id: string): void {
-    cache.departments = cache.departments.filter((d) => d.id !== id);
-    api(`/departments/${id}`, 'DELETE').catch(console.error);
   },
 };
 
