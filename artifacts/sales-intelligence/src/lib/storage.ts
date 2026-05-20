@@ -1028,13 +1028,13 @@ export async function initDefaultData(): Promise<void> {
   if (changed) {
     const newManuals = Array.from(existingMap.values());
     cache.manuals = newManuals;
-    for (const m of DEFAULT_PRODUCT_MANUALS) {
-      await api('/manuals', 'POST', {
+    await Promise.allSettled(DEFAULT_PRODUCT_MANUALS.map((m) =>
+      api('/manuals', 'POST', {
         id: m.id,
         title: m.title,
         content: m.content,
         category: m.category,
-      }).catch(console.error);
-    }
+      })
+    ));
   }
 }

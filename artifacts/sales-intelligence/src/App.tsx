@@ -41,7 +41,12 @@ function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    initStorage().then(() => initDefaultData()).then(() => setReady(true)).catch(() => setReady(true));
+    initStorage()
+      .then(() => {
+        setReady(true);
+        initDefaultData().catch(console.error);
+      })
+      .catch(() => setReady(true));
   }, []);
 
   if (!ready) {
