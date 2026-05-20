@@ -77,7 +77,7 @@ export type SaveOutcome = {
 };
 
 export const API_BASE = import.meta.env.VITE_API_SERVER_URL ||
-  (import.meta.env.DEV ? 'http://localhost:3001' : 'https://sales-intelligence-partner-production.up.railway.app');
+  (import.meta.env.DEV ? 'http://localhost:4201' : '');
 
 const cache: {
   doctors: Doctor[];
@@ -94,11 +94,17 @@ const cache: {
 };
 
 async function api(path: string, method = 'GET', body?: any) {
-  const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${API_BASE}/api/data${path}`, opts);
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
+  try {
+    const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' }, signal: controller.signal };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(`${API_BASE}/api/data${path}`, opts);
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    return res.json();
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function toISOStr(v: any): string {
