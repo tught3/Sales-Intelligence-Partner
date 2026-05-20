@@ -6,9 +6,16 @@ const router = Router();
 
 function wrap(fn: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response, _next: NextFunction) => {
-    fn(req, res).catch((e: any) => {
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Database request timed out")), 12000);
+    });
+
+    Promise.race([fn(req, res), timeout]).catch((e: any) => {
       console.error("DB route error:", e);
-      res.status(500).json({ error: e.message || "Internal server error" });
+      if (!res.headersSent) {
+        const isTimeout = e?.message === "Database request timed out";
+        res.status(isTimeout ? 503 : 500).json({ error: e.message || "Internal server error" });
+      }
     });
   };
 }
