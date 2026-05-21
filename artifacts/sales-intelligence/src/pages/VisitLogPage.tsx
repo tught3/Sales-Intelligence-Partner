@@ -32,7 +32,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 
-const PRODUCTS = ["위너프에이플러스", "페린젝트", "플라주OP"];
+const PRODUCTS = ["위너프에이플러스", "페린젝트"];
 
 function getWeekKey(dateString: string): string {
   const date = new Date(dateString);
@@ -228,7 +228,6 @@ export default function VisitLogPage() {
 
     const prioritized = [...sortGroup(groupA), ...sortGroup(groupB), ...sortGroup(groupC), ...sortGroup(groupD)];
     const targets = prioritized.slice(0, count);
-    let needsForcedPlaju = targets.length >= 3;
 
     setIsAutoGenerating(true);
     resetResult();
@@ -241,8 +240,7 @@ export default function VisitLogPage() {
         const docPastLogs = visitLogStorage.getByDoctorId(doctor.id);
         try {
           const batchAvoidTexts = generated.map(({ log }) => `${log.formattedLog} ${log.nextStrategy ?? ""}`);
-          const forcedProducts = needsForcedPlaju ? ["플라주OP"] : [];
-          const res = await autoGenerateVisitLog(doctor, docPastLogs, forcedProducts, batchAvoidTexts);
+          const res = await autoGenerateVisitLog(doctor, docPastLogs, [], batchAvoidTexts);
           if (!res.formattedLog || res.formattedLog.trim().length < 10) continue;
           // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
           const finalFormattedLog = res.formattedLog.length > 230
@@ -263,9 +261,6 @@ export default function VisitLogPage() {
             continue;
           }
           generated.push({ doctor, log });
-          if (log.products.includes("플라주OP")) {
-            needsForcedPlaju = false;
-          }
           setBulkResults([...generated]);
         } catch (e) {
           console.error(`${doctor.name} 일지 생성 실패`, e);

@@ -2,7 +2,7 @@
 import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
 
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
-const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP'] as const;
+const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
 const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -351,8 +351,11 @@ function buildVisitLogRules(): string {
 금지 기호: 중간점(·), 불릿(•), 화살표(↑↓→←) 모두 금지. 증감은 "증가", "감소"로, 문장 구분은 콤마(,)만
 금지 표현: 짚음, 언급함, 설명함 → 대신 "디테일 진행함", "디테일 안내함" 사용
 금지 표현: 흐름이어서, 흐름으로, 다시 봄, 다시 말씀드림 → 대신 "드렸는데", "재확인함" 사용
+금지 표현: 제품 내용, 특장점 반응 확인, 반응 확인 요청, 특장점 반응 확인 요청, 요청 드림
 과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것. 같은 문장에 비슷한 테마를 두 개 이상 라벨처럼 이어 붙이지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
+제품명: 제품 특장점 문장에는 반드시 제품명을 함께 쓸 것. 예: "아미노산 25% 증가" 금지, "위너프에이플러스의 아미노산 25% 증가"로 작성
+교수 반응: 반응을 쓸 때는 교수님께서 보인 실제 의견 형태로만 작성. 예: "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임". "특장점 반응 확인 요청"처럼 반응 확인을 교수에게 요청하는 문장 금지
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 메모처럼
 글자수: 본문 230자 이내 / 다음방문전략 120자 이내
@@ -510,16 +513,16 @@ function normalizeMemoTone(text: string): string {
 
 function reducePointWordUsage(text: string): string {
   return text
-    .replace(/제품\s*포인트/g, '제품 내용')
+    .replace(/제품\s*포인트/g, '제품 디테일')
     .replace(/처방\s*포인트/g, '처방 관련 내용')
     .replace(/디테일\s*포인트/g, '디테일')
     .replace(/짧은\s*포인트/g, '간단한 표현')
     .replace(/차별화\s*포인트/g, '차별점')
     .replace(/매력\s*포인트/g, '강점')
     .replace(/활용\s*포인트/g, '활용 내용')
-    .replace(/포인트를/g, '내용을')
-    .replace(/포인트는/g, '내용은')
-    .replace(/포인트/g, '내용')
+    .replace(/포인트를/g, '디테일을')
+    .replace(/포인트는/g, '디테일은')
+    .replace(/포인트/g, '디테일')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -722,7 +725,7 @@ function normalizeIntroProductLanguage(
 ): string {
   const activeIntroProducts = activeProducts.filter((product) => INTRO_PRODUCTS.has(product));
   const finalAllowNewDrugReview = allowNewDrugReview && activeIntroProducts.length > 0;
-  const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : '특장점 반응 확인';
+  const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : '특장점 디테일 진행';
   const activeIntroducedProducts = activeProducts.filter((product) => !INTRO_PRODUCTS.has(product));
 
   const cleaned = text
@@ -743,11 +746,11 @@ function normalizeIntroProductLanguage(
     .filter(Boolean)
     .map((sentence) => {
       if (!sentence.includes('신약여부검토 요청')) return sentence;
-      if (!finalAllowNewDrugReview) return sentence.replace(/신약여부검토 요청/g, '특장점 반응 확인');
+      if (!finalAllowNewDrugReview) return sentence.replace(/신약여부검토 요청/g, '특장점 디테일 진행');
       const hasIntroProductInSentence = activeIntroProducts.some((product) => sentence.includes(product));
       const hasIntroducedProductInSentence = activeIntroducedProducts.some((product) => sentence.includes(product));
       if (hasIntroducedProductInSentence && !hasIntroProductInSentence) {
-        return sentence.replace(/신약여부검토 요청/g, '특장점 반응 확인');
+        return sentence.replace(/신약여부검토 요청/g, '특장점 디테일 진행');
       }
       return sentence;
     });
@@ -913,16 +916,16 @@ type DeptProductRule = {
 
 // 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
 const DEPT_PRODUCT_MAP: DeptProductRule[] = [
-  { keywords: ['정형외과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '플라주OP', weight: 10 }], weighted: true },
-  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '플라주OP', weight: 10 }], weighted: true },
-  { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], weightedProducts: [{ name: '위너프에이플러스', weight: 40 }, { name: '페린젝트', weight: 40 }, { name: '플라주OP', weight: 20 }], weighted: true },
-  { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 30 }, { name: '플라주OP', weight: 10 }], weighted: true },
-  { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
-  { keywords: ['응급의학과', '응급'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
-  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 40 }, { name: '플라주OP', weight: 10 }], weighted: true },
+  { keywords: ['정형외과'], weightedProducts: [{ name: '페린젝트', weight: 100 }], weighted: true },
+  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 100 }], weighted: true },
+  { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
+  { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 30 }], weighted: true },
+  { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '페린젝트', weight: 60 }, { name: '위너프에이플러스', weight: 40 }], weighted: true },
+  { keywords: ['응급의학과', '응급'], weightedProducts: [{ name: '페린젝트', weight: 60 }, { name: '위너프에이플러스', weight: 40 }], weighted: true },
+  { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 55 }, { name: '페린젝트', weight: 45 }], weighted: true },
   { keywords: ['흉부외과', '심혈관외과', '심장외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
   { keywords: ['간담췌외과', '간담'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
-  { keywords: ['중환자의학과', '중환자', 'ICU'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 20 }, { name: '플라주OP', weight: 10 }], weighted: true },
+  { keywords: ['중환자의학과', '중환자', 'ICU'], weightedProducts: [{ name: '위너프에이플러스', weight: 80 }, { name: '페린젝트', weight: 20 }], weighted: true },
   { keywords: ['신경외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
 ];
 
@@ -965,6 +968,72 @@ function getActiveProductsForGeneration(selectedProducts: string[], department: 
   if (rule.weighted) return [pickWeightedProductForDepartment(department)];
   const allowed = getAllowedProductsForDepartment(department);
   return allowed.slice(0, Math.min(2, allowed.length));
+}
+
+function getFallbackDetailForProduct(product: string, department: string): string {
+  if (product === '페린젝트') {
+    if (/정형외과|산부인과|산과|부인과|외과/.test(department)) {
+      return '수술 전후 빈혈에서 1회 투여로 Hb 회복과 수혈 부담 감소 근거';
+    }
+    if (/소화기|IBD|위장관/.test(department)) {
+      return '위장관 출혈과 IBD 빈혈에서 1회 투여 후 Hb 회복 근거';
+    }
+    return '철결핍 빈혈에서 1회 투여 편의성과 Hb 회복 근거';
+  }
+
+  if (/중환자|ICU|호흡기|외과|간담|흉부|신경/.test(department)) {
+    return '중증 환자 영양에서 아미노산 25% 증가와 포도당 부담 감소 차별점';
+  }
+  if (/소화기|IBD|위장관/.test(department)) {
+    return '장관 영양 부담 환자에서 고아미노산 저포도당 조성 차별점';
+  }
+  return '고아미노산 저포도당 조성으로 중증 환자 영양 부담을 줄이는 차별점';
+}
+
+function buildFallbackVisitLog(product: string, department: string): string {
+  const detail = getFallbackDetailForProduct(product, department);
+  return `${product}의 ${detail} 중심으로 디테일 진행함`;
+}
+
+function ensureProductNameInLog(text: string, activeProducts: string[], department: string): string {
+  const products = activeProducts.length > 0 ? activeProducts : getAllowedProductsForDepartment(department);
+  const mentioned = products.some((product) => text.includes(product));
+  if (mentioned) return text;
+  const product = products[0] || '위너프에이플러스';
+  const startsWithFeature = /^(아미노산|포도당|고아미노산|저포도당|1회\s*투여|Hb|철결핍|수술|위장관|IBD|중증)/.test(text);
+  return `${product}${startsWithFeature ? '의' : ''} ${text}`.trim();
+}
+
+function ensureProductFeatureOwnership(text: string): string {
+  let result = text.trim();
+  const winnerFeature = /(아미노산\s*25%\s*증가|포도당\s*(?:부담\s*)?감소|고아미노산|저포도당|오메가3|질소균형)/;
+  const ferricFeature = /(1회\s*투여|Hb\s*회복|철결핍\s*빈혈|수혈\s*부담\s*감소)/;
+
+  if (winnerFeature.test(result) && !result.includes('위너프에이플러스')) {
+    result = `위너프에이플러스의 ${result}`;
+  }
+  if (ferricFeature.test(result) && !result.includes('페린젝트')) {
+    result = `페린젝트의 ${result}`;
+  }
+  return result.replace(/\s{2,}/g, ' ').trim();
+}
+
+function removeEmptyReactionRequests(text: string): string {
+  return text
+    .replace(/특장점\s*반응\s*확인\s*드림/g, '')
+    .replace(/특장점\s*반응\s*확인함/g, '')
+    .replace(/특장점\s*반응\s*확인/g, '')
+    .replace(/특장점\s*반응\s*확인\s*요청\s*드림/g, '')
+    .replace(/특장점\s*반응\s*확인\s*요청함/g, '')
+    .replace(/특장점\s*반응\s*확인\s*요청/g, '')
+    .replace(/반응\s*확인\s*요청\s*드림/g, '')
+    .replace(/반응\s*확인\s*요청함/g, '')
+    .replace(/반응\s*확인\s*요청/g, '')
+    .replace(/요청\s*드림/g, '')
+    .replace(/제품\s*내용/g, '제품 디테일')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s*[,，]\s*$/g, '')
+    .trim();
 }
 
 function formatProductWeights(department: string): string {
@@ -1552,16 +1621,12 @@ ${buildVisitLogRules()}
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   const productText = productMatch ? productMatch[1].trim() : '';
-  const KNOWN_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP', '플라주'];
+  const KNOWN_PRODUCTS = ['위너프에이플러스', '페린젝트'];
   const allowedProducts = getAllowedProductsForDepartment(doctor.department);
   const products = productText
     .split(/[,，、]/)
     .map((p) => p.trim())
     .filter((p) => KNOWN_PRODUCTS.some(k => p === k || p.startsWith(k) || k.startsWith(p)))
-    .map((p) => {
-      if (p === '플라주') return '플라주OP';
-      return p;
-    })
     .filter((p) => VISIT_GENERATION_PRODUCT_SET.has(p))
     .filter((p) => allowedProducts.includes(p));
 
@@ -1728,6 +1793,9 @@ ${strategy}
 ㉑ 같은 문장에 비슷한 특장점 테마를 두 개 이상 라벨처럼 이어 붙임. 예: "산부인과 수술 전후 빈혈 산후 빈혈 케이스" 같은 형태 금지
 ㉒ 오브젝션 문장이 "교수님께서"로 시작하지 않음. "교수는", "교수님은" 같은 시작 금지
 ㉓ 위너프에이플러스를 디테일하는데 같은 위너프에이플러스 자체를 기존 비교 대상으로 삼음. 이 경우 비교 대상은 위너프 또는 기존 3챔버 TPN이어야 함
+㉔ 제품 특장점 문장에 제품명이 빠짐. 예: "아미노산 25% 증가와 포도당 감소"만 쓰면 FAIL, "위너프에이플러스의 아미노산 25% 증가와 포도당 감소"로 수정
+㉕ "제품 내용", "특장점 반응 확인", "반응 확인 요청", "특장점 반응 확인 요청", "요청 드림" 사용 금지
+㉖ 교수 반응은 실제 의견/반응으로만 작성. "확인 요청"이 아니라 "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임"처럼 구체 반응이어야 함
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
@@ -1761,14 +1829,26 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
   log = normalizeGeneratedMemoText(log, doctor.department);
   log = normalizeObjectionLanguage(log, activeProducts);
+  log = removeEmptyReactionRequests(log);
+  log = ensureProductFeatureOwnership(log);
   log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
   log = removeNextVisitPlanFromLog(log, doctor.department);
   log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
+  log = removeEmptyReactionRequests(log);
+  log = ensureProductFeatureOwnership(log);
+  log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   log = removeDisallowedProductSentences(log, doctor.department) ||
-    `${finalAllowedProducts[0] || '위너프에이플러스'} 관련 환자군 확인하고 제품 내용을 간단히 디테일 진행함`;
+    buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
+  log = removeEmptyReactionRequests(log);
+  log = ensureProductFeatureOwnership(log);
+  log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
+  if (!log || log.length < 12) {
+    log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
+  }
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
   strategy = normalizeNextStrategy(strategy, doctor.department);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
+  strategy = removeEmptyReactionRequests(strategy);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
   if (log.length > 230) log = compressTextToLimit(log, 230);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
