@@ -383,18 +383,19 @@ function buildVisitLogRules(): string {
 금지 기호: 중간점(·), 불릿(•), 화살표(↑↓→←) 모두 금지. 증감은 "증가", "감소"로, 문장 구분은 콤마(,)만
 금지 표현: 짚음, 언급함, 설명함 → 대신 "디테일 진행함", "디테일 안내함" 사용
 금지 표현: 흐름이어서, 흐름으로, 다시 봄, 다시 말씀드림 → 대신 "드렸는데", "재확인함" 사용
-금지 표현: 제품 내용, 특장점 반응 확인, 반응 확인 요청, 특장점 반응 확인 요청, 요청 드림
+금지 표현: 제품 내용, 특장점 반응 확인, 반응 확인 요청, 특장점 반응 확인 요청, 요청 드림, 특장점 디테일 진행, 교수님께서 메모
 과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것. 같은 문장에 비슷한 테마를 두 개 이상 라벨처럼 이어 붙이지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
 철분제 표현: 경구 철분, 경구 철분제, 경구용 철분제, 먹는 철분제, oral iron, PO iron 등 경구 복용 철분제를 뜻하는 표현은 반드시 "경구용철분제"로 통일
 제품명: 제품 특장점 문장에는 반드시 제품명을 함께 쓸 것. 예: "아미노산 25% 증가" 금지, "위너프에이플러스의 아미노산 25% 증가"로 작성
+디테일 내용: "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 말했는지 없는 문장 금지. 반드시 "페린젝트의 1회 투여와 Hb 회복 근거", "위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소"처럼 실제 내용 작성
 교수 반응: 반응을 쓸 때는 교수님께서 보인 실제 의견 형태로만 작성. 예: "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임". "특장점 반응 확인 요청"처럼 반응 확인을 교수에게 요청하는 문장 금지
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 메모처럼
 글자수: 본문 230자 이내 / 다음방문전략 120자 이내
 다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 조성 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
 본문 종결: 영업일지 본문에는 다음 방문 계획을 넣지 말 것. "다음 방문에는", "다음번에는", "다음방문시에는" 문장은 다음방문전략에만 작성
-미도입 제품: 대부분은 특장점 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
+미도입 제품: 대부분은 실제 제품 근거/환자군 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
 따옴표: 큰따옴표("), 작은따옴표(') 절대 금지`;
 }
 
@@ -768,7 +769,11 @@ function normalizeIntroProductLanguage(
 ): string {
   const activeIntroProducts = activeProducts.filter((product) => INTRO_PRODUCTS.has(product));
   const finalAllowNewDrugReview = allowNewDrugReview && activeIntroProducts.length > 0;
-  const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : '특장점 디테일 진행';
+  const mainProduct = activeProducts[0] || '위너프에이플러스';
+  const concreteDetail = mainProduct === '페린젝트'
+    ? '페린젝트의 1회 투여와 Hb 회복 근거 디테일 진행'
+    : '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소 디테일 진행';
+  const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : concreteDetail;
   const activeIntroducedProducts = activeProducts.filter((product) => !INTRO_PRODUCTS.has(product));
 
   const cleaned = text
@@ -789,11 +794,11 @@ function normalizeIntroProductLanguage(
     .filter(Boolean)
     .map((sentence) => {
       if (!sentence.includes('신약여부검토 요청')) return sentence;
-      if (!finalAllowNewDrugReview) return sentence.replace(/신약여부검토 요청/g, '특장점 디테일 진행');
+      if (!finalAllowNewDrugReview) return sentence.replace(/신약여부검토 요청/g, concreteDetail);
       const hasIntroProductInSentence = activeIntroProducts.some((product) => sentence.includes(product));
       const hasIntroducedProductInSentence = activeIntroducedProducts.some((product) => sentence.includes(product));
       if (hasIntroducedProductInSentence && !hasIntroProductInSentence) {
-        return sentence.replace(/신약여부검토 요청/g, '특장점 디테일 진행');
+        return sentence.replace(/신약여부검토 요청/g, concreteDetail);
       }
       return sentence;
     });
@@ -1038,6 +1043,62 @@ function buildFallbackVisitLog(product: string, department: string): string {
   return `${product}의 ${detail} 중심으로 디테일 진행함`;
 }
 
+function hasVacuousDetailLanguage(text: string): boolean {
+  const compact = text.replace(/\s+/g, '');
+  return /(?:특장점|제품디테일|제품내용)(?:을|를)?(?:중심으로)?(?:디테일|안내|진행|전달)/.test(compact);
+}
+
+function removeUnrealisticProfessorMetaSentences(text: string): string {
+  return text
+    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .filter((sentence) => !/교수님께서.*(?:메모|기록|적어|필기)/.test(sentence))
+    .filter((sentence) => !/(?:반응\s*확인|확인\s*요청|요청\s*드림)/.test(sentence))
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function hasRepeatedDetailBetweenLogAndStrategy(log: string, strategy: string): boolean {
+  const pairs = [
+    ['1회', '편의'],
+    ['1회', '투여'],
+    ['Hb', '회복'],
+    ['급여', '조건'],
+    ['아미노산', '25%'],
+    ['포도당', '부담'],
+    ['경구용철분제', '비교'],
+    ['수혈', '부담'],
+  ];
+  const compactLog = log.replace(/\s+/g, '');
+  const compactStrategy = strategy.replace(/\s+/g, '');
+  return pairs.some((pair) =>
+    pair.every((keyword) => compactLog.includes(keyword.replace(/\s+/g, ''))) &&
+    pair.every((keyword) => compactStrategy.includes(keyword.replace(/\s+/g, '')))
+  );
+}
+
+function buildFollowUpStrategyWithoutRepeatingDetail(log: string, product: string, department: string): string {
+  const compact = log.replace(/\s+/g, '');
+  if (product === '페린젝트') {
+    if (compact.includes('1회') || compact.includes('편의')) {
+      return '다음방문시에는 페린젝트 적용 가능 환자군과 급여 기준 확인할예정';
+    }
+    if (compact.includes('급여')) {
+      return '다음방문시에는 페린젝트 투여 후 Hb 회복 반응과 외래 적용 케이스 확인할예정';
+    }
+    return '다음방문시에는 페린젝트 실제 사용 케이스와 Hb 회복 반응 확인할예정';
+  }
+
+  if (compact.includes('아미노산') || compact.includes('포도당')) {
+    return '다음방문시에는 위너프에이플러스 적용 환자군과 영양 공급 반응 확인할예정';
+  }
+  const themeRule = getDeptFeatureRule(department);
+  const theme = themeRule?.allowedThemes[0] || '환자군';
+  return `다음방문시에는 ${product} ${theme} 적용 케이스 확인할예정`;
+}
+
 function ensureProductNameInLog(text: string, activeProducts: string[], department: string): string {
   const products = activeProducts.length > 0 ? activeProducts : getAllowedProductsForDepartment(department);
   const mentioned = products.some((product) => text.includes(product));
@@ -1063,6 +1124,13 @@ function ensureProductFeatureOwnership(text: string): string {
 
 function removeEmptyReactionRequests(text: string): string {
   return text
+    .replace(/반응\s*확인\s*요청도\s*드림/g, '')
+    .replace(/반응\s*확인\s*요청도드림/g, '')
+    .replace(/반응\s*확인\s*드림/g, '')
+    .replace(/반응확인\s*요청도\s*드림/g, '')
+    .replace(/반응확인\s*요청도드림/g, '')
+    .replace(/반응확인\s*요청/g, '')
+    .replace(/반응확인/g, '')
     .replace(/특장점\s*반응\s*확인\s*드림/g, '')
     .replace(/특장점\s*반응\s*확인함/g, '')
     .replace(/특장점\s*반응\s*확인/g, '')
@@ -1841,6 +1909,9 @@ ${strategy}
 ㉕ "제품 내용", "특장점 반응 확인", "반응 확인 요청", "특장점 반응 확인 요청", "요청 드림" 사용 금지
 ㉖ 교수 반응은 실제 의견/반응으로만 작성. "확인 요청"이 아니라 "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임"처럼 구체 반응이어야 함
 ㉗ 경구 복용 철분제를 뜻하는 표현은 모두 "경구용철분제"로 통일. "경구 철분", "경구 철분제", "경구용 철분제", "먹는 철분제", "oral iron", "PO iron"이면 FAIL
+㉘ "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 디테일했는지 빠진 문장은 FAIL. 반드시 제품명 + 실제 특장점/근거/환자군을 써야 함
+㉙ "교수님께서 메모하신다고 하심", "교수님께서 적어두신다고 하심" 같은 비현실적 메타 반응 금지. 반응은 처방/환자군/급여/사용경험에 대한 의견이어야 함
+㉚ 본문에서 이미 디테일한 핵심을 다음방문전략에서 그대로 반복 금지. 예: 본문에서 페린젝트 1회 투여 편의성을 디테일했으면 다음방문전략은 적용 가능 환자군, 급여 기준, 사용 반응 확인 등 다른 후속 액션이어야 함
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
@@ -1875,19 +1946,22 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   log = normalizeGeneratedMemoText(log, doctor.department);
   log = normalizeObjectionLanguage(log, activeProducts);
   log = removeEmptyReactionRequests(log);
+  log = removeUnrealisticProfessorMetaSentences(log);
   log = ensureProductFeatureOwnership(log);
   log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
   log = removeNextVisitPlanFromLog(log, doctor.department);
   log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
   log = removeEmptyReactionRequests(log);
+  log = removeUnrealisticProfessorMetaSentences(log);
   log = ensureProductFeatureOwnership(log);
   log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   log = removeDisallowedProductSentences(log, doctor.department) ||
     buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
   log = removeEmptyReactionRequests(log);
+  log = removeUnrealisticProfessorMetaSentences(log);
   log = ensureProductFeatureOwnership(log);
   log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
-  if (!log || log.length < 12) {
+  if (!log || log.length < 12 || hasVacuousDetailLanguage(log)) {
     log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
   }
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
@@ -1895,6 +1969,13 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
   strategy = removeEmptyReactionRequests(strategy);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
+  if (hasRepeatedDetailBetweenLogAndStrategy(log, strategy)) {
+    strategy = buildFollowUpStrategyWithoutRepeatingDetail(
+      log,
+      (activeProducts.length > 0 ? activeProducts[0] : finalAllowedProducts[0]) || '위너프에이플러스',
+      doctor.department
+    );
+  }
   if (log.length > 230) log = compressTextToLimit(log, 230);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
   if (!strategy || strategy.trim().length < 5) {
