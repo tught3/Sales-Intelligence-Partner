@@ -68,7 +68,7 @@ export default function DoctorDetailPage() {
 
   if (!doctor) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8 text-center">
+      <div className="p-3 sm:p-6 lg:p-8 text-center">
         <p className="text-muted-foreground mb-4">교수 프로파일을 찾을 수 없습니다</p>
         <Button variant="outline" onClick={() => setLocation("/doctors")}>목록으로 돌아가기</Button>
       </div>
@@ -186,8 +186,8 @@ export default function DoctorDetailPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl">
-      <div className="mb-6">
+    <div className="p-3 sm:p-6 lg:p-8 max-w-5xl">
+      <div className="mb-4 sm:mb-6">
         <button
           onClick={() => setLocation("/doctors")}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
@@ -203,17 +203,17 @@ export default function DoctorDetailPage() {
               <span>{doctor.hospital}, {doctor.department}</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:flex-wrap">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setShowEditForm(true)}
-              className="gap-1.5"
+              className="min-h-11 gap-1.5 sm:min-h-8"
             >
               <Pencil className="w-3.5 h-3.5" />
               편집
             </Button>
-            <Button onClick={handleGenerateStrategy} disabled={generatingStrategy} variant="outline" size="sm" className="gap-1.5">
+            <Button onClick={handleGenerateStrategy} disabled={generatingStrategy} variant="outline" size="sm" className="min-h-11 gap-1.5 sm:min-h-8">
               {generatingStrategy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
               전략 생성
             </Button>
@@ -242,13 +242,13 @@ export default function DoctorDetailPage() {
               AI 다음 방문 전략
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-3 sm:p-6">
             <pre className="text-sm text-foreground whitespace-pre-wrap font-sans leading-relaxed">{strategy}</pre>
           </CardContent>
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Visit History */}
         <div>
           <Card>
@@ -260,13 +260,13 @@ export default function DoctorDetailPage() {
                 </div>
                 <button
                   onClick={() => setLocation(`/visit-log?doctorId=${doctor.id}`)}
-                  className="text-xs text-primary hover:underline font-normal"
+                  className="touch-target -mr-2 text-xs text-primary hover:underline font-normal sm:min-h-0 sm:min-w-0"
                 >
                   + 일지 작성
                 </button>
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 sm:p-6">
               {logs.length === 0 ? (
                 <div className="text-center py-6">
                   <FileText className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
@@ -326,7 +326,7 @@ export default function DoctorDetailPage() {
                 반박 패턴 & 대응책
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 p-3 sm:p-6">
               <div className="space-y-2 p-3 bg-muted/30 rounded-lg">
                 <p className="text-xs font-semibold text-muted-foreground">새 반박 패턴 추가</p>
                 <Input
@@ -375,7 +375,7 @@ export default function DoctorDetailPage() {
                     <div key={obj.id} className="border rounded-lg p-3 relative group">
                       <button
                         onClick={() => handleDeleteObjection(obj.id)}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                        className="absolute top-2 right-2 touch-target opacity-80 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all lg:min-h-0 lg:min-w-0 lg:p-1 lg:opacity-0 lg:group-hover:opacity-100"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -407,7 +407,7 @@ export default function DoctorDetailPage() {
               </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 p-3 sm:p-6">
             <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-xs text-muted-foreground">
               <p className="font-medium text-primary mb-1">📋 사용법</p>
               <p>2월부터 일했던 내용, 방문 메모, 대화 내용 등을 그대로 붙여넣으세요. AI가 이 교수의 메모를 바탕으로 다음 방문 포인트를 제안합니다. 저장하면 영업 일지 생성 시 자동으로 참고합니다.</p>
@@ -430,7 +430,7 @@ export default function DoctorDetailPage() {
                 value={convText}
                 onChange={(e) => setConvText(e.target.value)}
                 rows={8}
-                className="text-sm resize-none"
+                className="min-h-44 text-sm resize-none"
               />
               <div className="flex gap-2">
                 <Button
@@ -513,7 +513,7 @@ export default function DoctorDetailPage() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteConvRecord(record.id); }}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                          className="touch-target opacity-80 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all lg:min-h-0 lg:min-w-0 lg:p-1 lg:opacity-0 lg:group-hover:opacity-100"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>

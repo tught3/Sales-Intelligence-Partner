@@ -205,19 +205,19 @@ export default function VisitLogHistoryPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <div className="mb-6">
+    <div className="p-3 sm:p-6 lg:p-8">
+      <div className="mb-4 sm:mb-6">
         <h1 className="text-2xl font-bold text-foreground">방문 일지 기록</h1>
         <p className="text-muted-foreground mt-1">병원별, 과별로 영업 일지를 조회하고 수정합니다</p>
       </div>
 
-      <div className="space-y-4 mb-6">
-        <div className="flex items-center gap-3">
+      <div className="sticky top-[69px] z-20 -mx-3 mb-5 space-y-3 border-y bg-background/95 px-3 py-3 backdrop-blur sm:static sm:mx-0 sm:mb-6 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
+        <div className="flex items-start gap-2 sm:items-center sm:gap-3">
           <Building2 className="w-4 h-4 text-muted-foreground" />
-          <div className="flex flex-wrap gap-2">
+          <div className="mobile-scroll-row sm:flex-wrap">
             <button
               onClick={() => handleHospitalChange("")}
-              className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
+              className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
                 !selectedHospital
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border text-muted-foreground hover:border-primary/50"
@@ -229,7 +229,7 @@ export default function VisitLogHistoryPage() {
               <button
                 key={h}
                 onClick={() => handleHospitalChange(h)}
-                className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
+                className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
                   selectedHospital === h
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border text-muted-foreground hover:border-primary/50"
@@ -242,12 +242,12 @@ export default function VisitLogHistoryPage() {
         </div>
 
         {selectedHospital && departments.length > 0 && (
-          <div className="flex items-center gap-3 pl-7">
+          <div className="flex items-start gap-2 pl-0 sm:items-center sm:gap-3 sm:pl-7">
             <Users className="w-4 h-4 text-muted-foreground" />
-            <div className="flex flex-wrap gap-2">
+            <div className="mobile-scroll-row sm:flex-wrap">
               <button
                 onClick={() => setSelectedDept("")}
-                className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                className={`shrink-0 min-h-9 px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
                   !selectedDept
                     ? "border-blue-500 bg-blue-500 text-white"
                     : "border-border text-muted-foreground hover:border-blue-400"
@@ -259,7 +259,7 @@ export default function VisitLogHistoryPage() {
                 <button
                   key={d}
                   onClick={() => setSelectedDept(d)}
-                  className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                  className={`shrink-0 min-h-9 px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
                     selectedDept === d
                       ? "border-blue-500 bg-blue-500 text-white"
                       : "border-border text-muted-foreground hover:border-blue-400"
@@ -297,7 +297,7 @@ export default function VisitLogHistoryPage() {
                 onClick={() => { if (!isEditing) startEdit(log); }}
               >
                 <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm text-foreground">
                         {doc ? doc.name : "?"}
@@ -309,7 +309,7 @@ export default function VisitLogHistoryPage() {
                         </>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between gap-2 sm:justify-end">
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
                         {log.visitDate}
@@ -319,7 +319,7 @@ export default function VisitLogHistoryPage() {
                           <Pencil className="w-3 h-3 text-muted-foreground opacity-50 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" />
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDelete(log.id); }}
-                            className="opacity-50 lg:opacity-0 lg:group-hover:opacity-100 p-1 hover:text-destructive transition-all rounded"
+                            className="touch-target opacity-70 lg:min-h-0 lg:min-w-0 lg:opacity-0 lg:group-hover:opacity-100 p-1 hover:text-destructive transition-all rounded"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -335,13 +335,13 @@ export default function VisitLogHistoryPage() {
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
                         rows={6}
-                        className="text-sm resize-none"
+                        className="min-h-40 text-sm resize-none"
                       />
                       <div className="flex gap-2 justify-end">
                         <Button size="sm" variant="ghost" onClick={cancelEdit} className="gap-1">
                           <X className="w-3.5 h-3.5" /> 취소
                         </Button>
-                        <Button size="sm" onClick={() => saveEdit(log)} className="gap-1">
+                        <Button size="sm" onClick={() => saveEdit(log)} className="min-h-10 gap-1 sm:min-h-8">
                           <Check className="w-3.5 h-3.5" /> 저장
                         </Button>
                       </div>

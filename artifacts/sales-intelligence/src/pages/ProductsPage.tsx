@@ -524,7 +524,10 @@ export default function ProductsPage() {
           effectiveness: 4,
           createdAt: new Date().toISOString(),
         };
-        snippetStorage.save(s);
+        const saveResult = snippetStorage.save(s);
+        if (saveResult.duplicate) {
+          continue;
+        }
         count++;
       }
       toast({

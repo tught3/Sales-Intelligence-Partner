@@ -1,49 +1,63 @@
-import { useState, useEffect } from "react";
+import { Suspense, lazy, useState, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { initStorage, initDefaultData } from "@/lib/storage";
+import { hydrateLocalCache, initStorage, initDefaultData } from "@/lib/storage";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
 import Layout from "@/components/Layout";
-import DoctorsPage from "@/pages/DoctorsPage";
-import DoctorDetailPage from "@/pages/DoctorDetailPage";
-import VisitLogPage from "@/pages/VisitLogPage";
-import SnippetsPage from "@/pages/SnippetsPage";
-import DashboardPage from "@/pages/DashboardPage";
-import ProductsPage from "@/pages/ProductsPage";
-import SettingsPage from "@/pages/SettingsPage";
-import BulkImportPage from "@/pages/BulkImportPage";
-import VisitLogHistoryPage from "@/pages/VisitLogHistoryPage";
+
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const DoctorsPage = lazy(() => import("@/pages/DoctorsPage"));
+const DoctorDetailPage = lazy(() => import("@/pages/DoctorDetailPage"));
+const VisitLogPage = lazy(() => import("@/pages/VisitLogPage"));
+const VisitLogHistoryPage = lazy(() => import("@/pages/VisitLogHistoryPage"));
+const ProductsPage = lazy(() => import("@/pages/ProductsPage"));
+const SnippetsPage = lazy(() => import("@/pages/SnippetsPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const BulkImportPage = lazy(() => import("@/pages/BulkImportPage"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient();
 
 function Router() {
   return (
     <Layout>
-      <Switch>
-        <Route path="/" component={DashboardPage} />
-        <Route path="/doctors" component={DoctorsPage} />
-        <Route path="/doctors/:id" component={DoctorDetailPage} />
-        <Route path="/visit-log" component={VisitLogPage} />
-        <Route path="/visit-log-history" component={VisitLogHistoryPage} />
-        <Route path="/products" component={ProductsPage} />
-        <Route path="/snippets" component={SnippetsPage} />
-        <Route path="/settings" component={SettingsPage} />
-        <Route path="/bulk-import" component={BulkImportPage} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<RouteFallback />}>
+        <Switch>
+          <Route path="/" component={DashboardPage} />
+          <Route path="/doctors" component={DoctorsPage} />
+          <Route path="/doctors/:id" component={DoctorDetailPage} />
+          <Route path="/visit-log" component={VisitLogPage} />
+          <Route path="/visit-log-history" component={VisitLogHistoryPage} />
+          <Route path="/products" component={ProductsPage} />
+          <Route path="/snippets" component={SnippetsPage} />
+          <Route path="/settings" component={SettingsPage} />
+          <Route path="/bulk-import" component={BulkImportPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </Layout>
   );
 }
 
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[45vh] items-center justify-center px-4">
+      <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary" />
+    </div>
+  );
+}
+
 function App() {
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(() => hydrateLocalCache());
+  const [syncVersion, setSyncVersion] = useState(0);
 
   useEffect(() => {
+    setReady(true);
     initStorage()
       .then(() => {
         setReady(true);
+        setSyncVersion((version) => version + 1);
         initDefaultData().catch(console.error);
       })
       .catch(() => setReady(true));
@@ -64,7 +78,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <Router key={syncVersion} />
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

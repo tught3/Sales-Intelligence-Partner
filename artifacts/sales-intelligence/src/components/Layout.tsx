@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useDeviceClass } from "@/hooks/use-mobile";
 import {
   LayoutDashboard,
   Users,
@@ -43,16 +44,25 @@ const navGroups = [
   },
 ];
 
+const mobileNavItems = [
+  { href: "/", label: "홈", icon: LayoutDashboard },
+  { href: "/visit-log", label: "작성", icon: FileText },
+  { href: "/visit-log-history", label: "일지", icon: ClipboardList },
+  { href: "/doctors", label: "교수", icon: Users },
+];
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const deviceClass = useDeviceClass();
+  const isMobile = deviceClass === "mobile";
 
   useEffect(() => {
     setSidebarOpen(false);
   }, [location]);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen overflow-x-hidden">
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/40 z-40 lg:hidden"
@@ -131,8 +141,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="flex-1 lg:ml-64 min-h-screen bg-background">
-        <div className="lg:hidden sticky top-0 z-30 bg-background border-b px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setSidebarOpen(true)} className="p-1">
+        <div className="lg:hidden sticky top-0 z-30 bg-background/95 backdrop-blur border-b px-3 sm:px-4 py-3 flex items-center gap-3 mobile-safe-top">
+          <button onClick={() => setSidebarOpen(true)} className="touch-target -ml-1 rounded-lg hover:bg-muted">
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
@@ -142,8 +152,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <span className="text-sm font-bold">JW 영업 AI 비서</span>
           </div>
         </div>
-        {children}
+        <div className={cn(isMobile && "mobile-page-shell")}>{children}</div>
       </main>
+      {isMobile && (
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur mobile-safe-bottom">
+          <div className="grid grid-cols-4 px-2 py-1.5">
+            {mobileNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                item.href === "/"
+                  ? location === "/"
+                  : location === item.href || (item.href !== "/visit-log" && location.startsWith(item.href));
+              return (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => setLocation(item.href)}
+                  className={cn(
+                    "flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-colors",
+                    isActive ? "bg-primary/10 text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
     </div>
   );
 }

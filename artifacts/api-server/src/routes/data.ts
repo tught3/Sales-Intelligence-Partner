@@ -107,6 +107,72 @@ function cleanPointWord(value: string) {
     .trim();
 }
 
+type SnippetLike = {
+  id: string;
+  content: string;
+  context: string;
+  tags: string[];
+  product: string;
+};
+
+function normalizeSnippetTextForSimilarity(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/포인트/g, "디테일")
+    .replace(/[^\p{L}\p{N}%]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getSnippetDetailTokens(snippet: SnippetLike): Set<string> {
+  const stopWords = new Set([
+    "교수", "교수님", "환자", "사용", "처방", "설명", "강조", "디테일", "내용", "근거",
+    "제품", "관련", "경우", "가능", "진행", "확인", "안내", "활용", "상황", "비교",
+  ]);
+  return new Set(
+    normalizeSnippetTextForSimilarity(`${snippet.product} ${snippet.content} ${snippet.context} ${snippet.tags.join(" ")}`)
+      .split(/\s+/)
+      .filter((word) => word.length >= 2 && !stopWords.has(word))
+  );
+}
+
+function snippetNgramSimilarity(a: string, b: string): number {
+  const left = normalizeSnippetTextForSimilarity(a).replace(/\s+/g, "");
+  const right = normalizeSnippetTextForSimilarity(b).replace(/\s+/g, "");
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  if (shorter.length >= 12 && longer.includes(shorter)) return 1;
+  const size = Math.min(3, shorter.length);
+  const grams = (value: string) => {
+    const result = new Set<string>();
+    for (let i = 0; i <= value.length - size; i++) result.add(value.slice(i, i + size));
+    return result;
+  };
+  const leftGrams = grams(left);
+  const rightGrams = grams(right);
+  let overlap = 0;
+  for (const gram of leftGrams) {
+    if (rightGrams.has(gram)) overlap++;
+  }
+  return overlap / Math.max(leftGrams.size, rightGrams.size, 1);
+}
+
+function snippetDetailSimilarity(a: SnippetLike, b: SnippetLike): number {
+  if (normalizeSnippetProduct(a.product) !== normalizeSnippetProduct(b.product)) return 0;
+  const aTokens = getSnippetDetailTokens(a);
+  const bTokens = getSnippetDetailTokens(b);
+  const union = new Set([...aTokens, ...bTokens]);
+  let intersection = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) intersection++;
+  }
+  const tokenScore = union.size ? intersection / union.size : 0;
+  const textScore = snippetNgramSimilarity(`${a.content} ${a.context}`, `${b.content} ${b.context}`);
+  return Math.max(tokenScore, textScore);
+}
+
 function prepHospital(h: any) {
   return {
     id: h.id,
@@ -309,6 +375,27 @@ router.get("/snippets", wrap(async (_req, res) => {
 
 router.post("/snippets", wrap(async (req, res) => {
   const data = prepSnippet(req.body);
+  const existing = await db.select().from(goldenSnippets);
+  const duplicate = existing.find((row) => row.id !== data.id && snippetDetailSimilarity(
+    {
+      id: data.id,
+      content: data.content,
+      context: data.context,
+      tags: data.tags as string[],
+      product: data.product,
+    },
+    {
+      id: row.id,
+      content: row.content,
+      context: row.context,
+      tags: row.tags as string[],
+      product: row.product,
+    }
+  ) >= 0.68);
+  if (duplicate) {
+    res.status(409).json({ error: "duplicate", message: "이미 같은 디테일의 핵심멘트가 있습니다." });
+    return;
+  }
   await db.insert(goldenSnippets).values(data).onConflictDoUpdate({
     target: goldenSnippets.id,
     set: stripId(data),

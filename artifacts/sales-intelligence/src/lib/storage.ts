@@ -129,6 +129,15 @@ function loadLocalCache(): boolean {
   }
 }
 
+export function hydrateLocalCache(): boolean {
+  if (cache.loaded) return true;
+  const restored = loadLocalCache();
+  if (restored) {
+    cache.loaded = true;
+  }
+  return restored;
+}
+
 async function api(path: string, method = 'GET', body?: any) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 12000);
@@ -390,7 +399,7 @@ async function migrateConversationHistoryToVisitLogs(): Promise<void> {
 }
 
 export async function initStorage(): Promise<void> {
-  if (cache.loaded) return;
+  const hadLocalCache = hydrateLocalCache();
   try {
     const [docs, logs, snips, mans] = await Promise.all([
       api('/doctors'),
@@ -406,9 +415,8 @@ export async function initStorage(): Promise<void> {
     cache.loaded = true;
     persistLocalCache();
   } catch (e) {
-    const restored = loadLocalCache();
     console.error(
-      restored
+      hadLocalCache
         ? 'Failed to load data from server, restored local backup:'
         : 'Failed to load data from server, falling back to empty state:',
       e
@@ -579,6 +587,95 @@ export function getDoctorVisitCount(doctor: Doctor | undefined): number {
   return conversationVisitCount;
 }
 
+function normalizeSnippetTextForSimilarity(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/포인트/g, '디테일')
+    .replace(/[^\p{L}\p{N}%]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getSnippetDetailTokens(snippet: Pick<GoldenSnippet, 'content' | 'context' | 'tags' | 'product'>): Set<string> {
+  const text = normalizeSnippetTextForSimilarity(
+    `${snippet.product} ${snippet.content} ${snippet.context} ${(snippet.tags ?? []).join(' ')}`
+  );
+  const stopWords = new Set([
+    '교수', '교수님', '환자', '사용', '처방', '설명', '강조', '디테일', '내용', '근거',
+    '제품', '관련', '경우', '가능', '진행', '확인', '안내', '활용', '상황', '비교',
+  ]);
+  return new Set(
+    text
+      .split(/\s+/)
+      .map((word) => word.trim())
+      .filter((word) => word.length >= 2)
+      .filter((word) => !stopWords.has(word))
+  );
+}
+
+function snippetNgramSimilarity(a: string, b: string): number {
+  const left = normalizeSnippetTextForSimilarity(a).replace(/\s+/g, '');
+  const right = normalizeSnippetTextForSimilarity(b).replace(/\s+/g, '');
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  if (shorter.length >= 12 && longer.includes(shorter)) return 1;
+  const size = Math.min(3, shorter.length);
+  const grams = (value: string) => {
+    const result = new Set<string>();
+    for (let i = 0; i <= value.length - size; i++) result.add(value.slice(i, i + size));
+    return result;
+  };
+  const leftGrams = grams(left);
+  const rightGrams = grams(right);
+  let overlap = 0;
+  for (const gram of leftGrams) {
+    if (rightGrams.has(gram)) overlap++;
+  }
+  return overlap / Math.max(leftGrams.size, rightGrams.size, 1);
+}
+
+export function snippetDetailSimilarity(
+  a: Pick<GoldenSnippet, 'content' | 'context' | 'tags' | 'product'>,
+  b: Pick<GoldenSnippet, 'content' | 'context' | 'tags' | 'product'>
+): number {
+  if (normalizeSnippetProduct(a.product) !== normalizeSnippetProduct(b.product)) return 0;
+  const aTokens = getSnippetDetailTokens(a);
+  const bTokens = getSnippetDetailTokens(b);
+  const union = new Set([...aTokens, ...bTokens]);
+  let intersection = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) intersection++;
+  }
+  const tokenScore = union.size ? intersection / union.size : 0;
+  const textScore = snippetNgramSimilarity(
+    `${a.content} ${a.context}`,
+    `${b.content} ${b.context}`
+  );
+  return Math.max(tokenScore, textScore);
+}
+
+function findSimilarSnippet(
+  snippet: GoldenSnippet,
+  pool: GoldenSnippet[],
+  threshold = 0.68
+): GoldenSnippet | undefined {
+  return pool.find((existing) =>
+    existing.id !== snippet.id && snippetDetailSimilarity(snippet, existing) >= threshold
+  );
+}
+
+function chooseSnippetToKeep(a: GoldenSnippet, b: GoldenSnippet): GoldenSnippet {
+  if ((a.effectiveness ?? 0) !== (b.effectiveness ?? 0)) {
+    return (a.effectiveness ?? 0) > (b.effectiveness ?? 0) ? a : b;
+  }
+  const aHasContext = a.context.trim().length > 0 ? 1 : 0;
+  const bHasContext = b.context.trim().length > 0 ? 1 : 0;
+  if (aHasContext !== bHasContext) return aHasContext > bHasContext ? a : b;
+  return a.createdAt <= b.createdAt ? a : b;
+}
+
 export const snippetStorage = {
   getAll(): GoldenSnippet[] {
     return [...cache.snippets];
@@ -586,9 +683,13 @@ export const snippetStorage = {
   getByProduct(product: string): GoldenSnippet[] {
     return cache.snippets.filter((s) => s.product === product);
   },
-  save(snippet: GoldenSnippet): void {
+  save(snippet: GoldenSnippet): SaveOutcome {
     const normalized = normalizeSnippet(snippet);
     const idx = cache.snippets.findIndex((s) => s.id === normalized.id);
+    const similar = findSimilarSnippet(normalized, cache.snippets);
+    if (similar) {
+      return { saved: false, duplicate: true, message: '이미 같은 디테일의 핵심멘트가 있습니다.' };
+    }
     if (idx >= 0) {
       cache.snippets[idx] = normalized;
     } else {
@@ -603,6 +704,35 @@ export const snippetStorage = {
       product: normalized.product,
       effectiveness: normalized.effectiveness,
     }).catch(console.error);
+    return { saved: true };
+  },
+  findSimilar(snippet: GoldenSnippet): GoldenSnippet | undefined {
+    return findSimilarSnippet(normalizeSnippet(snippet), cache.snippets);
+  },
+  pruneSimilar(): { removed: GoldenSnippet[]; kept: GoldenSnippet[] } {
+    const kept: GoldenSnippet[] = [];
+    const removed: GoldenSnippet[] = [];
+    for (const snippet of [...cache.snippets].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+      const similar = findSimilarSnippet(snippet, kept);
+      if (!similar) {
+        kept.push(snippet);
+        continue;
+      }
+      const winner = chooseSnippetToKeep(similar, snippet);
+      const loser = winner.id === similar.id ? snippet : similar;
+      if (winner.id !== similar.id) {
+        const idx = kept.findIndex((item) => item.id === similar.id);
+        if (idx >= 0) kept[idx] = winner;
+      }
+      removed.push(loser);
+    }
+    if (removed.length > 0) {
+      const removedIds = new Set(removed.map((snippet) => snippet.id));
+      cache.snippets = kept.filter((snippet) => !removedIds.has(snippet.id));
+      persistLocalCache();
+      removed.forEach((snippet) => api(`/snippets/${snippet.id}`, 'DELETE').catch(console.error));
+    }
+    return { removed, kept: cache.snippets };
   },
   delete(id: string): void {
     cache.snippets = cache.snippets.filter((s) => s.id !== id);

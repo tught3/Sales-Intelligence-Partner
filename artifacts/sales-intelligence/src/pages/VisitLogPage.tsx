@@ -338,15 +338,15 @@ export default function VisitLogPage() {
     }`;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <div className="mb-6">
+    <div className="p-3 sm:p-6 lg:p-8">
+      <div className="mb-4 sm:mb-6">
         <h1 className="text-xl sm:text-2xl font-bold text-foreground">영업 일지 작성</h1>
         <p className="text-sm text-muted-foreground mt-1">과거 방문 맥락과 교수 성향을 자동으로 참고합니다</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
         <div className="lg:col-span-3 space-y-4">
-          <div className="flex gap-1 p-1 bg-muted rounded-lg w-full sm:w-fit overflow-x-auto">
+          <div className="mobile-scroll-row sm:w-fit sm:overflow-visible p-1 bg-muted rounded-lg">
             <button className={tabClass('manual')} onClick={() => setActiveTab('manual')}>
               <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> 메모 변환</span>
             </button>
@@ -360,17 +360,17 @@ export default function VisitLogPage() {
 
           {(activeTab === 'manual' || activeTab === 'auto') && (
             <Card>
-              <CardContent className="p-5 space-y-4">
+              <CardContent className="p-3 sm:p-5 space-y-4">
                 <div className="space-y-3">
                   <Label className="flex items-center gap-1.5">
                     <Building2 className="w-3.5 h-3.5" />
                     병원 선택
                   </Label>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="mobile-scroll-row sm:flex-wrap">
                     {activeTab !== 'auto' && (
                       <button
                         onClick={() => handleHospitalChange("")}
-                        className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
+                        className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
                           !selectedHospital
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-border text-muted-foreground hover:border-primary/50"
@@ -383,7 +383,7 @@ export default function VisitLogPage() {
                       <button
                         key={h}
                         onClick={() => handleHospitalChange(h)}
-                        className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
+                        className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border font-medium transition-all ${
                           selectedHospital === h
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-border text-muted-foreground hover:border-primary/50"
@@ -400,10 +400,10 @@ export default function VisitLogPage() {
                         <Users className="w-3.5 h-3.5" />
                         진료과 선택
                       </Label>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="mobile-scroll-row sm:flex-wrap">
                         <button
                           onClick={() => handleDeptChange("")}
-                          className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                          className={`shrink-0 min-h-9 px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
                             !selectedDept
                               ? "border-blue-500 bg-blue-500 text-white"
                               : "border-border text-muted-foreground hover:border-blue-400"
@@ -415,7 +415,7 @@ export default function VisitLogPage() {
                           <button
                             key={d}
                             onClick={() => handleDeptChange(d)}
-                            className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                            className={`shrink-0 min-h-9 px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
                               selectedDept === d
                                 ? "border-blue-500 bg-blue-500 text-white"
                                 : "border-border text-muted-foreground hover:border-blue-400"
@@ -438,7 +438,7 @@ export default function VisitLogPage() {
                         <select
                           value={selectedDoctorId}
                           onChange={(e) => { setSelectedDoctorId(e.target.value); resetResult(); }}
-                          className="w-full appearance-none border border-input bg-background rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring pr-8"
+                          className="w-full min-h-11 appearance-none border border-input bg-background rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring pr-8"
                         >
                           <option value="">교수를 선택하세요...</option>
                           {filteredDoctors.map((d) => (
@@ -524,13 +524,13 @@ export default function VisitLogPage() {
 
                     <div className="space-y-1.5">
                       <Label>관련 제품</Label>
-                      <div className="flex gap-2">
+                      <div className="mobile-scroll-row sm:flex-wrap">
                         {PRODUCTS.map((p) => (
                           <button
                             key={p}
                             type="button"
                             onClick={() => toggleProduct(p)}
-                            className={`px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
+                            className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
                               selectedProducts.includes(p)
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-border text-muted-foreground hover:border-primary/50"
@@ -556,13 +556,13 @@ export default function VisitLogPage() {
                         value={rawNotes}
                         onChange={(e) => setRawNotes(e.target.value)}
                         rows={6}
-                        className="text-sm resize-none"
+                        className="min-h-36 text-sm resize-none"
                       />
                     </div>
                     <Button
                       onClick={handleGenerate}
                       disabled={!selectedDoctorId || !rawNotes.trim() || isGenerating}
-                      className="w-full gap-2"
+                      className="w-full min-h-12 gap-2 sm:min-h-9"
                     >
                       {isGenerating ? (
                         <><Loader2 className="w-4 h-4 animate-spin" />일지를 다듬는 중...</>
@@ -627,7 +627,7 @@ export default function VisitLogPage() {
                     <Button
                       onClick={handleBulkAutoGenerate}
                       disabled={!selectedHospital || filteredDoctors.length === 0 || isAutoGenerating}
-                      className="w-full gap-2"
+                      className="w-full min-h-12 gap-2 sm:min-h-9"
                     >
                       {isAutoGenerating ? (
                         <><Loader2 className="w-4 h-4 animate-spin" />일괄 메모를 다듬는 중...</>
@@ -674,7 +674,7 @@ export default function VisitLogPage() {
 
           {activeTab === 'import' && (
             <Card>
-              <CardContent className="p-5 space-y-4">
+              <CardContent className="p-3 sm:p-5 space-y-4">
                 <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg text-sm">
                   <Info className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                   <div>

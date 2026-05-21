@@ -82,12 +82,12 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial, editM
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[100dvh] max-w-lg overflow-y-auto p-4 sm:max-h-[90vh] sm:p-6 max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
         <DialogHeader>
           <DialogTitle>{editMode ? "교수 프로파일 편집" : "교수 프로파일 추가"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>이름 *</Label>
               <Input placeholder="홍길동" value={name} onChange={(e) => setName(e.target.value)} />
@@ -97,7 +97,7 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial, editM
               <Input placeholder="교수" value={position} onChange={(e) => setPosition(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>병원 *</Label>
               <Input placeholder="서울대병원" value={hospital} onChange={(e) => setHospital(e.target.value)} />
@@ -116,7 +116,7 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial, editM
                   key={p.label}
                   type="button"
                   onClick={() => addPresetTrait(p)}
-                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${COLOR_CLASSES[p.color]} ${traits.find(t => t.label === p.label) ? 'opacity-40' : ''}`}
+                  className={`min-h-9 text-xs px-2.5 py-1 rounded-full font-medium transition-all ${COLOR_CLASSES[p.color]} ${traits.find(t => t.label === p.label) ? 'opacity-40' : ''}`}
                 >
                   + {p.label}
                 </button>
@@ -148,7 +148,7 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial, editM
                     key={c}
                     type="button"
                     onClick={() => setSelectedColor(c)}
-                    className={`w-5 h-5 rounded-full border-2 transition-all ${
+                    className={`w-7 h-7 sm:w-5 sm:h-5 rounded-full border-2 transition-all ${
                       c === 'blue' ? 'bg-blue-400' :
                       c === 'green' ? 'bg-green-400' :
                       c === 'yellow' ? 'bg-amber-400' :
@@ -174,7 +174,7 @@ export default function DoctorFormDialog({ open, onClose, onSave, initial, editM
             />
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>취소</Button>
           <Button onClick={handleSave} disabled={!name.trim() || !hospital.trim() || !department.trim()}>
             {editMode ? "수정 저장" : "저장"}

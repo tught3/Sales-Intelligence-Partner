@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { snippetStorage, generateId, type GoldenSnippet } from "@/lib/storage";
 import { analyzeSnippetEffectiveness, generateSnippetsFromManuals } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -111,6 +111,17 @@ export default function SnippetsPage() {
   const [analysisResult, setAnalysisResult] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
 
+  useEffect(() => {
+    const result = snippetStorage.pruneSimilar();
+    if (result.removed.length > 0) {
+      setSnippets(snippetStorage.getAll());
+      toast({
+        title: `유사 핵심멘트 ${result.removed.length}건을 정리했습니다`,
+        description: "같은 디테일을 말만 바꾼 항목은 높은 품질 항목만 남겼습니다.",
+      });
+    }
+  }, [toast]);
+
   const filtered = useMemo(() => {
     return snippets
       .filter((s) => {
@@ -142,7 +153,11 @@ export default function SnippetsPage() {
       effectiveness,
       createdAt: new Date().toISOString(),
     };
-    snippetStorage.save(snippet);
+    const saveResult = snippetStorage.save(snippet);
+    if (saveResult.duplicate) {
+      toast({ title: "유사한 핵심멘트입니다", description: saveResult.message, variant: "destructive" });
+      return;
+    }
     setSnippets(snippetStorage.getAll());
     setContent("");
     setContext("");
@@ -179,7 +194,10 @@ export default function SnippetsPage() {
         if (isDuplicateSnippet(snippet, [...existing, ...accepted])) {
           continue;
         }
-        snippetStorage.save(snippet);
+        const saveResult = snippetStorage.save(snippet);
+        if (saveResult.duplicate) {
+          continue;
+        }
         accepted.push(snippet);
         count++;
       }
@@ -216,18 +234,18 @@ export default function SnippetsPage() {
   }, [snippets]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 sm:mb-8">
+    <div className="p-3 sm:p-6 lg:p-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-foreground">핵심 멘트 라이브러리</h1>
           <p className="text-muted-foreground mt-1">효과적인 영업 멘트를 저장하고 AI 분석으로 활용도를 높이세요</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleAutoGenerate} disabled={generating} variant="outline" className="gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Button onClick={handleAutoGenerate} disabled={generating} variant="outline" className="min-h-11 w-full min-w-0 gap-1.5 px-2 text-xs sm:min-h-9 sm:gap-2 sm:px-4 sm:text-sm">
             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
             {generating ? "생성 중..." : "AI 자동 생성"}
           </Button>
-          <Button onClick={() => setShowForm(!showForm)} className="gap-2">
+          <Button onClick={() => setShowForm(!showForm)} className="min-h-11 w-full min-w-0 gap-1.5 px-2 text-xs sm:min-h-9 sm:gap-2 sm:px-4 sm:text-sm">
             <Plus className="w-4 h-4" />
             멘트 추가
           </Button>
@@ -344,20 +362,20 @@ export default function SnippetsPage() {
       )}
 
       {/* Search & filter */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+      <div className="sticky top-[69px] z-20 -mx-3 mb-5 flex flex-col gap-3 border-y bg-background/95 px-3 py-3 backdrop-blur sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="멘트 검색..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="min-h-11 pl-9"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="mobile-scroll-row sm:flex-wrap">
           <button
             onClick={() => setFilterProduct("")}
-            className={`px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
+            className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
               !filterProduct ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
             }`}
           >
@@ -367,7 +385,7 @@ export default function SnippetsPage() {
             <button
               key={p}
               onClick={() => setFilterProduct(filterProduct === p ? "" : p)}
-              className={`px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
+              className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
                 filterProduct === p ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
               }`}
             >
@@ -379,9 +397,9 @@ export default function SnippetsPage() {
 
       {/* Stats row */}
       {snippets.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="mobile-scroll-row mb-5 sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible lg:grid-cols-4">
           {PRODUCTS.map((p) => (
-            <div key={p} className="border rounded-lg p-3">
+            <div key={p} className="min-w-32 shrink-0 border rounded-lg p-3 sm:min-w-0">
               <p className="text-xs text-muted-foreground mb-1">{p}</p>
               <p className="text-2xl font-bold text-foreground">{topByProduct[p].length > 0 ? snippets.filter(s => s.product === p).length : 0}</p>
               <p className="text-xs text-muted-foreground">개 멘트</p>
