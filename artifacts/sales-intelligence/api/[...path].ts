@@ -7,6 +7,10 @@ export const config = {
 };
 
 let readyPromise: Promise<void> | undefined;
+const handleRequest = app as unknown as (
+  req: IncomingMessage,
+  res: ServerResponse,
+) => void;
 
 function ensureReady() {
   readyPromise ??= runDataMigrations();
@@ -18,5 +22,5 @@ export default async function handler(
   res: ServerResponse,
 ) {
   await ensureReady();
-  return app(req, res);
+  handleRequest(req, res);
 }
