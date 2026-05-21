@@ -79,6 +79,8 @@ export type SaveOutcome = {
 export const API_BASE = import.meta.env.VITE_API_SERVER_URL ||
   (import.meta.env.DEV ? 'http://localhost:4201' : '');
 
+const LOCAL_CACHE_KEY = 'jw_sales_intelligence_backup_v1';
+
 const cache: {
   doctors: Doctor[];
   visitLogs: VisitLog[];
@@ -92,6 +94,40 @@ const cache: {
   manuals: [],
   loaded: false,
 };
+
+function serializeCache() {
+  return {
+    doctors: cache.doctors,
+    visitLogs: cache.visitLogs,
+    snippets: cache.snippets,
+    manuals: cache.manuals,
+    savedAt: new Date().toISOString(),
+  };
+}
+
+function persistLocalCache(): void {
+  try {
+    window.localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(serializeCache()));
+  } catch (e) {
+    console.error('Failed to persist local data backup:', e);
+  }
+}
+
+function loadLocalCache(): boolean {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_CACHE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    cache.doctors = (data.doctors || []).map(normalizeDoctor);
+    cache.visitLogs = (data.visitLogs || []).map(normalizeVisitLog);
+    cache.snippets = (data.snippets || []).map(normalizeSnippet);
+    cache.manuals = (data.manuals || []).map(normalizeManual);
+    return true;
+  } catch (e) {
+    console.error('Failed to load local data backup:', e);
+    return false;
+  }
+}
 
 async function api(path: string, method = 'GET', body?: any) {
   const controller = new AbortController();
@@ -368,8 +404,15 @@ export async function initStorage(): Promise<void> {
     cache.manuals = (mans || []).map(normalizeManual);
     await migrateConversationHistoryToVisitLogs();
     cache.loaded = true;
+    persistLocalCache();
   } catch (e) {
-    console.error('Failed to load data from server, falling back to empty state:', e);
+    const restored = loadLocalCache();
+    console.error(
+      restored
+        ? 'Failed to load data from server, restored local backup:'
+        : 'Failed to load data from server, falling back to empty state:',
+      e
+    );
     cache.loaded = true;
   }
 }
@@ -410,8 +453,10 @@ export const doctorStorage = {
     const visitSave = visitLogStorage.save(migratedLog);
     if (visitSave.duplicate) {
       cache.doctors[idx].conversationHistory = conversationHistory;
+      persistLocalCache();
       return { saved: false, duplicate: true, message: visitSave.message };
     }
+    persistLocalCache();
     api('/doctors', 'POST', doctorToApi(cache.doctors[idx])).catch(console.error);
     return { saved: true };
   },
@@ -421,6 +466,7 @@ export const doctorStorage = {
     cache.doctors[idx].conversationHistory = (cache.doctors[idx].conversationHistory ?? []).filter((r) => r.id !== recordId);
     cache.doctors[idx].updatedAt = new Date().toISOString();
     visitLogStorage.delete(`migrated-${recordId}`);
+    persistLocalCache();
     api('/doctors', 'POST', doctorToApi(cache.doctors[idx])).catch(console.error);
   },
   getByHospital(hospital: string): Doctor[] {
@@ -437,10 +483,12 @@ export const doctorStorage = {
     } else {
       cache.doctors.push({ ...doctor, updatedAt: now });
     }
+    persistLocalCache();
     api('/doctors', 'POST', doctorToApi(doctor)).catch(console.error);
   },
   delete(id: string): void {
     cache.doctors = cache.doctors.filter((d) => d.id !== id);
+    persistLocalCache();
     api(`/doctors/${id}`, 'DELETE').catch(console.error);
   },
 };
@@ -496,6 +544,7 @@ export const visitLogStorage = {
     } else {
       cache.visitLogs.push(log);
     }
+    persistLocalCache();
     api('/visit-logs', 'POST', {
       id: log.id,
       doctorId: log.doctorId,
@@ -510,6 +559,7 @@ export const visitLogStorage = {
   },
   delete(id: string): void {
     cache.visitLogs = cache.visitLogs.filter((v) => v.id !== id);
+    persistLocalCache();
     api(`/visit-logs/${id}`, 'DELETE').catch(console.error);
   },
 };
@@ -544,6 +594,7 @@ export const snippetStorage = {
     } else {
       cache.snippets.push(normalized);
     }
+    persistLocalCache();
     api('/snippets', 'POST', {
       id: normalized.id,
       content: normalized.content,
@@ -555,6 +606,7 @@ export const snippetStorage = {
   },
   delete(id: string): void {
     cache.snippets = cache.snippets.filter((s) => s.id !== id);
+    persistLocalCache();
     api(`/snippets/${id}`, 'DELETE').catch(console.error);
   },
 };
@@ -578,6 +630,7 @@ export const manualStorage = {
     } else {
       cache.manuals.push({ ...manual, updatedAt: now });
     }
+    persistLocalCache();
     api('/manuals', 'POST', {
       id: manual.id,
       title: manual.title,
@@ -587,6 +640,7 @@ export const manualStorage = {
   },
   delete(id: string): void {
     cache.manuals = cache.manuals.filter((m) => m.id !== id);
+    persistLocalCache();
     api(`/manuals/${id}`, 'DELETE').catch(console.error);
   },
 };
@@ -596,8 +650,13 @@ export function generateId(): string {
 }
 
 export async function exportAllData(): Promise<string> {
-  const data = await api('/export', 'POST');
-  return JSON.stringify(data, null, 2);
+  try {
+    const data = await api('/export', 'POST');
+    return JSON.stringify(data, null, 2);
+  } catch (e) {
+    console.error('Failed to export from server, exporting local backup:', e);
+    return JSON.stringify(serializeCache(), null, 2);
+  }
 }
 
 export async function importAllData(jsonText: string): Promise<{ success: boolean; error?: string }> {
@@ -605,6 +664,7 @@ export async function importAllData(jsonText: string): Promise<{ success: boolea
     const data = JSON.parse(jsonText);
     await api('/import', 'POST', data);
     await refreshCache();
+    persistLocalCache();
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
