@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import app from "../../api-server/src/app";
-import { runDataMigrations } from "../../api-server/src/bootstrap";
+import app from "../../api-server/src/app.js";
+import { runDataMigrations } from "../../api-server/src/bootstrap.js";
 
 export const config = {
   maxDuration: 60,
