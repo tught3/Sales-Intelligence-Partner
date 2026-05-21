@@ -1,7 +1,4 @@
-import { db, pool } from "@workspace/db";
-import { doctors } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
-import { logger } from "./lib/logger";
+import { pool } from "@workspace/db";
 
 export async function ensureDatabaseSchema() {
   await pool.query(`
@@ -91,30 +88,31 @@ export async function runDataMigrations() {
   try {
     await ensureDatabaseSchema();
 
-    const migrations: Array<{ id: string; field: string; value: string }> = [
-      { id: "doc-1775561165326-4", field: "department", value: "간담췌외과" },
-      { id: "doc-1775561202710-5", field: "department", value: "간담췌외과" },
+    const migrations: Array<{ id: string; value: string }> = [
+      { id: "doc-1775561165326-4", value: "간담췌외과" },
+      { id: "doc-1775561202710-5", value: "간담췌외과" },
     ];
 
     for (const m of migrations) {
-      const [doc] = await db.select().from(doctors).where(eq(doctors.id, m.id));
+      const { rows } = await pool.query<{ department: string }>(
+        "SELECT department FROM doctors WHERE id = $1",
+        [m.id],
+      );
+      const doc = rows[0];
 
       if (doc && doc.department !== m.value) {
-        await db
-          .update(doctors)
-          .set({
-            department: m.value,
-            updatedAt: new Date(),
-          })
-          .where(eq(doctors.id, m.id));
+        await pool.query(
+          "UPDATE doctors SET department = $1, updated_at = now() WHERE id = $2",
+          [m.value, m.id],
+        );
 
-        logger.info(
+        console.info(
           { id: m.id, from: doc.department, to: m.value },
           "Data migration applied",
         );
       }
     }
   } catch (e) {
-    logger.warn({ err: e }, "Data migration skipped");
+    console.warn({ err: e }, "Data migration skipped");
   }
 }
