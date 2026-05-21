@@ -1081,6 +1081,16 @@ function hasRepeatedDetailBetweenLogAndStrategy(log: string, strategy: string): 
 
 function buildFollowUpStrategyWithoutRepeatingDetail(log: string, product: string, department: string): string {
   const compact = log.replace(/\s+/g, '');
+  const allowedProducts = getAllowedProductsForDepartment(department);
+  const otherProduct = allowedProducts.find((allowedProduct) => allowedProduct !== product);
+
+  if (otherProduct === '위너프에이플러스' && (compact.includes('1회') || compact.includes('편의') || compact.includes('Hb') || compact.includes('급여'))) {
+    return '다음방문시에는 위너프에이플러스 적용 환자군과 영양 공급 반응 확인할예정';
+  }
+  if (otherProduct === '페린젝트' && (compact.includes('아미노산') || compact.includes('포도당') || compact.includes('영양'))) {
+    return '다음방문시에는 페린젝트 빈혈 케이스와 급여 적용 가능 환자군 확인할예정';
+  }
+
   if (product === '페린젝트') {
     if (compact.includes('1회') || compact.includes('편의')) {
       return '다음방문시에는 페린젝트 적용 가능 환자군과 급여 기준 확인할예정';
