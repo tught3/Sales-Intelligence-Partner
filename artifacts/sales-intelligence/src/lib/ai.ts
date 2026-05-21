@@ -242,6 +242,38 @@ function buildRecentDetailMemory(pastLogs: VisitLog[]): string {
 - 최근 방문과 같은 수치/근거/환자군/오브젝션 흐름으로 돌아가지 말 것\n`;
 }
 
+function buildPreviousStrategyCarryoverNote(
+  pastLogs: VisitLog[],
+  activeProducts: string[],
+  department: string
+): string {
+  if (Math.random() >= 0.5) return '';
+  const latestStrategy = pastLogs[0]?.nextStrategy?.trim();
+  if (!latestStrategy) return '';
+
+  const normalizedStrategy = normalizeNextStrategy(latestStrategy, department)
+    .replace(/^다음방문시에는\s*/g, '')
+    .trim();
+  if (!normalizedStrategy || normalizedStrategy.length < 8) return '';
+
+  const allowedProducts = activeProducts.length > 0 ? activeProducts : getAllowedProductsForDepartment(department);
+  const relatedProducts = allowedProducts.filter((product) => normalizedStrategy.includes(product));
+  if (relatedProducts.length === 0 && !/급여|재\s*디테일|재디테일|처방|반응|확인|빈혈|철분|Hb|아미노산|포도당|영양/.test(normalizedStrategy)) {
+    return '';
+  }
+
+  return `\n★★★ 이전 다음방문전략 연결 후보:
+- 가장 최근 기록의 다음방문전략: ${normalizedStrategy.slice(0, 140)}
+- 이번 일지는 약 50% 확률로 이 전략을 실제 수행한 방문처럼 이어 작성합니다. 이 지시가 보이면 가능한 한 이어 쓰세요.
+- 단, 본문에 "다음방문시에는", "다음 방문에는" 같은 계획 문구를 그대로 넣지 말고, 이번 방문에서 실행한 내용으로 바꿔 쓰세요.
+- 권장 흐름: 지난 방문에 말한 내용 확인, 실제 사용/검토 여부 질문, 교수님 답변/반응 반영, 같은 주제 보강 또는 다른 디테일 진행.
+- 예: "지난 방문에 페린젝트 급여조건 확인드린 뒤 외래 때 써보신다고 하셨는데, 사용 여부 여쭤보니 교수님께서 괜찮았다고 하심. Hb 회복 근거와 1회 투여 편의성 재디테일 진행함"
+- 예: "지난 방문에 급여조건 재확인드렸는데, 교수님께서 기준은 알고 있으나 적용 케이스가 많지 않다고 하심. 철결핍 빈혈 환자군 기준과 외래 투여 편의성 중심으로 안내함"
+- 부정적 반응을 만들 때는 이유까지 같이 쓰세요. 예: "교수님께서 비용 부담으로 외래 적용은 제한적이라고 하심. 급여 기준에 맞는 철결핍 빈혈 케이스부터 보시면 된다고 안내함"
+- 처방을 직접 늘려달라는 표현 대신, "적용 가능 케이스 확인", "해당 환자군에서 검토"처럼 자연스럽게 마무리하세요.
+- 모순되거나 과와 맞지 않으면 억지로 이어 쓰지 말고 오늘 과에 맞는 디테일로 전환하세요.\n`;
+}
+
 function snippetOverlapScore(snippet: ReturnType<typeof snippetStorage.getAll>[number], recentTexts: string[]): number {
   const content = `${snippet.content} ${snippet.context ?? ''}`.toLowerCase();
   const keywords = getSnippetKeywords(content);
@@ -354,6 +386,7 @@ function buildVisitLogRules(): string {
 금지 표현: 제품 내용, 특장점 반응 확인, 반응 확인 요청, 특장점 반응 확인 요청, 요청 드림
 과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것. 같은 문장에 비슷한 테마를 두 개 이상 라벨처럼 이어 붙이지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
+철분제 표현: 경구 철분, 경구 철분제, 경구용 철분제, 먹는 철분제, oral iron, PO iron 등 경구 복용 철분제를 뜻하는 표현은 반드시 "경구용철분제"로 통일
 제품명: 제품 특장점 문장에는 반드시 제품명을 함께 쓸 것. 예: "아미노산 25% 증가" 금지, "위너프에이플러스의 아미노산 25% 증가"로 작성
 교수 반응: 반응을 쓸 때는 교수님께서 보인 실제 의견 형태로만 작성. 예: "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임". "특장점 반응 확인 요청"처럼 반응 확인을 교수에게 요청하는 문장 금지
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
@@ -432,6 +465,16 @@ function normalizeObjectionLanguage(text: string, activeProducts: string[] = [])
     .trim();
 }
 
+function normalizeOralIronTerminology(text: string): string {
+  return text
+    .replace(/\b(?:oral|p\.?\s*o\.?)\s*(?:iron|fe)\b/gi, '경구용철분제')
+    .replace(/먹는\s*철분(?:제)?/g, '경구용철분제')
+    .replace(/경구\s*용\s*철분\s*제/g, '경구용철분제')
+    .replace(/경구\s*철분\s*제/g, '경구용철분제')
+    .replace(/경구\s*철분/g, '경구용철분제')
+    .replace(/경구용\s*철분/g, '경구용철분제');
+}
+
 function normalizeMemoTone(text: string): string {
   const replacements: Array<[RegExp, string]> = [
     [/단회\s*투여/gi, '1회 투여'],
@@ -503,12 +546,12 @@ function normalizeMemoTone(text: string): string {
     result = result.replace(pattern, replacement);
   }
 
-  return result
+  return normalizeOralIronTerminology(result
     .replace(/\s*,\s*/g, ', ')
     .replace(/\s+([.,!?])/g, '$1')
     .replace(/[.]{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
-    .trim();
+    .trim());
 }
 
 function reducePointWordUsage(text: string): string {
@@ -1592,10 +1635,11 @@ export async function autoGenerateVisitLog(
   const agIntroNote = buildIntroNote(activeProducts, agAllowNewDrugReview);
   const agThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
   const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
+  const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
   const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agBatchAvoidNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
+${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원명과 과명에 맞게.)
 아래 제품 디테일 후보 중 최근 방문에서 덜 쓴 내용 1개 이상을 반드시 반영하고, 최근 방문과 같은 수치/근거/환자군 조합으로 대체하지 마세요.
@@ -1796,6 +1840,7 @@ ${strategy}
 ㉔ 제품 특장점 문장에 제품명이 빠짐. 예: "아미노산 25% 증가와 포도당 감소"만 쓰면 FAIL, "위너프에이플러스의 아미노산 25% 증가와 포도당 감소"로 수정
 ㉕ "제품 내용", "특장점 반응 확인", "반응 확인 요청", "특장점 반응 확인 요청", "요청 드림" 사용 금지
 ㉖ 교수 반응은 실제 의견/반응으로만 작성. "확인 요청"이 아니라 "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임"처럼 구체 반응이어야 함
+㉗ 경구 복용 철분제를 뜻하는 표현은 모두 "경구용철분제"로 통일. "경구 철분", "경구 철분제", "경구용 철분제", "먹는 철분제", "oral iron", "PO iron"이면 FAIL
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
