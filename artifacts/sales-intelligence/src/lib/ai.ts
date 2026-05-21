@@ -4,6 +4,8 @@ import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
 const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
 const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
+const MIN_VISIT_LOG_LENGTH = 100;
+const MAX_VISIT_LOG_LENGTH = 230;
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const res = await fetch(`${API_BASE}/api/ai/chat`, {
@@ -392,7 +394,7 @@ function buildVisitLogRules(): string {
 교수 반응: 반응을 쓸 때는 교수님께서 보인 실제 의견 형태로만 작성. 예: "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임". "특장점 반응 확인 요청"처럼 반응 확인을 교수에게 요청하는 문장 금지
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 메모처럼
-글자수: 본문 230자 이내 / 다음방문전략 120자 이내
+글자수: 본문 100자 이상 230자 이내 / 다음방문전략 120자 이내
 다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 조성 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
 본문 종결: 영업일지 본문에는 다음 방문 계획을 넣지 말 것. "다음 방문에는", "다음번에는", "다음방문시에는" 문장은 다음방문전략에만 작성
 미도입 제품: 대부분은 실제 제품 근거/환자군 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
@@ -1043,6 +1045,32 @@ function buildFallbackVisitLog(product: string, department: string): string {
   return `${product}의 ${detail} 중심으로 디테일 진행함`;
 }
 
+function buildDetailedVisitLog(product: string, department: string): string {
+  const detail = getFallbackDetailForProduct(product, department);
+  if (product === '페린젝트') {
+    return `${product}의 ${detail} 중심으로 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 적용 가능 환자군을 확인해보겠다는 의견 보임`;
+  }
+  return `${product}의 ${detail} 중심으로 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 실제 적용 환자군은 중환자 중심으로 보겠다는 의견 보임`;
+}
+
+function pickProductForLog(log: string, activeProducts: string[], department: string): string {
+  const allowedProducts = activeProducts.length > 0 ? activeProducts : getAllowedProductsForDepartment(department);
+  const mentionedProduct = allowedProducts.find((product) => log.includes(product));
+  if (mentionedProduct) return mentionedProduct;
+  const compact = log.replace(/\s+/g, '');
+  if (allowedProducts.includes('위너프에이플러스') && /아미노산|포도당|영양|중증|단백/.test(compact)) return '위너프에이플러스';
+  if (allowedProducts.includes('페린젝트') && /1회|Hb|빈혈|철결핍|급여|수혈/.test(compact)) return '페린젝트';
+  return allowedProducts[0] || '위너프에이플러스';
+}
+
+function expandVisitLogIfTooBrief(text: string, activeProducts: string[], department: string): string {
+  const normalized = text.replace(/\s{2,}/g, ' ').trim();
+  if (normalized.length >= MIN_VISIT_LOG_LENGTH) return normalized;
+  const product = pickProductForLog(normalized, activeProducts, department);
+  const detailed = buildDetailedVisitLog(product, department);
+  return detailed.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(detailed, MAX_VISIT_LOG_LENGTH) : detailed;
+}
+
 function hasVacuousDetailLanguage(text: string): boolean {
   const compact = text.replace(/\s+/g, '');
   return /(?:특장점|제품디테일|제품내용)(?:을|를)?(?:중심으로)?(?:디테일|안내|진행|전달)/.test(compact);
@@ -1590,7 +1618,7 @@ ${buildVisitLogRules()}
 
 응답 형식 (라벨 그대로 출력, 내용만 채울 것):
 ===영업일지===
-(230자 이내. 빈 줄 없이 이어서 작성)
+(100자 이상 230자 이내. 빈 줄 없이 이어서 작성)
 
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
@@ -1731,7 +1759,7 @@ ${buildVisitLogRules()}
 (해당 제품명, 쉼표 구분)
 
 ===영업일지===
-(230자 이내. 빈 줄 없이 이어서 작성)
+(100자 이상 230자 이내. 빈 줄 없이 이어서 작성)
 
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
@@ -1899,7 +1927,7 @@ ${strategy}
 ⑤ 페린젝트 "단회투여" / "단회 투여" → 반드시 "1회 투여"로
 ⑥ 보고서체 / 분석문: "분석하면", "정리하면", "전반적으로", "~겠습니다" 류
 ⑦ 교수 성향·처방 경향 직접 서술: "보수적 성향", "처방에 소극적" 등 텍스트 직접 표현
-⑧ 본문 230자 초과 (현재 ${log.length}자)
+⑧ 본문 100자 미만 또는 230자 초과 (현재 ${log.length}자). 너무 성의 없는 단문이면 제품명, 실제 디테일, 교수 반응, 후속 확인을 넣어 100자 이상으로 보강
 ⑨ 다음방문전략 120자 초과 (현재 ${strategy.length}자)
 ⑩ 다음방문전략이 "다음방문시에는" 으로 시작 안 함
 ⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
@@ -1974,6 +2002,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   if (!log || log.length < 12 || hasVacuousDetailLanguage(log)) {
     log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
   }
+  log = expandVisitLogIfTooBrief(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
   strategy = normalizeNextStrategy(strategy, doctor.department);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
@@ -1986,7 +2015,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
       doctor.department
     );
   }
-  if (log.length > 230) log = compressTextToLimit(log, 230);
+  if (log.length > MAX_VISIT_LOG_LENGTH) log = compressTextToLimit(log, MAX_VISIT_LOG_LENGTH);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
   if (!strategy || strategy.trim().length < 5) {
     const themeRule = getDeptFeatureRule(doctor.department);
