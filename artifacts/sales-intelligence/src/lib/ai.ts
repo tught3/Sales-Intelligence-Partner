@@ -1,5 +1,7 @@
 ﻿import type { Doctor, VisitLog } from './storage';
 import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
+import { runVisitGenerationPipeline } from './visit-generation/pipeline';
+import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
 
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
 const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
@@ -1664,11 +1666,12 @@ function buildIntroNote(focusProducts: string[], includeNewDrugReview = false): 
 → 도입 의향은 직접 묻지 말고 특장점만 자연스럽게 전달`;
 }
 
-export async function convertToVisitLog(
+async function convertToVisitLogBase(
   rawNotes: string,
   doctor: Doctor,
   pastLogs: VisitLog[],
-  selectedProducts: string[] = []
+  selectedProducts: string[] = [],
+  pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
@@ -1715,9 +1718,16 @@ export async function convertToVisitLog(
   const cvIntroNote = buildIntroNote(activeProducts, cvAllowNewDrugReview);
   const cvThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
   const cvRecentDetailMemory = buildRecentDetailMemory(pastLogs);
+  const cvPipelinePlanNote = pipelinePlan
+    ? `\n★ 파이프라인 생성 계획:
+- 원본 메모의 사실은 최우선으로 유지
+- 부족한 디테일은 제품 ${pipelinePlan.product}, 환자군 ${pipelinePlan.patientGroup}, 디테일 ${pipelinePlan.detailAxis} 중심으로 보강
+- 교수 반응은 "${pipelinePlan.doctorReaction}"처럼 실제 의견으로 작성
+- 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향으로 작성\n`
+    : '';
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
+${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvPipelinePlanNote}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
 아래 [원본 메모]를 변환합니다.
 
 ★★ 변환 원칙 (반드시 준수):
@@ -1808,11 +1818,12 @@ ${buildVisitLogRules()}
   };
 }
 
-export async function autoGenerateVisitLog(
+async function autoGenerateVisitLogBase(
   doctor: Doctor,
   pastLogs: VisitLog[],
   selectedProducts: string[] = [],
-  batchAvoidTexts: string[] = []
+  batchAvoidTexts: string[] = [],
+  pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
@@ -1863,9 +1874,19 @@ export async function autoGenerateVisitLog(
   const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
   const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
   const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
+  const agPipelinePlanNote = pipelinePlan
+    ? `\n★ 파이프라인 생성 계획 (반드시 준수):
+- 오늘 제품: ${pipelinePlan.product}
+- 오늘 환자군: ${pipelinePlan.patientGroup}
+- 오늘 디테일: ${pipelinePlan.detailAxis}
+- 교수 반응: ${pipelinePlan.doctorReaction}
+- 다음방문전략 방향: ${pipelinePlan.nextAction}
+- 선택 근거: ${pipelinePlan.selectionReason}
+지난 방문 기록에서 이어갈 만한 내용이 있으면 "지난 방문에 ~ 확인 후"처럼 실제 확인/반응까지 자연스럽게 연결하되, 오늘 디테일과 다음방문전략은 지난 방문 및 오늘 본문과 같은 디테일을 반복하지 말 것.\n`
+    : '';
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
+${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agPipelinePlanNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원명과 과명에 맞게.)
 아래 제품 디테일 후보 중 최근 방문에서 덜 쓴 내용 1개 이상을 반드시 반영하고, 최근 방문과 같은 수치/근거/환자군 조합으로 대체하지 마세요.
@@ -1968,6 +1989,84 @@ ${buildVisitLogRules()}
     products: products.length > 0 ? products : activeProducts,
     formattedLog: normalizeBatchRepeatedLanguage(agValidated.formattedLog, batchAvoidTexts),
     nextStrategy: normalizeBatchRepeatedLanguage(agValidated.nextStrategy, batchAvoidTexts),
+  };
+}
+
+function logPipelineTrace(result: { trace?: unknown }) {
+  if (import.meta.env.DEV && result.trace) {
+    console.debug('[PipelineTrace]', result.trace);
+  }
+}
+
+async function generateBaseFromExistingFlow(
+  input: VisitGenerationInput,
+  _plan: DetailKey
+) {
+  if (input.mode === 'manual') {
+    return convertToVisitLogBase(
+      input.manualRawNotes ?? '',
+      input.doctor,
+      input.pastLogs,
+      input.selectedProducts,
+      _plan
+    );
+  }
+
+  return autoGenerateVisitLogBase(
+    input.doctor,
+    input.pastLogs,
+    input.selectedProducts,
+    input.batchAvoidTexts,
+    _plan
+  );
+}
+
+export async function convertToVisitLog(
+  rawNotes: string,
+  doctor: Doctor,
+  pastLogs: VisitLog[],
+  selectedProducts: string[] = []
+): Promise<{ formattedLog: string; nextStrategy: string }> {
+  const result = await runVisitGenerationPipeline(
+    {
+      mode: 'manual',
+      doctor,
+      pastLogs,
+      selectedProducts,
+      batchAvoidTexts: [],
+      manualRawNotes: rawNotes,
+    },
+    { generateBase: generateBaseFromExistingFlow }
+  );
+  logPipelineTrace(result);
+  return {
+    formattedLog: result.formattedLog,
+    nextStrategy: result.nextStrategy,
+  };
+}
+
+export async function autoGenerateVisitLog(
+  doctor: Doctor,
+  pastLogs: VisitLog[],
+  selectedProducts: string[] = [],
+  batchAvoidTexts: string[] = []
+): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
+  const result = await runVisitGenerationPipeline(
+    {
+      mode: 'auto',
+      doctor,
+      pastLogs,
+      selectedProducts,
+      batchAvoidTexts,
+    },
+    { generateBase: generateBaseFromExistingFlow }
+  );
+  logPipelineTrace(result);
+  return {
+    formattedLog: result.formattedLog,
+    nextStrategy: result.nextStrategy,
+    visitDate: result.visitDate,
+    products: result.products,
   };
 }
 
