@@ -236,11 +236,13 @@ function buildRecentDetailMemory(pastLogs: VisitLog[]): string {
     .map((log) => `${log.formattedLog} ${log.nextStrategy ?? ''}`)
     .join(' ');
   const keywords = getSnippetKeywords(recentText);
-  if (keywords.length === 0) return '';
+  const detailKeys = extractDetailKeys(recentText);
+  if (keywords.length === 0 && detailKeys.length === 0) return '';
 
   return `\n★★★ 최근 사용한 디테일:
-- 최근에 이미 쓴 키워드: ${keywords.join(', ')}
-- 위 키워드와 같은 내용은 반복하지 말고, 아래 핵심멘트 후보 중 다른 디테일을 우선 사용할 것
+- 최근에 이미 쓴 키워드: ${keywords.join(', ') || '없음'}
+- 최근에 이미 쓴 디테일 축: ${detailKeys.join(', ') || '없음'}
+- 위 키워드/디테일 축과 같은 내용은 반복하지 말고, 아래 핵심멘트 후보 중 다른 디테일을 우선 사용할 것
 - 최근 방문과 같은 수치/근거/환자군/오브젝션 흐름으로 돌아가지 말 것\n`;
 }
 
@@ -388,7 +390,7 @@ function buildVisitLogRules(): string {
 금지 표현: 제품 내용, 특장점 반응 확인, 반응 확인 요청, 특장점 반응 확인 요청, 요청 드림, 특장점 디테일 진행, 교수님께서 메모
 과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것. 같은 문장에 비슷한 테마를 두 개 이상 라벨처럼 이어 붙이지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
-철분제 표현: 경구 철분, 경구 철분제, 경구용 철분제, 먹는 철분제, oral iron, PO iron 등 경구 복용 철분제를 뜻하는 표현은 반드시 "경구용철분제"로 통일
+철분제 표현: 경구 철분, 경구 철분제, 경구용 철분제, 경구용철분제제, 경구용철분제제제, 먹는 철분제, oral iron, PO iron 등 경구 복용 철분제를 뜻하는 표현은 반드시 "경구용철분제"로 통일
 제품명: 제품 특장점 문장에는 반드시 제품명을 함께 쓸 것. 예: "아미노산 25% 증가" 금지, "위너프에이플러스의 아미노산 25% 증가"로 작성
 디테일 내용: "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 말했는지 없는 문장 금지. 반드시 "페린젝트의 1회 투여와 Hb 회복 근거", "위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소"처럼 실제 내용 작성
 교수 반응: 반응을 쓸 때는 교수님께서 보인 실제 의견 형태로만 작성. 예: "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임". "특장점 반응 확인 요청"처럼 반응 확인을 교수에게 요청하는 문장 금지
@@ -472,6 +474,8 @@ function normalizeOralIronTerminology(text: string): string {
   return text
     .replace(/\b(?:oral|p\.?\s*o\.?)\s*(?:iron|fe)\b/gi, '경구용철분제')
     .replace(/먹는\s*철분(?:제)?/g, '경구용철분제')
+    .replace(/경구용\s*철분\s*제{1,4}/g, '경구용철분제')
+    .replace(/경구용철분제{2,5}/g, '경구용철분제')
     .replace(/경구\s*용\s*철분\s*제/g, '경구용철분제')
     .replace(/경구\s*철분\s*제/g, '경구용철분제')
     .replace(/경구\s*철분/g, '경구용철분제')
@@ -1071,6 +1075,117 @@ function expandVisitLogIfTooBrief(text: string, activeProducts: string[], depart
   return detailed.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(detailed, MAX_VISIT_LOG_LENGTH) : detailed;
 }
 
+function normalizeDetailComparableText(text: string): string {
+  return normalizeOralIronTerminology(text)
+    .replace(/더딘|늦는|늦은|느린|불충분|부족|미흡/g, '반응부족')
+    .replace(/편리성|편리|편의성/g, '편의')
+    .replace(/혈색소/g, 'Hb')
+    .replace(/급여\s*조건/g, '급여기준')
+    .replace(/급여\s*기준/g, '급여기준')
+    .replace(/\s+/g, '');
+}
+
+function extractDetailKeys(text: string): string[] {
+  const compact = normalizeDetailComparableText(text);
+  const keys = new Set<string>();
+
+  if (/경구용철분제/.test(compact) && /반응부족|반응|효과/.test(compact)) keys.add('oral-iron-response');
+  if (/1회/.test(compact) && /투여|편의/.test(compact)) keys.add('ferric-once-convenience');
+  if (/Hb/.test(compact) && /회복|상승|개선/.test(compact)) keys.add('hb-recovery');
+  if (/급여기준|급여|보험/.test(compact)) keys.add('reimbursement-criteria');
+  if (/외래/.test(compact) && /추적|내원|불편|부담|적용/.test(compact)) keys.add('outpatient-followup');
+  if (/아나필락시스|시험투여|테스트도즈/.test(compact)) keys.add('anaphylaxis-test-dose');
+  if (/수혈/.test(compact) && /부담|감소|회피|줄/.test(compact)) keys.add('transfusion-burden');
+  if (/페리틴|저인산|인산/.test(compact)) keys.add('ferritin-phosphate');
+
+  if (/아미노산/.test(compact) && /25%|증가|고함량/.test(compact)) keys.add('winuf-amino-acid');
+  if (/포도당/.test(compact) && /부담|감소|혈당/.test(compact)) keys.add('winuf-glucose-burden');
+  if (/중증|중환|ICU/.test(compact) && /영양|환자/.test(compact)) keys.add('critical-nutrition');
+  if (/단백|질소/.test(compact) && /보충|균형|강화/.test(compact)) keys.add('protein-nitrogen');
+  if (/오메가3|어유|염증/.test(compact)) keys.add('omega3-composition');
+  if (/3챔버|위너프와|기존위너프|비교|차이/.test(compact)) keys.add('winuf-comparison');
+
+  return [...keys];
+}
+
+function detailKeysFromTexts(texts: string[]): Set<string> {
+  return new Set(texts.flatMap(extractDetailKeys));
+}
+
+function hasAnyDetailKeyOverlap(text: string, usedKeys: Set<string>): boolean {
+  return extractDetailKeys(text).some((key) => usedKeys.has(key));
+}
+
+function getDetailKeyOverlap(a: string, b: string): string[] {
+  const bKeys = new Set(extractDetailKeys(b));
+  return extractDetailKeys(a).filter((key) => bKeys.has(key));
+}
+
+function getTextSimilarity(a: string, b: string): number {
+  const tokenize = (value: string) => normalizeOralIronTerminology(value)
+    .replace(/더딘|늦는|늦은|느린|불충분|부족|미흡/g, '반응부족')
+    .replace(/편리성|편리|편의성/g, '편의')
+    .replace(/혈색소/g, 'Hb')
+    .replace(/급여\s*조건/g, '급여기준')
+    .replace(/급여\s*기준/g, '급여기준')
+    .replace(/[^\p{L}\p{N}%]+/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+  const left = new Set(tokenize(a));
+  const right = new Set(tokenize(b));
+  if (left.size === 0 || right.size === 0) return 0;
+  const intersection = [...left].filter((token) => right.has(token)).length;
+  const union = new Set([...left, ...right]).size;
+  return intersection / union;
+}
+
+function hasBatchConflict(text: string, avoidTexts: string[]): boolean {
+  return avoidTexts.some((avoidText) =>
+    getDetailKeyOverlap(text, avoidText).length > 0 ||
+    getTextSimilarity(text, avoidText) >= 0.52
+  );
+}
+
+function buildDiversifiedVisitLog(
+  currentText: string,
+  activeProducts: string[],
+  department: string,
+  avoidTexts: string[]
+): string {
+  const allowedProducts = activeProducts.length > 0 ? activeProducts : getAllowedProductsForDepartment(department);
+  const usedKeys = new Set([
+    ...detailKeysFromTexts(avoidTexts),
+    ...extractDetailKeys(currentText),
+  ]);
+  const candidates = [
+    {
+      product: '위너프에이플러스',
+      keys: ['protein-nitrogen'],
+      text: '위너프에이플러스의 단백 보충과 질소균형 유지 측면을 중증 환자 영양 관리와 연결해 디테일 진행함. 교수님께서 수술 후 회복기 환자에서 영양 공급 반응을 확인해볼 수 있겠다는 의견 보임',
+    },
+    {
+      product: '위너프에이플러스',
+      keys: ['omega3-composition'],
+      text: '위너프에이플러스의 오메가3 조성과 염증 부담 환자군 적용 가능성을 중심으로 디테일 진행함. 교수님께서 감염 회복기나 장기 입원 환자에서 영양 공급 반응을 보겠다는 의견 보임',
+    },
+    {
+      product: '페린젝트',
+      keys: ['transfusion-burden'],
+      text: '페린젝트의 수술 전후 철결핍 빈혈에서 수혈 부담을 줄일 수 있는 근거 중심으로 디테일 진행함. 교수님께서 수혈을 피하고 싶은 환자군에서 적용 가능성을 확인해보겠다는 의견 보임',
+    },
+    {
+      product: '페린젝트',
+      keys: ['hb-recovery'],
+      text: '페린젝트의 Hb 회복 근거를 외래 추적이 어려운 철결핍 빈혈 환자군과 연결해 디테일 진행함. 교수님께서 경구용철분제 복용 지속이 어려운 환자에서 검토 가능하다는 의견 보임',
+    },
+  ].filter((candidate) => allowedProducts.includes(candidate.product));
+
+  const selected = candidates.find((candidate) => candidate.keys.every((key) => !usedKeys.has(key))) || candidates[0];
+  if (!selected) return expandVisitLogIfTooBrief(currentText, allowedProducts, department);
+  return selected.text.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(selected.text, MAX_VISIT_LOG_LENGTH) : selected.text;
+}
+
 function hasVacuousDetailLanguage(text: string): boolean {
   const compact = text.replace(/\s+/g, '');
   return /(?:특장점|제품디테일|제품내용)(?:을|를)?(?:중심으로)?(?:디테일|안내|진행|전달)/.test(compact);
@@ -1088,7 +1203,9 @@ function removeUnrealisticProfessorMetaSentences(text: string): string {
     .trim();
 }
 
-function hasRepeatedDetailBetweenLogAndStrategy(log: string, strategy: string): boolean {
+function hasRepeatedDetailBetweenLogAndStrategy(log: string, strategy: string, usedKeys: Set<string> = new Set()): boolean {
+  if (getDetailKeyOverlap(log, strategy).length > 0) return true;
+  if (hasAnyDetailKeyOverlap(strategy, usedKeys)) return true;
   const pairs = [
     ['1회', '편의'],
     ['1회', '투여'],
@@ -1107,31 +1224,31 @@ function hasRepeatedDetailBetweenLogAndStrategy(log: string, strategy: string): 
   );
 }
 
-function buildFollowUpStrategyWithoutRepeatingDetail(log: string, product: string, department: string): string {
+function buildFollowUpStrategyWithoutRepeatingDetail(
+  log: string,
+  product: string,
+  department: string,
+  usedKeys: Set<string> = new Set()
+): string {
   const compact = log.replace(/\s+/g, '');
   const allowedProducts = getAllowedProductsForDepartment(department);
   const otherProduct = allowedProducts.find((allowedProduct) => allowedProduct !== product);
 
-  if (otherProduct === '위너프에이플러스' && (compact.includes('1회') || compact.includes('편의') || compact.includes('Hb') || compact.includes('급여'))) {
-    return '다음방문시에는 위너프에이플러스 적용 환자군과 영양 공급 반응 확인할예정';
-  }
-  if (otherProduct === '페린젝트' && (compact.includes('아미노산') || compact.includes('포도당') || compact.includes('영양'))) {
-    return '다음방문시에는 페린젝트 빈혈 케이스와 급여 적용 가능 환자군 확인할예정';
-  }
+  const candidates = [
+    otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 전후 영양 공급 반응과 적용 환자군 확인할예정' : '',
+    otherProduct === '페린젝트' ? '다음방문시에는 페린젝트 수술 전후 빈혈 케이스와 수혈 부담 감소 근거 확인할예정' : '',
+    '다음방문시에는 페린젝트 급여 기준과 외래 적용 가능 환자군 확인할예정',
+    '다음방문시에는 페린젝트 투여 후 Hb 회복 반응과 실제 사용 케이스 확인할예정',
+    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형 적용 환자군 확인할예정',
+    '다음방문시에는 위너프에이플러스 오메가3 조성과 염증 부담 환자군 확인할예정',
+  ].filter(Boolean);
 
-  if (product === '페린젝트') {
-    if (compact.includes('1회') || compact.includes('편의')) {
-      return '다음방문시에는 페린젝트 적용 가능 환자군과 급여 기준 확인할예정';
-    }
-    if (compact.includes('급여')) {
-      return '다음방문시에는 페린젝트 투여 후 Hb 회복 반응과 외래 적용 케이스 확인할예정';
-    }
-    return '다음방문시에는 페린젝트 실제 사용 케이스와 Hb 회복 반응 확인할예정';
-  }
+  const selected = candidates.find((candidate) =>
+    getDetailKeyOverlap(log, candidate).length === 0 &&
+    !hasAnyDetailKeyOverlap(candidate, usedKeys)
+  );
+  if (selected) return selected;
 
-  if (compact.includes('아미노산') || compact.includes('포도당')) {
-    return '다음방문시에는 위너프에이플러스 적용 환자군과 영양 공급 반응 확인할예정';
-  }
   const themeRule = getDeptFeatureRule(department);
   const theme = themeRule?.allowedThemes[0] || '환자군';
   return `다음방문시에는 ${product} ${theme} 적용 케이스 확인할예정`;
@@ -1410,12 +1527,15 @@ function buildBatchAvoidanceNote(avoidTexts: string[]): string {
     .filter(Boolean)
     .slice(-5);
   if (compact.length === 0) return '';
+  const detailKeys = [...detailKeysFromTexts(compact)];
 
   return `\n★★★ 이번 일괄 생성 중 이미 사용한 표현:
 ${compact.map((text, index) => `${index + 1}. ${text.slice(0, 180)}`).join('\n')}
+- 이미 사용한 디테일 축: ${detailKeys.join(', ') || '없음'}
 - 위 문장과 같은 오브젝션/답변/디테일 흐름 반복 금지
+- 위 디테일 축과 같은 내용은 단어를 바꿔도 반복 금지. 예: "경구용철분제 반응이 더딘 케이스"와 "경구용철분제 반응이 늦는 케이스"는 같은 내용
 - 특히 "비용 부담" + "필요한 케이스부터 보자" 같은 조합을 연속 생성 금지
-- 다른 환자군, 다른 반응, 다른 디테일로 작성\n`;
+- 다른 제품 또는 다른 환자군, 다른 반응, 다른 디테일로 작성\n`;
 }
 
 function normalizeBatchRepeatedLanguage(text: string, avoidTexts: string[]): string {
@@ -1909,6 +2029,7 @@ export async function validateAndFixVisitLog(
       return !allowedProducts.includes(normalized);
     });
   const batchAvoidNote = buildBatchAvoidanceNote(avoidTexts);
+  const avoidedDetailKeys = detailKeysFromTexts(avoidTexts);
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const reviewPrompt = `아래 영업일지를 검토하고, 문제가 있으면 즉시 수정한 버전을 출력하세요.
@@ -1946,10 +2067,12 @@ ${strategy}
 ㉔ 제품 특장점 문장에 제품명이 빠짐. 예: "아미노산 25% 증가와 포도당 감소"만 쓰면 FAIL, "위너프에이플러스의 아미노산 25% 증가와 포도당 감소"로 수정
 ㉕ "제품 내용", "특장점 반응 확인", "반응 확인 요청", "특장점 반응 확인 요청", "요청 드림" 사용 금지
 ㉖ 교수 반응은 실제 의견/반응으로만 작성. "확인 요청"이 아니라 "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임"처럼 구체 반응이어야 함
-㉗ 경구 복용 철분제를 뜻하는 표현은 모두 "경구용철분제"로 통일. "경구 철분", "경구 철분제", "경구용 철분제", "먹는 철분제", "oral iron", "PO iron"이면 FAIL
+㉗ 경구 복용 철분제를 뜻하는 표현은 모두 "경구용철분제"로 통일. "경구 철분", "경구 철분제", "경구용 철분제", "경구용철분제제제", "먹는 철분제", "oral iron", "PO iron"이면 FAIL
 ㉘ "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 디테일했는지 빠진 문장은 FAIL. 반드시 제품명 + 실제 특장점/근거/환자군을 써야 함
 ㉙ "교수님께서 메모하신다고 하심", "교수님께서 적어두신다고 하심" 같은 비현실적 메타 반응 금지. 반응은 처방/환자군/급여/사용경험에 대한 의견이어야 함
 ㉚ 본문에서 이미 디테일한 핵심을 다음방문전략에서 그대로 반복 금지. 예: 본문에서 페린젝트 1회 투여 편의성을 디테일했으면 다음방문전략은 적용 가능 환자군, 급여 기준, 사용 반응 확인 등 다른 후속 액션이어야 함
+㉛ 지난 방문, 오늘 본문, 다음방문전략, 이번 일괄 생성 내 다른 교수의 디테일 축은 모두 달라야 함. "더딘 케이스"와 "늦는 케이스"처럼 말만 바꾼 중복도 FAIL
+㉜ 이번 일괄 생성에서 다른 교수에게 이미 쓴 본문과 제품/환자군/교수 반응/다음 액션이 거의 같으면 FAIL. 교수별 병원, 과, 지난 기록에 맞게 다르게 작성
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
@@ -2002,17 +2125,21 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   if (!log || log.length < 12 || hasVacuousDetailLanguage(log)) {
     log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
   }
+  if (hasBatchConflict(log, avoidTexts)) {
+    log = buildDiversifiedVisitLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department, avoidTexts);
+  }
   log = expandVisitLogIfTooBrief(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
   strategy = normalizeNextStrategy(strategy, doctor.department);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
   strategy = removeEmptyReactionRequests(strategy);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
-  if (hasRepeatedDetailBetweenLogAndStrategy(log, strategy)) {
+  if (hasRepeatedDetailBetweenLogAndStrategy(log, strategy, avoidedDetailKeys) || hasBatchConflict(strategy, avoidTexts)) {
     strategy = buildFollowUpStrategyWithoutRepeatingDetail(
       log,
       (activeProducts.length > 0 ? activeProducts[0] : finalAllowedProducts[0]) || '위너프에이플러스',
-      doctor.department
+      doctor.department,
+      avoidedDetailKeys
     );
   }
   if (log.length > MAX_VISIT_LOG_LENGTH) log = compressTextToLimit(log, MAX_VISIT_LOG_LENGTH);
