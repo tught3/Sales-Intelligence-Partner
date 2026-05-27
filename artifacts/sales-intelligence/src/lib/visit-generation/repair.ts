@@ -1,4 +1,6 @@
 import type { VisitContext } from './context';
+import { isDuplicateOf } from './detailKeys';
+import { findAlternativePlan } from './planner';
 import type { DetailKey, RepairTarget, ValidationResult } from './types';
 
 export const MAX_REPAIR_ATTEMPTS = 2;
@@ -16,11 +18,28 @@ function limit(text: string, max: number): string {
 
 export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput {
   const formattedLog = limit(
-    `${plan.product}의 ${plan.detailAxis}을 ${plan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${plan.doctorReaction}하셨고, 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,
+    `${plan.patientGroup}에서 ${plan.detailAxis}을 디테일 진행함. 교수님께서 ${plan.doctorReaction} 보임`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${plan.nextAction}할예정`, 120);
   return { formattedLog, nextStrategy, usedFallback: true };
+}
+
+function hasOutputConflict(output: RepairOutput, ctx: VisitContext): boolean {
+  const combined = `${output.formattedLog} ${output.nextStrategy}`;
+  return isDuplicateOf(combined, ctx.batchAvoidTexts, 0.4) ||
+    isDuplicateOf(combined, ctx.pastLogs.map((log) => `${log.formattedLog} ${log.nextStrategy}`), 0.5);
+}
+
+function buildNonConflictingFallback(plan: DetailKey, ctx: VisitContext): RepairOutput {
+  const primary = buildFallback(plan, ctx);
+  if (!hasOutputConflict(primary, ctx)) return primary;
+
+  const alternative = findAlternativePlan(ctx, plan);
+  if (!alternative) return primary;
+
+  const diversified = buildFallback(alternative, ctx);
+  return hasOutputConflict(diversified, ctx) ? primary : diversified;
 }
 
 export async function repair(
@@ -31,9 +50,11 @@ export async function repair(
   target: RepairTarget,
   attempt: number
 ): Promise<RepairOutput> {
-  if (attempt >= MAX_REPAIR_ATTEMPTS) return buildFallback(plan, ctx);
+  const shouldReplan = validation.failTypes.includes('DUPLICATE_BATCH') || validation.failTypes.includes('DUPLICATE_PAST');
+  const repairPlan = shouldReplan ? findAlternativePlan(ctx, plan) ?? plan : plan;
+  if (attempt >= MAX_REPAIR_ATTEMPTS) return buildNonConflictingFallback(repairPlan, ctx);
 
-  const fallback = buildFallback(plan, ctx);
+  const fallback = buildNonConflictingFallback(repairPlan, ctx);
   if (target.field === 'nextStrategy') {
     return { formattedLog: current.formattedLog, nextStrategy: fallback.nextStrategy, usedFallback: false };
   }

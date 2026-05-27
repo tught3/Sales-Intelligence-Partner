@@ -1107,37 +1107,137 @@ function getActiveProductsForGeneration(selectedProducts: string[], department: 
   return allowed.slice(0, Math.min(2, allowed.length));
 }
 
+type FallbackVisitCandidate = {
+  product: string;
+  keys: string[];
+  detail: string;
+  log: string;
+};
+
+function buildVisitCandidatePool(product: string, department: string): FallbackVisitCandidate[] {
+  const pool: FallbackVisitCandidate[] = [];
+
+  if (product === '페린젝트') {
+    if (/산부인과|산과|부인과/.test(department)) {
+      pool.push(
+        {
+          product,
+          keys: ['ferric-once-convenience', 'reimbursement-criteria'],
+          detail: '수술 전 빈혈에서 급여 기준과 1회 투여 편의성',
+          log: '페린젝트의 수술 전 빈혈 급여 기준과 1회 투여 편의성을 산부인과 외래 일정과 연결해 디테일 진행함. 교수님께서 Hb 기준에 맞는 환자는 검토 가능하다는 의견 보임',
+        },
+        {
+          product,
+          keys: ['outpatient-followup', 'hb-recovery'],
+          detail: '분만 후 외래 추적 부담과 Hb 회복 근거',
+          log: '페린젝트의 Hb 회복 근거를 분만 후 외래 재방문이 어려운 빈혈 환자와 연결해 디테일 진행함. 교수님께서 추적 부담이 큰 환자에서는 편의성이 의미 있다는 반응 보임',
+        }
+      );
+    } else if (/신경외과|신경/.test(department)) {
+      pool.push(
+        {
+          product,
+          keys: ['transfusion-burden', 'hb-recovery'],
+          detail: '수술 전후 빈혈에서 수혈 부담 감소와 Hb 회복 근거',
+          log: '페린젝트의 수혈 부담 감소와 Hb 회복 근거를 신경외과 수술 전후 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수술 일정과 Hb 수치를 같이 보겠다는 반응 보임',
+        },
+        {
+          product,
+          keys: ['ferric-once-convenience', 'outpatient-followup'],
+          detail: '외래 추적이 어려운 빈혈 환자에서 1회 투여 편의성',
+          log: '페린젝트의 1회 투여 편의성을 신경외과 외래 추적이 어려운 빈혈 환자와 연결해 디테일 진행함. 교수님께서 재방문 부담이 큰 환자에서는 설명해볼 수 있다는 의견 보임',
+        }
+      );
+    } else {
+      pool.push(
+        {
+          product,
+          keys: ['transfusion-burden'],
+          detail: '수술 전후 빈혈에서 수혈 부담 감소 근거',
+          log: '페린젝트의 수혈 부담 감소 근거를 수술 전후 철결핍 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스에서는 처방 가능성을 확인해보겠다는 의견 보임',
+        },
+        {
+          product,
+          keys: ['ferric-once-convenience', 'hb-recovery'],
+          detail: '철결핍 빈혈에서 1회 투여 편의성과 Hb 회복 근거',
+          log: '페린젝트의 1회 투여 편의성과 Hb 회복 근거를 경구용철분제 복용 지속이 어려운 외래 빈혈 환자와 연결해 디테일 진행함. 교수님께서 편의성은 공감한다는 반응 보임',
+        }
+      );
+    }
+  } else {
+    if (/신경외과|신경/.test(department)) {
+      pool.push(
+        {
+          product,
+          keys: ['winuf-amino-acid', 'winuf-glucose-burden'],
+          detail: '고아미노산 조성과 혈당 부담 관리',
+          log: '위너프에이플러스의 고아미노산 조성과 혈당 부담 관리를 신경외과 수술 후 경구 섭취 지연 환자와 연결해 디테일 진행함. 교수님께서 장기 입원 환자 영양 유지 필요성은 공감하셨음',
+        },
+        {
+          product,
+          keys: ['protein-nitrogen'],
+          detail: '단백 보충과 질소균형 유지',
+          log: '위너프에이플러스의 단백 보충과 질소균형 유지 근거를 신경외과 회복기 환자 영양 공백과 연결해 디테일 진행함. 교수님께서 병동 사용 기준은 더 보겠다는 의견 보임',
+        }
+      );
+    } else if (/산부인과|산과|부인과/.test(department)) {
+      pool.push(
+        {
+          product,
+          keys: ['winuf-glucose-burden', 'protein-nitrogen'],
+          detail: '저포도당 조성과 단백 보충 균형',
+          log: '위너프에이플러스의 저포도당 조성과 단백 보충 균형을 산부인과 수술 후 식이 진행이 불안정한 환자와 연결해 디테일 진행함. 교수님께서 회복 지연 환자에서는 검토 가능하다는 의견 보임',
+        },
+        {
+          product,
+          keys: ['winuf-comparison'],
+          detail: '기존 3챔버 TPN 대비 영양 조성 차이',
+          log: '위너프에이플러스의 기존 3챔버 TPN 대비 영양 조성 차이를 산부인과 수술 후 영양 보강 상황과 연결해 디테일 진행함. 교수님께서 실제 사용 케이스는 많지 않다는 반응 보임',
+        }
+      );
+    } else {
+      pool.push(
+        {
+          product,
+          keys: ['protein-nitrogen'],
+          detail: '단백 공급량과 질소균형 보강',
+          log: '위너프에이플러스의 단백 공급량과 질소균형 보강을 외과 병동 수술 후 금식이 길어지는 환자와 연결해 디테일 진행함. 교수님께서 회복기 영양 공백을 줄이는 접근은 이해하셨음',
+        },
+        {
+          product,
+          keys: ['omega3-composition'],
+          detail: '오메가3 조성과 염증 부담 완화 근거',
+          log: '위너프에이플러스의 오메가3 조성과 염증 부담 완화 근거를 장기 입원 환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 감염 회복기 영양 반응을 보겠다는 의견 보임',
+        },
+        {
+          product,
+          keys: ['winuf-amino-acid', 'winuf-glucose-burden'],
+          detail: '아미노산 25% 증가와 포도당 부담 감소',
+          log: '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소를 수술 후 영양 공급이 필요한 환자와 연결해 디테일 진행함. 교수님께서 혈당과 단백 보충을 같이 보겠다는 의견 보임',
+        }
+      );
+    }
+  }
+
+  return pool;
+}
+
+function pickVisitCandidate(product: string, department: string, avoidTexts: string[] = []): FallbackVisitCandidate {
+  const pool = buildVisitCandidatePool(product, department);
+  const usedKeys = detailKeysFromTexts(avoidTexts);
+  return pool.find((candidate) => candidate.keys.every((key) => !usedKeys.has(key))) ?? pool[0];
+}
+
 function getFallbackDetailForProduct(product: string, department: string): string {
-  if (product === '페린젝트') {
-    if (/정형외과|산부인과|산과|부인과|외과/.test(department)) {
-      return '수술 전후 빈혈에서 1회 투여로 Hb 회복과 수혈 부담 감소 근거';
-    }
-    if (/소화기|IBD|위장관/.test(department)) {
-      return '위장관 출혈과 IBD 빈혈에서 1회 투여 후 Hb 회복 근거';
-    }
-    return '철결핍 빈혈에서 1회 투여 편의성과 Hb 회복 근거';
-  }
-
-  if (/중환자|ICU|호흡기|외과|간담|흉부|신경/.test(department)) {
-    return '중증 환자 영양에서 아미노산 25% 증가와 포도당 부담 감소 차별점';
-  }
-  if (/소화기|IBD|위장관/.test(department)) {
-    return '장관 영양 부담 환자에서 고아미노산 저포도당 조성 차별점';
-  }
-  return '고아미노산 저포도당 조성으로 중증 환자 영양 부담을 줄이는 차별점';
+  return pickVisitCandidate(product, department).detail;
 }
 
-function buildFallbackVisitLog(product: string, department: string): string {
-  const detail = getFallbackDetailForProduct(product, department);
-  return `${product}의 ${detail} 중심으로 디테일 진행함`;
+function buildFallbackVisitLog(product: string, department: string, avoidTexts: string[] = []): string {
+  return pickVisitCandidate(product, department, avoidTexts).log;
 }
 
-function buildDetailedVisitLog(product: string, department: string): string {
-  const detail = getFallbackDetailForProduct(product, department);
-  if (product === '페린젝트') {
-    return `${product}의 ${detail}을 외래 빈혈 케이스와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 처방 상황을 확인해보겠다는 의견 보임`;
-  }
-  return `${product}의 ${detail}을 중환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 병동 처방은 케이스별로 보겠다는 의견 보임`;
+function buildDetailedVisitLog(product: string, department: string, avoidTexts: string[] = []): string {
+  return buildFallbackVisitLog(product, department, avoidTexts);
 }
 
 function pickProductForLog(log: string, activeProducts: string[], department: string): string {
@@ -1150,11 +1250,11 @@ function pickProductForLog(log: string, activeProducts: string[], department: st
   return allowedProducts[0] || '위너프에이플러스';
 }
 
-function expandVisitLogIfTooBrief(text: string, activeProducts: string[], department: string): string {
+function expandVisitLogIfTooBrief(text: string, activeProducts: string[], department: string, avoidTexts: string[] = []): string {
   const normalized = text.replace(/\s{2,}/g, ' ').trim();
   if (normalized.length >= MIN_VISIT_LOG_LENGTH) return normalized;
   const product = pickProductForLog(normalized, activeProducts, department);
-  const detailed = buildDetailedVisitLog(product, department);
+  const detailed = buildDetailedVisitLog(product, department, avoidTexts);
   return detailed.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(detailed, MAX_VISIT_LOG_LENGTH) : detailed;
 }
 
@@ -1241,32 +1341,11 @@ function buildDiversifiedVisitLog(
     ...detailKeysFromTexts(avoidTexts),
     ...extractDetailKeys(currentText),
   ]);
-  const candidates = [
-    {
-      product: '위너프에이플러스',
-      keys: ['protein-nitrogen'],
-      text: '위너프에이플러스의 단백 보충과 질소균형 유지 측면을 중증 환자 영양 관리와 연결해 디테일 진행함. 교수님께서 수술 후 회복기 환자에서 영양 공급 반응을 확인해볼 수 있겠다는 의견 보임',
-    },
-    {
-      product: '위너프에이플러스',
-      keys: ['omega3-composition'],
-      text: '위너프에이플러스의 오메가3 조성과 염증 부담 완화 근거를 장기 입원 환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 감염 회복기 영양 반응을 보겠다는 의견 보임',
-    },
-    {
-      product: '페린젝트',
-      keys: ['transfusion-burden'],
-      text: '페린젝트의 수술 전후 철결핍 빈혈에서 수혈 부담을 줄일 수 있는 근거 중심으로 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스에서 처방 가능성을 확인해보겠다는 의견 보임',
-    },
-    {
-      product: '페린젝트',
-      keys: ['hb-recovery'],
-      text: '페린젝트의 Hb 회복 근거를 외래 추적이 어려운 철결핍 빈혈 상황과 연결해 디테일 진행함. 교수님께서 경구용철분제 복용 지속이 어려운 환자에서 검토 가능하다는 의견 보임',
-    },
-  ].filter((candidate) => allowedProducts.includes(candidate.product));
+  const candidates = allowedProducts.flatMap((product) => buildVisitCandidatePool(product, department));
 
   const selected = candidates.find((candidate) => candidate.keys.every((key) => !usedKeys.has(key))) || candidates[0];
-  if (!selected) return expandVisitLogIfTooBrief(currentText, allowedProducts, department);
-  return selected.text.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(selected.text, MAX_VISIT_LOG_LENGTH) : selected.text;
+  if (!selected) return expandVisitLogIfTooBrief(currentText, allowedProducts, department, avoidTexts);
+  return selected.log.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(selected.log, MAX_VISIT_LOG_LENGTH) : selected.log;
 }
 
 function hasVacuousDetailLanguage(text: string): boolean {
@@ -2305,18 +2384,18 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   log = ensureProductFeatureOwnership(log);
   log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   log = removeDisallowedProductSentences(log, doctor.department) ||
-    buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
+    buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department, avoidTexts);
   log = removeEmptyReactionRequests(log);
   log = removeUnrealisticProfessorMetaSentences(log);
   log = ensureProductFeatureOwnership(log);
   log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   if (!log || log.length < 12 || hasVacuousDetailLanguage(log)) {
-    log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
+    log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department, avoidTexts);
   }
   if (hasBatchConflict(log, avoidTexts)) {
     log = buildDiversifiedVisitLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department, avoidTexts);
   }
-  log = expandVisitLogIfTooBrief(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
+  log = expandVisitLogIfTooBrief(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department, avoidTexts);
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
   strategy = normalizeNextStrategy(strategy, doctor.department);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);

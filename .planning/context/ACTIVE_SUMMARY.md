@@ -48,6 +48,7 @@
 - Visit-log generation now catches bare `지난번 ...` openings and strips that framing when the sentence does not include a real feedback/result before moving into a new detail.
 - When prior context says a product is already in use, same-product `오늘은 ... 중심으로` wording is normalized into usage reaction/reorder/applicable-patient follow-up instead of repeating the product focus.
 - Bulk auto-generation now feeds already-created logs from the current batch into later generation and validation calls so same-hospital multi-generate avoids repeated objection/answer/detail phrasing.
+- 2026-05-27: Visit-log duplicate generation was tightened again. Planner candidates now include distinct department-specific Winuf/Ferinject scenarios, repair/fallback replans on batch/past duplication instead of returning the same fixed sentence, final AI hard-correction uses avoidTexts-aware candidate pools, and bulk auto-generation also avoids same-day memo-conversion logs from the selected hospital/department. `scripts/test-pipeline.mjs`, `pnpm run typecheck`, and `pnpm run build` passed.
 
 ## Useful Entry Points
 - `package.json`

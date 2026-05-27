@@ -194,6 +194,13 @@ export default function VisitLogPage() {
     const thisWeekKey = getWeekKey(today);
     const todayLogs = visitLogStorage.getAll().filter(l => l.visitDate === today);
     const thisWeekLogs = visitLogStorage.getAll().filter(l => l.createdAt && getWeekKey(l.createdAt) === thisWeekKey);
+    const todayScopeAvoidTexts = todayLogs
+      .filter((log) => {
+        const doctor = doctors.find(d => d.id === log.doctorId);
+        if (!doctor || doctor.hospital !== selectedHospital) return false;
+        return selectedDept ? doctor.department === selectedDept : true;
+      })
+      .map((log) => `${log.formattedLog} ${log.nextStrategy ?? ""}`);
     const visitedTodayIds = new Set(todayLogs.map(l => l.doctorId));
     const visitedTodayDepts = new Set(
       todayLogs.map(l => doctors.find(d => d.id === l.doctorId)?.department).filter((x): x is string => Boolean(x))
@@ -239,7 +246,10 @@ export default function VisitLogPage() {
         setBulkProgress({ current: i + 1, total: targets.length, doctorName: doctor.name });
         const docPastLogs = visitLogStorage.getByDoctorId(doctor.id);
         try {
-          const batchAvoidTexts = generated.map(({ log }) => `${log.formattedLog} ${log.nextStrategy ?? ""}`);
+          const batchAvoidTexts = [
+            ...todayScopeAvoidTexts,
+            ...generated.map(({ log }) => `${log.formattedLog} ${log.nextStrategy ?? ""}`),
+          ];
           const res = await autoGenerateVisitLog(doctor, docPastLogs, [], batchAvoidTexts);
           if (!res.formattedLog || res.formattedLog.trim().length < 10) continue;
           // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
