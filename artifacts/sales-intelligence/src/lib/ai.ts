@@ -600,9 +600,72 @@ function reducePointWordUsage(text: string): string {
 function normalizeSnippetProductName(product: string): string {
   const compact = product.replace(/\s+/g, '').trim();
   if (!compact) return '공통';
+  const lower = compact.toLowerCase();
   if (compact.includes('위너프에이플러스')) return '위너프에이플러스';
+  if (compact.includes('위너프A+') || compact.includes('위너프에이+') || lower.includes('winufa+') || lower.includes('winufaplus') || lower.includes('winufa')) return '위너프에이플러스';
+  if (compact.includes('페린젝트') || lower.includes('ferinject')) return '페린젝트';
   if (compact.includes('위너프')) return '위너프';
   return product.trim();
+}
+
+function inferSnippetProduct(item: { content?: string; context?: string; product?: string; tags?: string[] }): string {
+  const explicit = normalizeSnippetProductName(item.product || '');
+  if (['위너프에이플러스', '페린젝트'].includes(explicit)) return explicit;
+
+  const text = `${item.product || ''} ${item.content || ''} ${item.context || ''} ${(item.tags || []).join(' ')}`;
+  const compact = text.replace(/\s+/g, '');
+  const lower = compact.toLowerCase();
+  if (
+    compact.includes('위너프에이플러스') ||
+    compact.includes('위너프A+') ||
+    lower.includes('winufa') ||
+    /아미노산.*25|25.*아미노산|포도당.*감소|고함량아미노산|4세대/.test(text)
+  ) {
+    return '위너프에이플러스';
+  }
+  if (
+    compact.includes('페린젝트') ||
+    lower.includes('ferinject') ||
+    /1회\s*투여|철결핍|Hb|혈색소|경구용철분제|경구\s*철분|수혈/.test(text)
+  ) {
+    return '페린젝트';
+  }
+  return '공통';
+}
+
+function buildDoctorRosterForSnippetAnalysis(doctors: Doctor[]): string {
+  if (doctors.length === 0) return '등록된 교수 없음';
+
+  const byDepartment = new Map<string, Map<string, Doctor[]>>();
+  for (const doctor of doctors) {
+    const department = doctor.department || '진료과 미기록';
+    const hospital = doctor.hospital || '병원 미기록';
+    if (!byDepartment.has(department)) byDepartment.set(department, new Map());
+    const hospitalMap = byDepartment.get(department)!;
+    if (!hospitalMap.has(hospital)) hospitalMap.set(hospital, []);
+    hospitalMap.get(hospital)!.push(doctor);
+  }
+
+  return [...byDepartment.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+    .map(([department, hospitalMap]) => {
+      const hospitals = [...hospitalMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+        .map(([hospital, items]) => {
+          const names = items
+            .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+            .map((doctor) => {
+              const traits = doctor.traits.map((t) => t.label).join(',') || '성향 미기록';
+              const tendency = doctor.prescriptionTendency || '처방경향 미기록';
+              return `${doctor.name}(성향=${traits}, 처방경향=${tendency})`;
+            })
+            .join(', ');
+          return `  - ${hospital}: ${names}`;
+        })
+        .join('\n');
+      return `[${department}]\n${hospitals}`;
+    })
+    .join('\n\n');
 }
 
 function cleanPreviousVisitConnection(text: string): string {
@@ -2309,12 +2372,10 @@ export async function analyzeSnippetEffectiveness(
   const snippetContext = buildSnippetContext();
 
   const allDoctors = doctorStorage.getAll();
-  const doctorSummary = allDoctors.length > 0
-    ? allDoctors.slice(0, 10).map(d => `- ${d.name} (${d.hospital} ${d.department}): 성향=${d.traits.map(t => t.label).join(',') || '미기록'}, 처방경향=${d.prescriptionTendency || '미기록'}`).join('\n')
-    : '등록된 교수 없음';
+  const doctorRoster = buildDoctorRosterForSnippetAnalysis(allDoctors);
 
-  const prompt = `현재 담당 교수 현황:
-${doctorSummary}
+  const prompt = `현재 담당 교수 현황 (진료과별/병원별 전체 목록):
+${doctorRoster}
 ${snippetContext}
 
 분석 대상 멘트:
@@ -2325,7 +2386,13 @@ ${content}
 1. 효과적인 이유
 2. 어떤 성향의 교수에게 특히 효과적인지 (현재 담당 교수 중 누구에게 잘 먹힐지)
 3. 개선 제안
-4. 변형 멘트 1-2개
+4. 변형 멘트 최대 5개
+- 잘 맞는 교수를 쓸 때는 먼저 진료과 적합성을 판단하고, 해당 진료과가 여러 병원에 있으면 모든 병원의 해당 진료과 교수를 함께 나열할 것
+- 예: 흉부외과가 잘 맞으면 강릉아산 흉부외과와 원주세브란스 흉부외과를 모두 확인해 누락하지 말 것
+- 예: 산부인과가 잘 맞으면 강릉아산 산부인과와 원주세브란스 산부인과를 모두 확인해 누락하지 말 것
+- 병원 한 곳의 특정 과와 다른 병원의 다른 과를 섞어 쓰지 말 것. 과 적합성 기준이면 같은 과 전체, 특정 교수 성향 기준이면 그 이유를 따로 적을 것
+- 변형 멘트는 1~5개 작성하되, 중복되지 않고 실제 현장에서 말할 법한 내용만 쓸 것
+- 억지로 5개를 채우지 말고, 새 디테일이나 화법 차이가 없으면 적게 작성할 것
 - 변형 멘트는 교수에게 돌아가는 실제 이득이 드러나야 함
 - 큰따옴표("), 작은따옴표(') 모두 사용 금지`;
 
@@ -2351,9 +2418,9 @@ export async function generateSnippetsFromManuals(): Promise<Array<{
 ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트들과 중복되지 않는 새로운 멘트를 생성해주세요.\n` : ''}
 
 생성 규칙:
-- 제품별로 최소 3개씩, 총 10개 이상의 멘트 생성
+- 제품은 반드시 위너프에이플러스 또는 페린젝트만 사용. 공통, 위너프, 플라주OP, 기타 제품 생성 금지
+- 위너프에이플러스 3개 이상, 페린젝트 3개 이상을 우선 생성하되, 새 디테일이 없으면 빈 배열 허용
 - 각 멘트는 영업사원이 교수 앞에서 바로 말할 수 있는 자연스러운 화법으로
-- 너무 길지 않게, 1~2문장으로 간결하게
 - 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필, 편의성 강조 등)을 커버하되 같은 디테일포인트를 표현만 바꿔 반복하지 말 것
 - 디테일포인트는 수치, 환자군, 임상 근거, 경쟁 비교 축, 투여 편의성처럼 서로 구분되는 근거 단위여야 함
 - 기존 멘트와 같은 디테일포인트면 새 문장으로 만들지 말고 제외할 것
@@ -2368,7 +2435,7 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
   {
     'content': '멘트 내용',
     'context': '활용 상황 (예: 첫 처방 유도, 가격 반박 시)',
-    'product': '위너프' 또는 '위너프에이플러스' 또는 '페린젝트' 또는 '공통',
+    'product': '위너프에이플러스' 또는 '페린젝트',
     'tags': ['태그1', '태그2']
   }
 ]`;
@@ -2386,12 +2453,14 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
     tags: string[];
   }>;
 
-  return parsed.map(item => ({
-    content: reducePointWordUsage((item.content || '').replace(/['"]/g, '')),
-    context: reducePointWordUsage((item.context || '').replace(/['"]/g, '')),
-    product: ['위너프', '위너프에이플러스', '페린젝트', '공통'].includes(normalizeSnippetProductName(item.product)) ? normalizeSnippetProductName(item.product) : '공통',
-    tags: Array.isArray(item.tags) ? item.tags.map((tag) => reducePointWordUsage(String(tag))) : [],
-  }));
+  return parsed
+    .map(item => ({
+      content: reducePointWordUsage((item.content || '').replace(/['"]/g, '')),
+      context: reducePointWordUsage((item.context || '').replace(/['"]/g, '')),
+      product: inferSnippetProduct(item),
+      tags: Array.isArray(item.tags) ? item.tags.map((tag) => reducePointWordUsage(String(tag))) : [],
+    }))
+    .filter((item) => item.product === '위너프에이플러스' || item.product === '페린젝트');
 }
 
 export async function generateSnippetsForProduct(productName: string): Promise<Array<{
