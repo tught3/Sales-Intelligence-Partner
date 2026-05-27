@@ -21,7 +21,7 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
     `${plan.patientGroup}에서 ${plan.detailAxis}을 디테일 진행함. 교수님께서 ${plan.doctorReaction} 보임`,
     230
   );
-  const nextStrategy = limit(`다음방문시에는 ${plan.nextAction}할예정`, 120);
+  const nextStrategy = limit(`다음방문시에는 ${plan.nextAction} 디테일 예정`, 120);
   return { formattedLog, nextStrategy, usedFallback: true };
 }
 

@@ -49,6 +49,7 @@
 - When prior context says a product is already in use, same-product `오늘은 ... 중심으로` wording is normalized into usage reaction/reorder/applicable-patient follow-up instead of repeating the product focus.
 - Bulk auto-generation now feeds already-created logs from the current batch into later generation and validation calls so same-hospital multi-generate avoids repeated objection/answer/detail phrasing.
 - 2026-05-27: Visit-log duplicate generation was tightened again. Planner candidates now include distinct department-specific Winuf/Ferinject scenarios, repair/fallback replans on batch/past duplication instead of returning the same fixed sentence, final AI hard-correction uses avoidTexts-aware candidate pools, and bulk auto-generation also avoids same-day memo-conversion logs from the selected hospital/department. `scripts/test-pipeline.mjs`, `pnpm run typecheck`, and `pnpm run build` passed.
+- 2026-05-27: Visit-log wording rules were tightened after user feedback. Generated output now normalizes away `부담 감소` wording, next-visit strategies must end with `디테일 예정` instead of `확인할예정`, and pipeline tests assert those phrases do not remain in generation paths. Current production AI failures are OpenAI API quota/billing exhaustion, not this code path.
 
 ## Useful Entry Points
 - `package.json`

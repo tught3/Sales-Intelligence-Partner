@@ -412,12 +412,12 @@ function buildVisitLogRules(): string {
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
 철분제 표현: 경구 철분, 경구 철분제, 경구용 철분제, 경구용철분제제, 경구용철분제제제, 먹는 철분제, oral iron, PO iron 등 경구 복용 철분제를 뜻하는 표현은 반드시 "경구용철분제"로 통일
 제품명: 제품 특장점 문장에는 반드시 제품명을 함께 쓸 것. 예: "아미노산 25% 증가" 금지, "위너프에이플러스의 아미노산 25% 증가"로 작성
-디테일 내용: "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 말했는지 없는 문장 금지. 반드시 "페린젝트의 1회 투여와 Hb 회복 근거", "위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소"처럼 실제 내용 작성
+디테일 내용: "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 말했는지 없는 문장 금지. 반드시 "페린젝트의 1회 투여와 Hb 회복 근거", "위너프에이플러스의 아미노산 25% 증가와 저포도당 조성"처럼 실제 내용 작성
 교수 반응: 반응을 쓸 때는 교수님께서 보인 실제 의견 형태로만 작성. 예: "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임". "특장점 반응 확인 요청"처럼 반응 확인을 교수에게 요청하는 문장 금지
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 메모처럼
 글자수: 본문 100자 이상 230자 이내 / 다음방문전략 120자 이내
-다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 조성 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
+다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 반드시 "~디테일 예정"으로 끝낼 것 (예: "위너프에이플러스 아미노산 조성 디테일 예정", "페린젝트 급여 조건 디테일 예정")
 본문 종결: 영업일지 본문에는 다음 방문 계획을 넣지 말 것. "다음 방문에는", "다음번에는", "다음방문시에는" 문장은 다음방문전략에만 작성
 미도입 제품: 대부분은 실제 제품 근거/환자군 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
 따옴표: 큰따옴표("), 작은따옴표(') 절대 금지`;
@@ -534,7 +534,7 @@ function normalizeMemoTone(text: string): string {
     [/어\s*보겠습니다/gi, '어볼 예정'],
     [/아\s*보겠습니다/gi, '아볼 예정'],
     [/해보겠습니다/gi, '해볼 예정'],
-    [/확인하겠다/gi, '확인할예정'],
+    [/확인하겠다/gi, '디테일 예정'],
     [/전달하겠다/gi, '전달할예정'],
     [/진행하겠다/gi, '진행할예정'],
     [/하겠다/gi, '할예정'],
@@ -579,6 +579,17 @@ function normalizeMemoTone(text: string): string {
     .replace(/[.]{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
     .trim());
+}
+
+function normalizeBurdenDecreaseLanguage(text: string): string {
+  return text
+    .replace(/환자\s*부담\s*감소/g, '환자 비용 완화')
+    .replace(/포도당\s*부담\s*감소/g, '저포도당 조성')
+    .replace(/혈당\s*부담\s*감소/g, '혈당 관리')
+    .replace(/수혈\s*부담\s*감소/g, '수혈 회피 가능성')
+    .replace(/부담\s*감소/g, '완화')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function reducePointWordUsage(text: string): string {
@@ -743,7 +754,7 @@ function cleanRedundantPreviousUseFocus(text: string): string {
 }
 
 function normalizeGeneratedMemoText(text: string, department = ''): string {
-  const cleaned = cleanRedundantPreviousUseFocus(cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text))));
+  const cleaned = normalizeBurdenDecreaseLanguage(cleanRedundantPreviousUseFocus(cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text)))));
   return department ? normalizeDepartmentThemeStacks(cleaned, department) : cleaned;
 }
 
@@ -836,15 +847,23 @@ function normalizeDepartmentThemeStacks(text: string, department: string): strin
 
 function normalizeNextStrategy(text: string, department = ''): string {
   if (!text.trim()) return '';
-  const normalized = reducePointWordUsage(normalizeMemoTone(text))
+  const normalized = normalizeBurdenDecreaseLanguage(reducePointWordUsage(normalizeMemoTone(text)))
     .replace(/^(다음\s*방문에는|다음번에는|다음에는)\s*/g, '다음방문시에는 ')
     .replace(/^다음방문시\s*에는\s*/g, '다음방문시에는 ')
     .replace(/하겠다/gi, '할예정')
     .trim();
   const themed = department ? normalizeDepartmentThemeStacks(normalized, department) : normalized;
-  return themed.startsWith('다음방문시에는')
+  const withPrefix = themed.startsWith('다음방문시에는')
     ? themed
     : `다음방문시에는 ${themed}`.trim();
+  return withPrefix
+    .replace(/(?:확인|점검|체크|문의|안내|전달|진행|검토)\s*할예정$/g, '디테일 예정')
+    .replace(/(?:확인|점검|체크|문의|안내|전달|진행|검토)\s*예정$/g, '디테일 예정')
+    .replace(/디테일\s*할예정$/g, '디테일 예정')
+    .replace(/디테일\s*진행\s*예정$/g, '디테일 예정')
+    .replace(/할예정$/g, '디테일 예정')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function hasIntroProducts(products: string[]): boolean {
@@ -861,7 +880,7 @@ function normalizeIntroProductLanguage(
   const mainProduct = activeProducts[0] || '위너프에이플러스';
   const concreteDetail = mainProduct === '페린젝트'
     ? '페린젝트의 1회 투여와 Hb 회복 근거 디테일 진행'
-    : '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소 디테일 진행';
+    : '위너프에이플러스의 아미노산 25% 증가와 저포도당 조성 디테일 진행';
   const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : concreteDetail;
   const activeIntroducedProducts = activeProducts.filter((product) => !INTRO_PRODUCTS.has(product));
 
@@ -1138,8 +1157,8 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['transfusion-burden', 'hb-recovery'],
-          detail: '수술 전후 빈혈에서 수혈 부담 감소와 Hb 회복 근거',
-          log: '페린젝트의 수혈 부담 감소와 Hb 회복 근거를 신경외과 수술 전후 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수술 일정과 Hb 수치를 같이 보겠다는 반응 보임',
+          detail: '수술 전후 빈혈에서 수혈 회피 가능성과 Hb 회복 근거',
+          log: '페린젝트의 수혈 회피 가능성과 Hb 회복 근거를 신경외과 수술 전후 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수술 일정과 Hb 수치를 같이 보겠다는 반응 보임',
         },
         {
           product,
@@ -1153,8 +1172,8 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['transfusion-burden'],
-          detail: '수술 전후 빈혈에서 수혈 부담 감소 근거',
-          log: '페린젝트의 수혈 부담 감소 근거를 수술 전후 철결핍 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스에서는 처방 가능성을 확인해보겠다는 의견 보임',
+          detail: '수술 전후 빈혈에서 수혈 회피 가능성 근거',
+          log: '페린젝트의 수혈 회피 가능성 근거를 수술 전후 철결핍 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스에서는 처방 가능성을 검토하겠다는 의견 보임',
         },
         {
           product,
@@ -1212,8 +1231,8 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['winuf-amino-acid', 'winuf-glucose-burden'],
-          detail: '아미노산 25% 증가와 포도당 부담 감소',
-          log: '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소를 수술 후 영양 공급이 필요한 환자와 연결해 디테일 진행함. 교수님께서 혈당과 단백 보충을 같이 보겠다는 의견 보임',
+          detail: '아미노산 25% 증가와 저포도당 조성',
+          log: '위너프에이플러스의 아미노산 25% 증가와 저포도당 조성을 수술 후 영양 공급이 필요한 환자와 연결해 디테일 진행함. 교수님께서 혈당과 단백 보충을 같이 보겠다는 의견 보임',
         }
       );
     }
@@ -1397,12 +1416,12 @@ function buildFollowUpStrategyWithoutRepeatingDetail(
   const otherProduct = allowedProducts.find((allowedProduct) => allowedProduct !== product);
 
   const candidates = [
-    otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 전후 영양 공급 반응과 처방 상황 확인할예정' : '',
-    otherProduct === '페린젝트' ? '다음방문시에는 페린젝트 수술 전후 빈혈 케이스와 수혈 부담 감소 근거 확인할예정' : '',
-    '다음방문시에는 페린젝트 급여 기준에 맞는 외래 빈혈 케이스 확인할예정',
-    '다음방문시에는 페린젝트 투여 후 Hb 회복 반응과 실제 사용 케이스 확인할예정',
-    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형을 수술 후 영양 흐름에서 확인할예정',
-    '다음방문시에는 위너프에이플러스 오메가3 조성을 중환자 영양 부담과 연결해 확인할예정',
+    otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 전후 영양 공급 반응 디테일 예정' : '',
+    otherProduct === '페린젝트' ? '다음방문시에는 페린젝트 수술 전후 빈혈 케이스와 수혈 회피 근거 디테일 예정' : '',
+    '다음방문시에는 페린젝트 급여 기준에 맞는 외래 빈혈 케이스 디테일 예정',
+    '다음방문시에는 페린젝트 투여 후 Hb 회복 반응과 실제 사용 케이스 디테일 예정',
+    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형을 수술 후 영양 흐름에서 디테일 예정',
+    '다음방문시에는 위너프에이플러스 오메가3 조성을 중환자 영양 흐름과 연결해 디테일 예정',
   ].filter(Boolean);
 
   const selected = candidates.find((candidate) =>
@@ -1413,7 +1432,7 @@ function buildFollowUpStrategyWithoutRepeatingDetail(
 
   const themeRule = getDeptFeatureRule(department);
   const theme = themeRule?.allowedThemes[0] || '환자군';
-  return `다음방문시에는 ${product} ${theme} 처방 상황 확인할예정`;
+  return `다음방문시에는 ${product} ${theme} 처방 상황 디테일 예정`;
 }
 
 function ensureProductNameInLog(text: string, activeProducts: string[], department: string): string {
@@ -1514,17 +1533,17 @@ type DeptFeatureRule = {
 const DEPT_FEATURE_RULES: DeptFeatureRule[] = [
   {
     keywords: ['정형외과'],
-    allowedThemes: ['수술 전후 빈혈', 'Hb 회복', '수혈 부담 감소', '재활 회복', '통증 관리', '염증 관리', '출혈 관리', '외래 투여 편의'],
+    allowedThemes: ['수술 전후 빈혈', 'Hb 회복', '수혈 회피 가능성', '재활 회복', '통증 관리', '염증 관리', '출혈 관리', '외래 투여 편의'],
     disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
   },
   {
     keywords: ['산부인과', '산과', '부인과'],
-    allowedThemes: ['산후 빈혈', '수술 전후 빈혈', '출혈 후 회복', 'Hb 회복', '수혈 부담 감소', '외래 편의'],
+    allowedThemes: ['산후 빈혈', '수술 전후 빈혈', '출혈 후 회복', 'Hb 회복', '수혈 회피 가능성', '외래 편의'],
     disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
   },
   {
     keywords: ['소화기내과', '소화기', 'IBD', '위장관'],
-    allowedThemes: ['IBD', '위장관 출혈', '장관 영양', '수술 전후 빈혈', '수혈 부담 감소', '회복', '외래 편의'],
+    allowedThemes: ['IBD', '위장관 출혈', '장관 영양', '수술 전후 빈혈', '수혈 회피 가능성', '회복', '외래 편의'],
     disallowedThemes: ['정형외과 환자군', '산부인과 환자군'],
   },
   {
@@ -1886,7 +1905,7 @@ async function convertToVisitLogBase(
 - ${pipelinePlan.professorQuestion ? `교수님 질문이 필요하면 "${pipelinePlan.professorQuestion}" 흐름을 반영` : '교수님 질문은 억지로 넣지 말고 실제 반응 중심으로 작성'}
 - 교수 반응은 "${pipelinePlan.doctorReaction}"처럼 실제 의견으로 작성
 - 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향으로 작성
-- 금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성\n`
+- 금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합, 부담+감소 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성\n`
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
@@ -1914,7 +1933,7 @@ ${buildVisitLogRules()}
 (100자 이상 230자 이내. 빈 줄 없이 이어서 작성)
 
 ===다음방문전략===
-(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
+(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다", "~확인+할예정" 형태 금지. 반드시 "~디테일 예정"으로 끝낼 것)`;
 
   const response = await callAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes), VISIT_LOG_MODEL);
   let cleaned = extractSection(response, ['===영업일지===', '===다음방문전략===']);
@@ -1969,7 +1988,7 @@ ${buildVisitLogRules()}
   // 최종 폴백: 여전히 비어있으면 하드코딩
   if (!nextStrategy) {
     const prod = activeProducts[0] || '위너프에이플러스';
-    nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
+    nextStrategy = `다음방문시에는 ${prod} 처방 가능 케이스 디테일 예정`;
   }
 
   // ★ 저장 전 검토 에이전트
@@ -2048,7 +2067,7 @@ async function autoGenerateVisitLogBase(
 - 다음방문전략 방향: ${pipelinePlan.nextAction}
 - 선택 근거: ${pipelinePlan.selectionReason}
 지난 방문 기록에서 이어갈 만한 내용이 있으면 "지난 방문에 ~ 확인 후"처럼 실제 확인/반응까지 자연스럽게 연결하되, 오늘 디테일과 다음방문전략은 지난 방문 및 오늘 본문과 같은 디테일을 반복하지 말 것.
-금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성.
+금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합, 부담+감소 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성.
 일정마다 같은 단어와 같은 전개가 반복되지 않게 교수별 과, 이전 기록, 환자 상황을 바꿔 쓸 것.\n`
     : '';
 
@@ -2070,7 +2089,7 @@ ${buildVisitLogRules()}
 (100자 이상 230자 이내. 빈 줄 없이 이어서 작성)
 
 ===다음방문전략===
-(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
+(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다", "~확인+할예정" 형태 금지. 반드시 "~디테일 예정"으로 끝낼 것)`;
 
   const response = await callAI(systemPrompt, prompt, VISIT_LOG_MODEL);
 
@@ -2145,7 +2164,7 @@ ${buildVisitLogRules()}
   // 최종 폴백: 여전히 비어있으면 하드코딩
   if (!nextStrategy) {
     const prod = activeProducts[0] || '위너프에이플러스';
-    nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
+    nextStrategy = `다음방문시에는 ${prod} 처방 가능 케이스 디테일 예정`;
   }
 
   // ★ 저장 전 검토 에이전트
@@ -2254,12 +2273,13 @@ ${themeConstraint}
 ★ 형식 규칙 (반드시 준수):
 - 반드시 "다음방문시에는" 으로 시작할 것
 - 구체적인 제품명 + 액션 포함
-- 마지막은 "~할예정" 으로 끝낼 것
+- 마지막은 반드시 "~디테일 예정" 으로 끝낼 것
+- "~확인+할예정" 형태 사용 금지
 - 큰따옴표("), 작은따옴표(') 사용 금지
 - 120자 이내
 - 본문 메모만 출력 (라벨, 설명 없이)
 
-예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 디테일할예정"`;
+예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황과 위너프에이플러스 아미노산 조성 디테일 예정"`;
 
   const result = await callAI(systemPrompt, prompt, VISIT_LOG_MODEL);
   let cleaned = result.replace(/['"]/g, '').trim();
@@ -2317,7 +2337,7 @@ ${strategy}
 ⑧ 본문 100자 미만 또는 230자 초과 (현재 ${log.length}자). 너무 성의 없는 단문이면 제품명, 실제 디테일, 교수 반응, 후속 확인을 넣어 100자 이상으로 보강
 ⑨ 다음방문전략 120자 초과 (현재 ${strategy.length}자)
 ⑩ 다음방문전략이 "다음방문시에는" 으로 시작 안 함
-⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
+⑪ 다음방문전략이 "~디테일 예정" 으로 끝나지 않음. 확인+할예정 형태면 FAIL
 ⑫ 과(${doctor.department})에 맞지 않는 품목 언급 금지. 허용 품목: ${allowedProducts.join(', ')}. 금지 품목: ${disallowedProducts.join(', ') || '없음'}
 ⑬ 영업일지 본문에 "다음 방문에는" / "다음방문시에는" / "다음번에는" / "다음에는" 으로 시작하는 다음 방문 계획 문장이 들어감
 ⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. "신약여부검토 요청"은 이번 허용 여부가 허용일 때만 사용
@@ -2339,7 +2359,7 @@ ${strategy}
 ㉚ 본문에서 이미 디테일한 핵심을 다음방문전략에서 그대로 반복 금지. 예: 본문에서 페린젝트 1회 투여 편의성을 디테일했으면 다음방문전략은 급여 기준, 사용 반응, 처방을 고려할 상황 확인 등 다른 후속 액션이어야 함
 ㉛ 지난 방문, 오늘 본문, 다음방문전략, 이번 일괄 생성 내 다른 교수의 디테일 축은 모두 달라야 함. "더딘 케이스"와 "늦는 케이스"처럼 말만 바꾼 중복도 FAIL
 ㉜ 이번 일괄 생성에서 다른 교수에게 이미 쓴 본문과 제품/환자군/교수 반응/다음 액션이 거의 같으면 FAIL. 교수별 병원, 과, 지난 기록에 맞게 다르게 작성
-㉝ 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합 사용 금지. 환자 상황과 처방 맥락을 구체적으로 바꿔 쓸 것
+㉝ 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합, 부담+감소 조합 사용 금지. 환자 상황과 처방 맥락을 구체적으로 바꿔 쓸 것
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
@@ -2414,7 +2434,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   if (!strategy || strategy.trim().length < 5) {
     const themeRule = getDeptFeatureRule(doctor.department);
     const theme = themeRule?.allowedThemes[0] || '환자군';
-    strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} ${theme} 처방 상황 확인할예정`;
+    strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} ${theme} 처방 상황 디테일 예정`;
   }
 
   return { formattedLog: log, nextStrategy: strategy };

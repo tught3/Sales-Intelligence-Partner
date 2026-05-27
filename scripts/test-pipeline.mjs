@@ -39,11 +39,11 @@ try {
   const { extractKeys, similarityRatio, normalizeTerminology } = imported.module;
 
   const today = '페린젝트의 1회 투여 편의성과 경구용철분제 반응이 더딘 케이스 중심으로 디테일 진행함';
-  const next = '다음방문시에는 경구용철분제 반응이 늦는 케이스 중심으로 페린젝트 처방 상황 확인할예정';
-  const winuf = '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소를 중증 수술 환자 중심으로 디테일 진행함';
-  const screenshotOne = '위너프에이플러스의 중증 환자 영양에서 아미노산 25% 증가와 포도당 부담 감소 차별점을 중환자 영양 공급 흐름과 연결해 디테일 진행함';
+  const next = '다음방문시에는 경구용철분제 반응이 늦는 케이스 중심으로 페린젝트 처방 상황 디테일 예정';
+  const winuf = '위너프에이플러스의 아미노산 25% 증가와 저포도당 조성을 중증 수술 환자 중심으로 디테일 진행함';
+  const screenshotOne = '위너프에이플러스의 중증 환자 영양에서 아미노산 25% 증가와 저포도당 조성 차별점을 중환자 영양 공급 흐름과 연결해 디테일 진행함';
   const screenshotTwo = '위너프에이플러스의 고아미노산 저포도당 조성으로 중증 환자 영양 부담을 줄이는 차별점을 중환자 영양 공급 흐름과 연결해 디테일 진행함';
-  const screenshotThree = '위너프에이플러스의 중증 환자 영양에서 아미노산 25% 증가와 포도당 부담 감소 차별점을 중환자 영양 공급 흐름과 연결해 디테일 진행함';
+  const screenshotThree = '위너프에이플러스의 중증 환자 영양에서 아미노산 25% 증가와 저포도당 조성 차별점을 중환자 영양 공급 흐름과 연결해 디테일 진행함';
 
   assert(
     extractKeys(today).includes('경구용철분제반응부족'),
@@ -99,6 +99,14 @@ assert(
 assert(
   aiSource.includes("const VISIT_LOG_MODEL = 'gpt-5.5'"),
   '방문일지 생성 전용 모델은 gpt-5.5여야 합니다.'
+);
+assert(
+  !/부담\s*감소|확인할예정/.test(aiSource + plannerSource + repairSource),
+  '생성 경로에는 부담 감소 또는 확인할예정 표현이 남아 있으면 안 됩니다.'
+);
+assert(
+  aiSource.includes('디테일 예정') && repairSource.includes('디테일 예정'),
+  '다음방문전략은 디테일 예정 종결 규칙을 사용해야 합니다.'
 );
 assert(
   plannerSource.includes('findAlternativePlan') &&
