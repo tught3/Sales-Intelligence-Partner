@@ -9,6 +9,10 @@ function hasReaction(text: string): boolean {
   return /공감|관심|의견|반응|고려|확인|긍정|제한적|선별/.test(text);
 }
 
+function hasForbiddenPhrase(text: string): boolean {
+  return /실제\s*적용\s*환자군|적용\s*환자군\s*확인|환자군\s*중심으로|추가\s*디테일\s*진행할예정/.test(text);
+}
+
 export function validate(
   formattedLog: string,
   nextStrategy: string,
@@ -21,6 +25,7 @@ export function validate(
   if (formattedLog.length < MIN_VISIT_LOG_LENGTH) failTypes.push('LENGTH_SHORT');
   if (formattedLog.length > MAX_VISIT_LOG_LENGTH) failTypes.push('LENGTH_LONG');
   if (!formattedLog.includes(plan.product)) failTypes.push('MISSING_PRODUCT');
+  if (hasForbiddenPhrase(`${formattedLog} ${nextStrategy}`)) failTypes.push('FORBIDDEN_PHRASE');
 
   const logKeys = extractKeys(formattedLog);
   const detailKeys = extractKeys(`${plan.detailAxis} ${plan.patientGroup}`);

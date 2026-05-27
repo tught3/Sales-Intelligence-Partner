@@ -8,6 +8,10 @@ export type NormalizedOutput = {
 
 function clean(text: string): string {
   return normalizeTerminology(text)
+    .replace(/실제\s*적용\s*환자군/gi, '처방을 고려할 만한 케이스')
+    .replace(/적용\s*환자군\s*확인/gi, '처방을 고려할 상황 확인')
+    .replace(/환자군\s*중심으로/gi, '상황에서')
+    .replace(/추가\s*디테일\s*진행할예정/gi, '처방 상황 확인할예정')
     .replace(/["']/g, '')
     .replace(/[·•]/g, ' ')
     .replace(/\s+/g, ' ')

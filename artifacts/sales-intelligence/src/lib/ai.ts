@@ -4,17 +4,18 @@ import { runVisitGenerationPipeline } from './visit-generation/pipeline';
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
 
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
+const VISIT_LOG_MODEL = 'gpt-5.5';
 const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
 const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 const MIN_VISIT_LOG_LENGTH = 100;
 const MAX_VISIT_LOG_LENGTH = 230;
 
-async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
+async function callAI(systemPrompt: string, userPrompt: string, model = OPENAI_DEFAULT_MODEL): Promise<string> {
   const res = await fetch(`${API_BASE}/api/ai/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: OPENAI_DEFAULT_MODEL,
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -413,7 +414,7 @@ function buildVisitLogFlow(): string {
      바로 이어서 반드시 그것에 대한 확인 결과/교수 반응을 끝까지 쓸 것.
      예: "지난번에 페린젝트 급여조건 디테일 드렸는데, 처방 케이스 있는지 확인했으나 교수님께서 아직 없다고 하심. 이후 외래 투여 편의성 디테일 진행함"
      절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, 위너프에이플러스 질소균형 디테일 진행함" — 과거 내용의 결과 없이 새 주제로 점프 금지.
-     절대 안 되는 예: "지난번 위너프에이플러스 사용 중이시라 오늘은 위너프에이플러스 중심으로..." — 이미 사용 중인 같은 제품을 다시 중심이라고 반복 금지. 사용 반응/재방문량/적용 환자군 확인으로 이어갈 것.
+     절대 안 되는 예: "지난번 위너프에이플러스 사용 중이시라 오늘은 위너프에이플러스 중심으로..." — 이미 사용 중인 같은 제품을 다시 중심이라고 반복 금지. 사용 반응/재방문량/처방을 고려할 상황 확인으로 이어갈 것.
 ② [오늘 핵심] 어떤 제품의 어떤 특장점을 전달했는지 구체적으로. 제공된 제품 특장점 화법 자연스럽게 녹여낼 것 (원문 복붙 금지).
    ★ 주제가 여러 개면 문맥에 맞게 자연스럽게 이어서 작성. 각 주제가 뚝 끊기지 않도록.
 ③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님께서 하신 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "교수님께서 ~라고 하심. ~라고 안내함. 어느 정도 공감하심".
@@ -1054,9 +1055,9 @@ function buildFallbackVisitLog(product: string, department: string): string {
 function buildDetailedVisitLog(product: string, department: string): string {
   const detail = getFallbackDetailForProduct(product, department);
   if (product === '페린젝트') {
-    return `${product}의 ${detail} 중심으로 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 적용 가능 환자군을 확인해보겠다는 의견 보임`;
+    return `${product}의 ${detail}을 외래 빈혈 케이스와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 처방 상황을 확인해보겠다는 의견 보임`;
   }
-  return `${product}의 ${detail} 중심으로 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 실제 적용 환자군은 중환자 중심으로 보겠다는 의견 보임`;
+  return `${product}의 ${detail}을 중환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 병동 처방은 케이스별로 보겠다는 의견 보임`;
 }
 
 function pickProductForLog(log: string, activeProducts: string[], department: string): string {
@@ -1169,17 +1170,17 @@ function buildDiversifiedVisitLog(
     {
       product: '위너프에이플러스',
       keys: ['omega3-composition'],
-      text: '위너프에이플러스의 오메가3 조성과 염증 부담 환자군 적용 가능성을 중심으로 디테일 진행함. 교수님께서 감염 회복기나 장기 입원 환자에서 영양 공급 반응을 보겠다는 의견 보임',
+      text: '위너프에이플러스의 오메가3 조성과 염증 부담 완화 근거를 장기 입원 환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 감염 회복기 영양 반응을 보겠다는 의견 보임',
     },
     {
       product: '페린젝트',
       keys: ['transfusion-burden'],
-      text: '페린젝트의 수술 전후 철결핍 빈혈에서 수혈 부담을 줄일 수 있는 근거 중심으로 디테일 진행함. 교수님께서 수혈을 피하고 싶은 환자군에서 적용 가능성을 확인해보겠다는 의견 보임',
+      text: '페린젝트의 수술 전후 철결핍 빈혈에서 수혈 부담을 줄일 수 있는 근거 중심으로 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스에서 처방 가능성을 확인해보겠다는 의견 보임',
     },
     {
       product: '페린젝트',
       keys: ['hb-recovery'],
-      text: '페린젝트의 Hb 회복 근거를 외래 추적이 어려운 철결핍 빈혈 환자군과 연결해 디테일 진행함. 교수님께서 경구용철분제 복용 지속이 어려운 환자에서 검토 가능하다는 의견 보임',
+      text: '페린젝트의 Hb 회복 근거를 외래 추적이 어려운 철결핍 빈혈 상황과 연결해 디테일 진행함. 교수님께서 경구용철분제 복용 지속이 어려운 환자에서 검토 가능하다는 의견 보임',
     },
   ].filter((candidate) => allowedProducts.includes(candidate.product));
 
@@ -1237,12 +1238,12 @@ function buildFollowUpStrategyWithoutRepeatingDetail(
   const otherProduct = allowedProducts.find((allowedProduct) => allowedProduct !== product);
 
   const candidates = [
-    otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 전후 영양 공급 반응과 적용 환자군 확인할예정' : '',
+    otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 전후 영양 공급 반응과 처방 상황 확인할예정' : '',
     otherProduct === '페린젝트' ? '다음방문시에는 페린젝트 수술 전후 빈혈 케이스와 수혈 부담 감소 근거 확인할예정' : '',
-    '다음방문시에는 페린젝트 급여 기준과 외래 적용 가능 환자군 확인할예정',
+    '다음방문시에는 페린젝트 급여 기준에 맞는 외래 빈혈 케이스 확인할예정',
     '다음방문시에는 페린젝트 투여 후 Hb 회복 반응과 실제 사용 케이스 확인할예정',
-    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형 적용 환자군 확인할예정',
-    '다음방문시에는 위너프에이플러스 오메가3 조성과 염증 부담 환자군 확인할예정',
+    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형을 수술 후 영양 흐름에서 확인할예정',
+    '다음방문시에는 위너프에이플러스 오메가3 조성을 중환자 영양 부담과 연결해 확인할예정',
   ].filter(Boolean);
 
   const selected = candidates.find((candidate) =>
@@ -1253,7 +1254,7 @@ function buildFollowUpStrategyWithoutRepeatingDetail(
 
   const themeRule = getDeptFeatureRule(department);
   const theme = themeRule?.allowedThemes[0] || '환자군';
-  return `다음방문시에는 ${product} ${theme} 적용 케이스 확인할예정`;
+  return `다음방문시에는 ${product} ${theme} 처방 상황 확인할예정`;
 }
 
 function ensureProductNameInLog(text: string, activeProducts: string[], department: string): string {
@@ -1546,12 +1547,12 @@ function normalizeBatchRepeatedLanguage(text: string, avoidTexts: string[]): str
   let result = text;
   if (joined.includes('비용 부담') && result.includes('비용 부담')) {
     result = result
-      .replace(/비용\s*부담\s*언급\s*있어/gi, '적용 환자군 문의 있어')
-      .replace(/비용\s*부담/gi, '적용 환자군')
-      .replace(/필요한\s*케이스부터\s*보자고\s*안내함/gi, '해당 환자군 기준으로 안내함');
+      .replace(/비용\s*부담\s*언급\s*있어/gi, '처방 상황 문의 있어')
+      .replace(/비용\s*부담/gi, '처방 상황')
+      .replace(/필요한\s*케이스부터\s*보자고\s*안내함/gi, '처방을 고려할 상황부터 안내함');
   }
   if (joined.includes('필요한 케이스부터') && result.includes('필요한 케이스부터')) {
-    result = result.replace(/필요한\s*케이스부터/gi, '해당 환자군부터');
+    result = result.replace(/필요한\s*케이스부터/gi, '처방을 고려할 상황부터');
   }
   return result.replace(/\s{2,}/g, ' ').trim();
 }
@@ -1722,8 +1723,11 @@ async function convertToVisitLogBase(
     ? `\n★ 파이프라인 생성 계획:
 - 원본 메모의 사실은 최우선으로 유지
 - 부족한 디테일은 제품 ${pipelinePlan.product}, 환자군 ${pipelinePlan.patientGroup}, 디테일 ${pipelinePlan.detailAxis} 중심으로 보강
+- 전개 방식은 "${pipelinePlan.narrativeStyle}"로 가져가되 템플릿처럼 보이지 않게 자연스럽게 작성
+- ${pipelinePlan.professorQuestion ? `교수님 질문이 필요하면 "${pipelinePlan.professorQuestion}" 흐름을 반영` : '교수님 질문은 억지로 넣지 말고 실제 반응 중심으로 작성'}
 - 교수 반응은 "${pipelinePlan.doctorReaction}"처럼 실제 의견으로 작성
-- 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향으로 작성\n`
+- 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향으로 작성
+- 금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성\n`
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
@@ -1753,7 +1757,7 @@ ${buildVisitLogRules()}
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
-  const response = await callAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes));
+  const response = await callAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes), VISIT_LOG_MODEL);
   let cleaned = extractSection(response, ['===영업일지===', '===다음방문전략===']);
   let nextStrategy = extractSection(response, ['===다음방문전략===']);
 
@@ -1879,10 +1883,14 @@ async function autoGenerateVisitLogBase(
 - 오늘 제품: ${pipelinePlan.product}
 - 오늘 환자군: ${pipelinePlan.patientGroup}
 - 오늘 디테일: ${pipelinePlan.detailAxis}
+- 전개 방식: ${pipelinePlan.narrativeStyle}
+- ${pipelinePlan.professorQuestion ? `교수님 질문/답변 후보: ${pipelinePlan.professorQuestion}` : '교수님 질문은 억지로 넣지 말고 자연스러운 반응만 작성'}
 - 교수 반응: ${pipelinePlan.doctorReaction}
 - 다음방문전략 방향: ${pipelinePlan.nextAction}
 - 선택 근거: ${pipelinePlan.selectionReason}
-지난 방문 기록에서 이어갈 만한 내용이 있으면 "지난 방문에 ~ 확인 후"처럼 실제 확인/반응까지 자연스럽게 연결하되, 오늘 디테일과 다음방문전략은 지난 방문 및 오늘 본문과 같은 디테일을 반복하지 말 것.\n`
+지난 방문 기록에서 이어갈 만한 내용이 있으면 "지난 방문에 ~ 확인 후"처럼 실제 확인/반응까지 자연스럽게 연결하되, 오늘 디테일과 다음방문전략은 지난 방문 및 오늘 본문과 같은 디테일을 반복하지 말 것.
+금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성.
+일정마다 같은 단어와 같은 전개가 반복되지 않게 교수별 과, 이전 기록, 환자 상황을 바꿔 쓸 것.\n`
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
@@ -1905,7 +1913,7 @@ ${buildVisitLogRules()}
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
-  const response = await callAI(systemPrompt, prompt);
+  const response = await callAI(systemPrompt, prompt, VISIT_LOG_MODEL);
 
   const productMatch = response.match(/===제품===\s*([\s\S]*?)(?:===(?:영업일지|전문영업일지)===|$)/);
   const logMatch = response.match(/===(?:영업일지|전문영업일지)===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
@@ -2094,7 +2102,7 @@ ${themeConstraint}
 
 예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 디테일할예정"`;
 
-  const result = await callAI(systemPrompt, prompt);
+  const result = await callAI(systemPrompt, prompt, VISIT_LOG_MODEL);
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeNextStrategy(cleaned, doctor.department);
   cleaned = normalizeIntroProductLanguage(cleaned, getAllowedProductsForDepartment(doctor.department), false);
@@ -2158,7 +2166,7 @@ ${strategy}
 ⑯ 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
 ⑰ "포인트"라는 단어를 사용함. 해당 단어는 쓰지 말고 "내용", "디테일", "근거", "차별점"으로 수정
 ⑱ "지난번에", "지난 방문에"로 시작한 뒤 과거 내용의 확인 결과/교수 반응 없이 바로 새 제품 디테일로 넘어감
-⑲ 지난번에 특정 제품을 사용 중이라고 해놓고 오늘 같은 제품을 다시 "중심으로" 진행한다고 반복함. 이 경우 사용 반응/재방문량/적용 환자군 확인으로 이어갈 것
+⑲ 지난번에 특정 제품을 사용 중이라고 해놓고 오늘 같은 제품을 다시 "중심으로" 진행한다고 반복함. 이 경우 사용 반응/재방문량/처방을 고려할 상황 확인으로 이어갈 것
 ⑳ 이번 일괄 생성에서 이미 사용한 오브젝션/답변/디테일 흐름과 거의 같은 문장을 반복함
 ㉑ 같은 문장에 비슷한 특장점 테마를 두 개 이상 라벨처럼 이어 붙임. 예: "산부인과 수술 전후 빈혈 산후 빈혈 케이스" 같은 형태 금지
 ㉒ 오브젝션 문장이 "교수님께서"로 시작하지 않음. "교수는", "교수님은" 같은 시작 금지
@@ -2169,9 +2177,10 @@ ${strategy}
 ㉗ 경구 복용 철분제를 뜻하는 표현은 모두 "경구용철분제"로 통일. "경구 철분", "경구 철분제", "경구용 철분제", "경구용철분제제제", "먹는 철분제", "oral iron", "PO iron"이면 FAIL
 ㉘ "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 디테일했는지 빠진 문장은 FAIL. 반드시 제품명 + 실제 특장점/근거/환자군을 써야 함
 ㉙ "교수님께서 메모하신다고 하심", "교수님께서 적어두신다고 하심" 같은 비현실적 메타 반응 금지. 반응은 처방/환자군/급여/사용경험에 대한 의견이어야 함
-㉚ 본문에서 이미 디테일한 핵심을 다음방문전략에서 그대로 반복 금지. 예: 본문에서 페린젝트 1회 투여 편의성을 디테일했으면 다음방문전략은 적용 가능 환자군, 급여 기준, 사용 반응 확인 등 다른 후속 액션이어야 함
+㉚ 본문에서 이미 디테일한 핵심을 다음방문전략에서 그대로 반복 금지. 예: 본문에서 페린젝트 1회 투여 편의성을 디테일했으면 다음방문전략은 급여 기준, 사용 반응, 처방을 고려할 상황 확인 등 다른 후속 액션이어야 함
 ㉛ 지난 방문, 오늘 본문, 다음방문전략, 이번 일괄 생성 내 다른 교수의 디테일 축은 모두 달라야 함. "더딘 케이스"와 "늦는 케이스"처럼 말만 바꾼 중복도 FAIL
 ㉜ 이번 일괄 생성에서 다른 교수에게 이미 쓴 본문과 제품/환자군/교수 반응/다음 액션이 거의 같으면 FAIL. 교수별 병원, 과, 지난 기록에 맞게 다르게 작성
+㉝ 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합 사용 금지. 환자 상황과 처방 맥락을 구체적으로 바꿔 쓸 것
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
@@ -2183,7 +2192,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
 ===수정 다음방문전략===
 (PASS이면 원본 그대로, FAIL이면 수정본)`;
 
-    const result = await callAI(systemPrompt, reviewPrompt);
+    const result = await callAI(systemPrompt, reviewPrompt, VISIT_LOG_MODEL);
     const firstLine = result.trim().split('\n')[0].trim().toUpperCase();
     const passed = firstLine.startsWith('PASS');
 
@@ -2246,7 +2255,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   if (!strategy || strategy.trim().length < 5) {
     const themeRule = getDeptFeatureRule(doctor.department);
     const theme = themeRule?.allowedThemes[0] || '환자군';
-    strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} ${theme} 추가 디테일 진행할예정`;
+    strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} ${theme} 처방 상황 확인할예정`;
   }
 
   return { formattedLog: log, nextStrategy: strategy };

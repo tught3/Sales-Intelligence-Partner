@@ -37,7 +37,7 @@ try {
   const { extractKeys, similarityRatio, normalizeTerminology } = imported.module;
 
   const today = '페린젝트의 1회 투여 편의성과 경구용철분제 반응이 더딘 케이스 중심으로 디테일 진행함';
-  const next = '다음방문시에는 경구용철분제 반응이 늦는 케이스 중심으로 페린젝트 적용 환자군 확인할예정';
+  const next = '다음방문시에는 경구용철분제 반응이 늦는 케이스 중심으로 페린젝트 처방 상황 확인할예정';
   const winuf = '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소를 중증 수술 환자 중심으로 디테일 진행함';
 
   assert(
@@ -62,9 +62,14 @@ try {
 
 const plannerSource = await readFile(plannerPath, 'utf8');
 const pipelineSource = await readFile(pipelinePath, 'utf8');
+const aiSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/ai.ts'), 'utf8');
 assert(
   plannerSource.includes('hasDailyObFerinject') && plannerSource.includes('산부인과 페린젝트'),
   'planner는 하루 1건 산부인과 페린젝트 보장 규칙을 포함해야 합니다.'
+);
+assert(
+  plannerSource.includes('narrativeStyle') && plannerSource.includes('professorQuestion'),
+  'planner는 전개 방식과 교수 질문 후보를 계획에 포함해야 합니다.'
 );
 assert(
   pipelineSource.includes('context') &&
@@ -74,6 +79,14 @@ assert(
     pipelineSource.includes('validate_') &&
     pipelineSource.includes('repair_'),
   'pipeline은 context -> plan -> generate -> normalize -> validate/repair 단계를 trace해야 합니다.'
+);
+assert(
+  !/실제 적용 환자군|적용 가능 환자군/.test(aiSource + plannerSource),
+  '생성 프롬프트와 planner 후보에는 금지된 환자군 표현이 남아 있으면 안 됩니다.'
+);
+assert(
+  aiSource.includes("const VISIT_LOG_MODEL = 'gpt-5.5'"),
+  '방문일지 생성 전용 모델은 gpt-5.5여야 합니다.'
 );
 
 console.log('pipeline cases passed');
