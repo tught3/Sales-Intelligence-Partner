@@ -1,9 +1,12 @@
 import type { VisitContext } from './context';
+import type { ClinicalDomain } from './clinical-domain';
+import { candidateFitsDepartment } from './clinical-domain';
 import { collectKeys, extractKeys } from './detailKeys';
 import type { DetailKey } from './types';
 
 type PlanCandidate = Omit<DetailKey, 'selectionReason'> & {
   departmentTags: string[];
+  clinicalDomains: ClinicalDomain[];
   blockedDepartmentTags?: string[];
 };
 
@@ -16,6 +19,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '페린젝트 급여 기준에 맞는 외래 빈혈 케이스 사용 경험 확인',
     narrativeStyle: '환자 케이스 연결형',
     departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과', '흉부외과'],
+    clinicalDomains: ['generalSurgery', 'recoveryNutrition'],
   },
   {
     product: '위너프에이플러스',
@@ -26,6 +30,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     narrativeStyle: '지난 방문 확인형',
     professorQuestion: '중환자에서 혈당 부담은 어느 정도 차이가 나는지 질문 있어',
     departmentTags: ['중환자의학과', '응급의학과', '외상외과', '흉부외과'],
+    clinicalDomains: ['criticalCare', 'recoveryNutrition'],
     blockedDepartmentTags: ['산부인과', '산과', '부인과', '호흡기내과', '호흡기'],
   },
   {
@@ -37,6 +42,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     narrativeStyle: '교수 질문 답변형',
     professorQuestion: '기존 위너프와 어떤 차이로 봐야 하는지 질문 있어',
     departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과', '정형외과'],
+    clinicalDomains: ['generalSurgery', 'recoveryNutrition'],
   },
   {
     product: '위너프에이플러스',
@@ -46,6 +52,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '수술 후 식이 재개가 지연되는 케이스에서 영양 처방 흐름 확인',
     narrativeStyle: '환자 케이스 연결형',
     departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과'],
+    clinicalDomains: ['generalSurgery', 'recoveryNutrition'],
   },
   {
     product: '위너프에이플러스',
@@ -56,6 +63,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     narrativeStyle: '교수 질문 답변형',
     professorQuestion: '혈당 부담이 기존 TPN 대비 어느 정도 차이 나는지 질문 있어',
     departmentTags: ['신경외과'],
+    clinicalDomains: ['neurosurgery', 'recoveryNutrition'],
   },
   {
     product: '위너프에이플러스',
@@ -65,6 +73,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '산부인과 수술 후 식이 지연 케이스에서 영양 처방 가능 상황 확인',
     narrativeStyle: '처방 경험 확인형',
     departmentTags: ['산부인과', '산과', '부인과'],
+    clinicalDomains: ['obgyn', 'recoveryNutrition'],
   },
   {
     product: '위너프에이플러스',
@@ -74,6 +83,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '전실 후 영양 공급이 끊기는 환자에서 TPN 유지 기준 확인',
     narrativeStyle: '지난 방문 확인형',
     departmentTags: ['중환자의학과', '응급의학과', '외상외과', '흉부외과'],
+    clinicalDomains: ['criticalCare', 'recoveryNutrition'],
     blockedDepartmentTags: ['산부인과', '산과', '부인과', '호흡기내과', '호흡기'],
   },
   {
@@ -84,6 +94,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '폐렴 회복기 식이 저하 환자에서 TPN 사용 기준 확인',
     narrativeStyle: '환자 케이스 연결형',
     departmentTags: ['호흡기내과', '호흡기', '결핵'],
+    clinicalDomains: ['respiratory', 'recoveryNutrition'],
   },
   {
     product: '위너프에이플러스',
@@ -93,6 +104,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '결핵 치료 회복기 경구 섭취 저하 환자 영양 처방 흐름 확인',
     narrativeStyle: '처방 경험 확인형',
     departmentTags: ['호흡기내과', '호흡기', '결핵'],
+    clinicalDomains: ['respiratory', 'recoveryNutrition'],
   },
 ];
 
@@ -105,6 +117,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '위너프에이플러스 수술 후 식이 지연 환자 영양 보충 반응 확인',
     narrativeStyle: '처방 경험 확인형',
     departmentTags: ['외과', '일반외과', '정형외과', '호흡기내과', '호흡기'],
+    clinicalDomains: ['outpatientAnemia'],
   },
   {
     product: '페린젝트',
@@ -115,6 +128,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     narrativeStyle: '급여 기준 재확인형',
     professorQuestion: '급여 적용 시 Hb 기준을 어디까지 봐야 하는지 질문 있어',
     departmentTags: ['외과', '일반외과', '정형외과', '신경외과'],
+    clinicalDomains: ['generalSurgery', 'outpatientAnemia'],
   },
   {
     product: '페린젝트',
@@ -124,6 +138,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '위너프에이플러스 수술 전후 영양 공급 시 혈당 부담 차이 확인',
     narrativeStyle: '지난 방문 확인형',
     departmentTags: ['산부인과', '산과', '부인과'],
+    clinicalDomains: ['obgyn', 'outpatientAnemia'],
   },
   {
     product: '페린젝트',
@@ -133,6 +148,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '수술 전 Hb 기준과 외래 투여 가능한 빈혈 케이스 확인',
     narrativeStyle: '급여 기준 재확인형',
     departmentTags: ['산부인과', '산과', '부인과'],
+    clinicalDomains: ['obgyn', 'outpatientAnemia'],
   },
   {
     product: '페린젝트',
@@ -142,6 +158,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '신경외과 수술 전 빈혈 환자에서 철 보충 의사결정 기준 확인',
     narrativeStyle: '환자 케이스 연결형',
     departmentTags: ['신경외과'],
+    clinicalDomains: ['neurosurgery', 'outpatientAnemia'],
   },
   {
     product: '페린젝트',
@@ -151,6 +168,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '외과 외래 빈혈 환자 중 경구용철분제 중단 케이스 확인',
     narrativeStyle: '처방 경험 확인형',
     departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과'],
+    clinicalDomains: ['generalSurgery', 'outpatientAnemia'],
   },
   {
     product: '페린젝트',
@@ -160,6 +178,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '호흡기내과 외래 빈혈 환자에서 Hb 회복 경과와 투여 기준 확인',
     narrativeStyle: '처방 경험 확인형',
     departmentTags: ['호흡기내과', '호흡기', '결핵'],
+    clinicalDomains: ['respiratory', 'outpatientAnemia'],
   },
   {
     product: '페린젝트',
@@ -169,6 +188,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '폐렴 회복기 외래 빈혈 케이스에서 페린젝트 급여 기준 디테일',
     narrativeStyle: '급여 기준 재확인형',
     departmentTags: ['호흡기내과', '호흡기'],
+    clinicalDomains: ['respiratory', 'outpatientAnemia'],
   },
 ];
 
@@ -179,8 +199,10 @@ export function planText(candidate: PlanCandidate | DetailKey): string {
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const all = [...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const productMatched = all.filter((candidate) => ctx.availableProducts.includes(candidate.product));
-  const departmentMatched = productMatched.filter((candidate) => departmentMatches(candidate.departmentTags, ctx.doctor.department));
+  const domainMatched = productMatched.filter((candidate) => candidateFitsDepartment(candidate.clinicalDomains, ctx.doctor.department));
+  const departmentMatched = domainMatched.filter((candidate) => departmentMatches(candidate.departmentTags, ctx.doctor.department));
   if (departmentMatched.length > 0) return departmentMatched;
+  if (domainMatched.length > 0) return domainMatched;
   return productMatched.filter((candidate) => !departmentMatches(candidate.blockedDepartmentTags ?? [], ctx.doctor.department));
 }
 

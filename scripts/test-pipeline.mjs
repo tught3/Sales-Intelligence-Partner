@@ -9,6 +9,7 @@ const plannerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-
 const pipelinePath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/pipeline.ts');
 const repairPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/repair.ts');
 const validatorPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/validator.ts');
+const clinicalDomainPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/clinical-domain.ts');
 const visitLogPagePath = path.join(root, 'artifacts/sales-intelligence/src/pages/VisitLogPage.tsx');
 
 function assert(condition, message) {
@@ -71,10 +72,47 @@ try {
   await imported.cleanup();
 }
 
+const importedClinicalDomain = await importTsModule(clinicalDomainPath, 'clinicalDomain.mjs');
+try {
+  const { candidateFitsDepartment, findMismatchedClinicalDomain } = importedClinicalDomain.module;
+
+  assert(
+    candidateFitsDepartment(['respiratory', 'outpatientAnemia'], '호흡기내과'),
+    '호흡기내과는 호흡기/외래 빈혈 도메인 후보를 허용해야 합니다.'
+  );
+  assert(
+    !candidateFitsDepartment(['obgyn', 'outpatientAnemia'], '호흡기내과'),
+    '호흡기내과는 산부인과 도메인 후보를 허용하면 안 됩니다.'
+  );
+  assert(
+    candidateFitsDepartment(['obgyn', 'outpatientAnemia'], '산부인과'),
+    '산부인과는 산후/분만 빈혈 도메인 후보를 허용해야 합니다.'
+  );
+  assert(
+    findMismatchedClinicalDomain('분만 후 빈혈 환자에게 페린젝트 디테일 진행함', '호흡기내과')?.domain === 'obgyn',
+    '호흡기내과 본문에서 산부인과 도메인이 감지되면 mismatch여야 합니다.'
+  );
+  assert(
+    findMismatchedClinicalDomain('중환자실 전실 후 TPN 디테일 진행함', '산부인과')?.domain === 'criticalCare',
+    '산부인과 본문에서 중환자 도메인이 감지되면 mismatch여야 합니다.'
+  );
+  assert(
+    findMismatchedClinicalDomain(
+      '분만 후 빈혈 환자에게 페린젝트 디테일 진행함',
+      '호흡기내과',
+      '특이 케이스로 분만 후 빈혈 환자 협진 문의'
+    ) === null,
+    '사용자가 원 메모에 직접 쓴 특이 케이스는 도메인 mismatch 예외로 둬야 합니다.'
+  );
+} finally {
+  await importedClinicalDomain.cleanup();
+}
+
 const plannerSource = await readFile(plannerPath, 'utf8');
 const pipelineSource = await readFile(pipelinePath, 'utf8');
 const repairSource = await readFile(repairPath, 'utf8');
 const validatorSource = await readFile(validatorPath, 'utf8');
+const clinicalDomainSource = await readFile(clinicalDomainPath, 'utf8');
 const aiSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/ai.ts'), 'utf8');
 const visitLogPageSource = await readFile(visitLogPagePath, 'utf8');
 assert(
@@ -119,10 +157,12 @@ assert(
 );
 assert(
   plannerSource.includes('departmentTags') &&
+    plannerSource.includes('clinicalDomains') &&
+    plannerSource.includes('candidateFitsDepartment') &&
     plannerSource.includes('departmentMatches') &&
     plannerSource.includes("departmentTags: ['호흡기내과', '호흡기', '결핵']") &&
     plannerSource.includes("departmentTags: ['산부인과', '산과', '부인과']"),
-  'planner는 진료과 태그로 후보를 먼저 제한해야 합니다.'
+  'planner는 진료과 태그와 임상 도메인으로 후보를 먼저 제한해야 합니다.'
 );
 assert(
   plannerSource.includes('폐렴 회복기 경구 섭취') &&
@@ -140,14 +180,21 @@ assert(
 );
 assert(
   validatorSource.includes('DEPARTMENT_MISMATCH') &&
-    validatorSource.includes('findDepartmentMismatch') &&
-    validatorSource.includes('분만') &&
-    validatorSource.includes('산후') &&
-    validatorSource.includes('중환자') &&
-    validatorSource.includes('ICU') &&
-    validatorSource.includes('폐렴') &&
-    validatorSource.includes('결핵'),
-  'validator는 호흡기내과/산부인과 진료과 mismatch를 실패 처리해야 합니다.'
+    validatorSource.includes('findMismatchedClinicalDomain') &&
+    !validatorSource.includes('DEPARTMENT_MISMATCH_RULES'),
+  'validator는 과별 금지어 하드코딩 대신 임상 도메인 mismatch를 호출해야 합니다.'
+);
+assert(
+  clinicalDomainSource.includes('ClinicalDomain') &&
+    clinicalDomainSource.includes('getAllowedClinicalDomains') &&
+    clinicalDomainSource.includes('candidateFitsDepartment') &&
+    clinicalDomainSource.includes('분만') &&
+    clinicalDomainSource.includes('산후') &&
+    clinicalDomainSource.includes('중환자') &&
+    clinicalDomainSource.includes('ICU') &&
+    clinicalDomainSource.includes('폐렴') &&
+    clinicalDomainSource.includes('결핵'),
+  '임상 도메인 taxonomy가 진료과별 현실성 mismatch를 판단해야 합니다.'
 );
 assert(
   aiSource.includes("const VISIT_LOG_MODEL = 'gpt-5.4-mini'") &&

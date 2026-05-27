@@ -10,6 +10,7 @@ export type DetailKey = {
   nextAction: string;
   narrativeStyle: '지난 방문 확인형' | '교수 질문 답변형' | '급여 기준 재확인형' | '환자 케이스 연결형' | '처방 경험 확인형';
   professorQuestion?: string;
+  clinicalDomains?: string[];
   selectionReason: string;
 };
 
