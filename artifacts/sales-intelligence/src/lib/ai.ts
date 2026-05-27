@@ -4,7 +4,7 @@ import { runVisitGenerationPipeline } from './visit-generation/pipeline';
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
 
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
-const VISIT_LOG_MODEL = 'gpt-5.5';
+const VISIT_LOG_MODEL = 'gpt-5.4-mini';
 const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
 const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 const MIN_VISIT_LOG_LENGTH = 100;
@@ -1152,6 +1152,21 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
           log: '페린젝트의 Hb 회복 근거를 분만 후 외래 재방문이 어려운 빈혈 환자와 연결해 디테일 진행함. 교수님께서 추적 부담이 큰 환자에서는 편의성이 의미 있다는 반응 보임',
         }
       );
+    } else if (/호흡기내과|호흡기|결핵/.test(department)) {
+      pool.push(
+        {
+          product,
+          keys: ['ferric-once-convenience', 'hb-recovery'],
+          detail: '외래 빈혈에서 1회 투여 편의성과 Hb 회복 근거',
+          log: '페린젝트의 1회 투여 편의성과 Hb 회복 근거를 호흡기내과 외래 추적 중인 빈혈 환자와 연결해 디테일 진행함. 교수님께서 원내 기준에 맞는 환자는 검토 가능하다는 반응 보임',
+        },
+        {
+          product,
+          keys: ['reimbursement-criteria', 'hb-recovery'],
+          detail: '폐렴 회복기 외래 빈혈에서 급여 기준과 Hb 회복 근거',
+          log: '페린젝트의 급여 기준과 Hb 회복 근거를 폐렴 회복 후 피로감이 남은 철결핍 빈혈 환자와 연결해 디테일 진행함. 교수님께서 Hb 수치와 증상을 같이 보겠다는 의견 보임',
+        }
+      );
     } else if (/신경외과|신경/.test(department)) {
       pool.push(
         {
@@ -1197,6 +1212,21 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
           keys: ['protein-nitrogen'],
           detail: '단백 보충과 질소균형 유지',
           log: '위너프에이플러스의 단백 보충과 질소균형 유지 근거를 신경외과 회복기 환자 영양 공백과 연결해 디테일 진행함. 교수님께서 병동 사용 기준은 더 보겠다는 의견 보임',
+        }
+      );
+    } else if (/호흡기내과|호흡기|결핵/.test(department)) {
+      pool.push(
+        {
+          product,
+          keys: ['protein-nitrogen'],
+          detail: '폐렴 회복기 경구 섭취 어려움에서 단백 공급량 보강',
+          log: '위너프에이플러스의 단백 공급량 보강을 폐렴 회복기 경구 섭취가 줄어든 입원 환자와 연결해 디테일 진행함. 교수님께서 감염 회복기 영양 공백 보완은 이해하셨다는 반응 보임',
+        },
+        {
+          product,
+          keys: ['winuf-glucose-burden', 'protein-nitrogen'],
+          detail: '결핵 치료 회복기 영양 공급에서 저포도당 조성과 단백 보충',
+          log: '위너프에이플러스의 저포도당 조성과 단백 보충을 결핵 치료 중 식욕 저하가 있는 입원 회복기 환자와 연결해 디테일 진행함. 교수님께서 장기 치료 환자 영양 유지 필요성은 공감하셨음',
         }
       );
     } else if (/산부인과|산과|부인과/.test(department)) {
@@ -1538,8 +1568,8 @@ const DEPT_FEATURE_RULES: DeptFeatureRule[] = [
   },
   {
     keywords: ['산부인과', '산과', '부인과'],
-    allowedThemes: ['산후 빈혈', '수술 전후 빈혈', '출혈 후 회복', 'Hb 회복', '수혈 회피 가능성', '외래 편의'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
+    allowedThemes: ['산후 빈혈', '분만 후 빈혈', '수술 전후 빈혈', '출혈 후 회복', '외래 추적', 'Hb 회복'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI', '중환자', 'ICU', '중증 환자', '신경외과', '호흡기 감염', '폐렴', '결핵'],
   },
   {
     keywords: ['소화기내과', '소화기', 'IBD', '위장관'],
@@ -1548,8 +1578,8 @@ const DEPT_FEATURE_RULES: DeptFeatureRule[] = [
   },
   {
     keywords: ['호흡기내과', '호흡기', '결핵'],
-    allowedThemes: ['호흡기 감염', '폐렴', '결핵', '항생제 치료', '경구 섭취 어려움', '회복'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '대장', '장염', '정형외과', '산부인과'],
+    allowedThemes: ['폐렴', '호흡기 감염', '결핵', '경구 섭취 어려움', '입원 회복기 영양', '외래 빈혈'],
+    disallowedThemes: ['IBD', '크론', '궤양성대장염', '대장', '장염', '정형외과', '산부인과', '분만', '산후', '임신', '출산', '부인과'],
   },
   {
     keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'],

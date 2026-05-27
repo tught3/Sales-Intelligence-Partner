@@ -50,7 +50,10 @@ export async function repair(
   target: RepairTarget,
   attempt: number
 ): Promise<RepairOutput> {
-  const shouldReplan = validation.failTypes.includes('DUPLICATE_BATCH') || validation.failTypes.includes('DUPLICATE_PAST');
+  const shouldReplan =
+    validation.failTypes.includes('DUPLICATE_BATCH') ||
+    validation.failTypes.includes('DUPLICATE_PAST') ||
+    validation.failTypes.includes('DEPARTMENT_MISMATCH');
   const repairPlan = shouldReplan ? findAlternativePlan(ctx, plan) ?? plan : plan;
   if (attempt >= MAX_REPAIR_ATTEMPTS) return buildNonConflictingFallback(repairPlan, ctx);
 
@@ -65,6 +68,6 @@ export async function repair(
   return {
     formattedLog: fallback.formattedLog,
     nextStrategy: fallback.nextStrategy,
-    usedFallback: validation.failTypes.includes('DUPLICATE_BATCH') || validation.failTypes.includes('DUPLICATE_PAST'),
+    usedFallback: shouldReplan,
   };
 }

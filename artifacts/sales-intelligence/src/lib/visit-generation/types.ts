@@ -22,6 +22,7 @@ export type ValidationFailType =
   | 'MISSING_PRODUCT'
   | 'MISSING_DETAIL'
   | 'MISSING_REACTION'
+  | 'DEPARTMENT_MISMATCH'
   | 'FORBIDDEN_PHRASE';
 
 export type ValidationResult =

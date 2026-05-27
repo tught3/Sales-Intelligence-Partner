@@ -2,7 +2,10 @@ import type { VisitContext } from './context';
 import { collectKeys, extractKeys } from './detailKeys';
 import type { DetailKey } from './types';
 
-type PlanCandidate = Omit<DetailKey, 'selectionReason'>;
+type PlanCandidate = Omit<DetailKey, 'selectionReason'> & {
+  departmentTags: string[];
+  blockedDepartmentTags?: string[];
+};
 
 const WINUF_CANDIDATES: PlanCandidate[] = [
   {
@@ -12,6 +15,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '혈당을 보면서 단백 보충을 같이 가져갈 수 있다는 점에는 동의',
     nextAction: '페린젝트 급여 기준에 맞는 외래 빈혈 케이스 사용 경험 확인',
     narrativeStyle: '환자 케이스 연결형',
+    departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과', '흉부외과'],
   },
   {
     product: '위너프에이플러스',
@@ -21,6 +25,8 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '페린젝트 수혈 회피를 고려하는 퇴원 전 빈혈 케이스 디테일',
     narrativeStyle: '지난 방문 확인형',
     professorQuestion: '중환자에서 혈당 부담은 어느 정도 차이가 나는지 질문 있어',
+    departmentTags: ['중환자의학과', '응급의학과', '외상외과', '흉부외과'],
+    blockedDepartmentTags: ['산부인과', '산과', '부인과', '호흡기내과', '호흡기'],
   },
   {
     product: '위너프에이플러스',
@@ -30,6 +36,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '페린젝트 Hb 회복 경과와 수혈 회피 가능 케이스 확인',
     narrativeStyle: '교수 질문 답변형',
     professorQuestion: '기존 위너프와 어떤 차이로 봐야 하는지 질문 있어',
+    departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과', '정형외과'],
   },
   {
     product: '위너프에이플러스',
@@ -38,6 +45,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '회복기 영양 공백을 줄이는 접근은 이해하셨지만 병동 프로토콜은 확인해보겠다는 의견',
     nextAction: '수술 후 식이 재개가 지연되는 케이스에서 영양 처방 흐름 확인',
     narrativeStyle: '환자 케이스 연결형',
+    departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과'],
   },
   {
     product: '위너프에이플러스',
@@ -47,6 +55,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '신경외과 병동의 경구 섭취 지연 환자 TPN 사용 기준 확인',
     narrativeStyle: '교수 질문 답변형',
     professorQuestion: '혈당 부담이 기존 TPN 대비 어느 정도 차이 나는지 질문 있어',
+    departmentTags: ['신경외과'],
   },
   {
     product: '위너프에이플러스',
@@ -55,6 +64,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '산부인과에서는 사용 케이스가 많지 않지만 회복 지연 환자에서는 검토 가능하다는 의견',
     nextAction: '산부인과 수술 후 식이 지연 케이스에서 영양 처방 가능 상황 확인',
     narrativeStyle: '처방 경험 확인형',
+    departmentTags: ['산부인과', '산과', '부인과'],
   },
   {
     product: '위너프에이플러스',
@@ -63,6 +73,26 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '중환자실 이후 병동 연결 처방은 의미 있지만 실제 적용 기준은 더 보겠다는 반응',
     nextAction: '전실 후 영양 공급이 끊기는 환자에서 TPN 유지 기준 확인',
     narrativeStyle: '지난 방문 확인형',
+    departmentTags: ['중환자의학과', '응급의학과', '외상외과', '흉부외과'],
+    blockedDepartmentTags: ['산부인과', '산과', '부인과', '호흡기내과', '호흡기'],
+  },
+  {
+    product: '위너프에이플러스',
+    patientGroup: '폐렴 회복기 경구 섭취가 줄어 병동 영양 보강이 필요한 환자',
+    detailAxis: '위너프에이플러스의 단백 보충과 저포도당 조성',
+    doctorReaction: '감염 회복기 영양 공백을 보완하는 방향은 이해하셨고 혈당은 같이 보겠다는 반응',
+    nextAction: '폐렴 회복기 식이 저하 환자에서 TPN 사용 기준 확인',
+    narrativeStyle: '환자 케이스 연결형',
+    departmentTags: ['호흡기내과', '호흡기', '결핵'],
+  },
+  {
+    product: '위너프에이플러스',
+    patientGroup: '결핵 치료 중 식욕 저하로 입원 회복기 영양 공급이 필요한 환자',
+    detailAxis: '위너프에이플러스의 질소균형 보강과 단백 공급량',
+    doctorReaction: '장기 치료 환자에서 영양 유지 필요성은 공감하셨고 처방 기준은 확인해보겠다는 의견',
+    nextAction: '결핵 치료 회복기 경구 섭취 저하 환자 영양 처방 흐름 확인',
+    narrativeStyle: '처방 경험 확인형',
+    departmentTags: ['호흡기내과', '호흡기', '결핵'],
   },
 ];
 
@@ -74,6 +104,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '반복 내원이 어려운 환자에서는 설명해볼 수 있겠다는 반응',
     nextAction: '위너프에이플러스 수술 후 식이 지연 환자 영양 보충 반응 확인',
     narrativeStyle: '처방 경험 확인형',
+    departmentTags: ['외과', '일반외과', '정형외과', '호흡기내과', '호흡기'],
   },
   {
     product: '페린젝트',
@@ -83,6 +114,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '위너프에이플러스 저포도당 조성을 수술 후 영양 흐름과 연결해 디테일',
     narrativeStyle: '급여 기준 재확인형',
     professorQuestion: '급여 적용 시 Hb 기준을 어디까지 봐야 하는지 질문 있어',
+    departmentTags: ['외과', '일반외과', '정형외과', '신경외과'],
   },
   {
     product: '페린젝트',
@@ -91,6 +123,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '분만 후 외래 재방문이 어려운 환자에서는 편의성은 인정하셨음',
     nextAction: '위너프에이플러스 수술 전후 영양 공급 시 혈당 부담 차이 확인',
     narrativeStyle: '지난 방문 확인형',
+    departmentTags: ['산부인과', '산과', '부인과'],
   },
   {
     product: '페린젝트',
@@ -99,6 +132,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '수술 일정이 가까운 환자에서는 경구용철분제보다 빠른 보충이 필요할 수 있다는 의견',
     nextAction: '수술 전 Hb 기준과 외래 투여 가능한 빈혈 케이스 확인',
     narrativeStyle: '급여 기준 재확인형',
+    departmentTags: ['산부인과', '산과', '부인과'],
   },
   {
     product: '페린젝트',
@@ -107,6 +141,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '수혈을 줄일 수 있는 케이스는 관심 보였지만 수술 일정과 Hb 수치를 같이 보겠다는 반응',
     nextAction: '신경외과 수술 전 빈혈 환자에서 철 보충 의사결정 기준 확인',
     narrativeStyle: '환자 케이스 연결형',
+    departmentTags: ['신경외과'],
   },
   {
     product: '페린젝트',
@@ -115,16 +150,53 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '외래 재방문이 어려운 환자에서는 편의성이 장점이 될 수 있다는 의견',
     nextAction: '외과 외래 빈혈 환자 중 경구용철분제 중단 케이스 확인',
     narrativeStyle: '처방 경험 확인형',
+    departmentTags: ['외과', '일반외과', '복부외과', '간담췌외과'],
+  },
+  {
+    product: '페린젝트',
+    patientGroup: '만성 호흡기 질환으로 외래 추적 중 Hb 회복을 같이 보는 빈혈 환자',
+    detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+    doctorReaction: '호흡기 증상으로 잦은 내원이 어려운 환자에서는 투여 편의성을 설명해볼 수 있다는 반응',
+    nextAction: '호흡기내과 외래 빈혈 환자에서 Hb 회복 경과와 투여 기준 확인',
+    narrativeStyle: '처방 경험 확인형',
+    departmentTags: ['호흡기내과', '호흡기', '결핵'],
+  },
+  {
+    product: '페린젝트',
+    patientGroup: '폐렴 회복 후 피로감이 남아 철결핍 빈혈을 확인한 외래 환자',
+    detailAxis: '페린젝트의 급여 기준과 빠른 철 보충 근거',
+    doctorReaction: '감염 회복 이후 Hb 수치가 낮은 환자는 원내 기준에 맞춰 검토 가능하다는 의견',
+    nextAction: '폐렴 회복기 외래 빈혈 케이스에서 페린젝트 급여 기준 디테일',
+    narrativeStyle: '급여 기준 재확인형',
+    departmentTags: ['호흡기내과', '호흡기'],
   },
 ];
 
-export function planText(candidate: PlanCandidate): string {
+export function planText(candidate: PlanCandidate | DetailKey): string {
   return `${candidate.product} ${candidate.patientGroup} ${candidate.detailAxis} ${candidate.doctorReaction} ${candidate.nextAction} ${candidate.narrativeStyle}`;
 }
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const all = [...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
-  return all.filter((candidate) => ctx.availableProducts.includes(candidate.product));
+  const productMatched = all.filter((candidate) => ctx.availableProducts.includes(candidate.product));
+  const departmentMatched = productMatched.filter((candidate) => departmentMatches(candidate.departmentTags, ctx.doctor.department));
+  if (departmentMatched.length > 0) return departmentMatched;
+  return productMatched.filter((candidate) => !departmentMatches(candidate.blockedDepartmentTags ?? [], ctx.doctor.department));
+}
+
+function normalizeDepartmentName(department: string): string {
+  return department.replace(/\s+/g, '').toLowerCase();
+}
+
+function departmentMatches(tags: string[], department: string): boolean {
+  const normalizedDepartment = normalizeDepartmentName(department);
+  return tags.some((tag) => {
+    const normalizedTag = normalizeDepartmentName(tag);
+    if (normalizedTag === '외과') {
+      return ['외과', '일반외과', '복부외과', '대장항문외과', '간담췌외과'].includes(normalizedDepartment);
+    }
+    return normalizedDepartment.includes(normalizedTag) || normalizedTag.includes(normalizedDepartment);
+  });
 }
 
 function scoreCandidate(candidate: PlanCandidate, ctx: VisitContext, recentKeys: string[]): number {
