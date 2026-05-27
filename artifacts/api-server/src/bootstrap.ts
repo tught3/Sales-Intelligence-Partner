@@ -41,8 +41,16 @@ export async function ensureDatabaseSchema() {
       tags jsonb NOT NULL DEFAULT '[]'::jsonb,
       product varchar(200) NOT NULL DEFAULT '',
       effectiveness integer NOT NULL DEFAULT 5,
+      analysis text NOT NULL DEFAULT '',
+      analyzed_at timestamp,
       created_at timestamp NOT NULL DEFAULT now()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE golden_snippets
+      ADD COLUMN IF NOT EXISTS analysis text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS analyzed_at timestamp;
   `);
 
   await pool.query(`

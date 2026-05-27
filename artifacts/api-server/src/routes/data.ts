@@ -79,6 +79,8 @@ function prepSnippet(s: any) {
     tags: Array.isArray(s.tags) ? s.tags.map((tag: any) => cleanPointWord(String(tag))) : [],
     product: normalizeSnippetProduct(s.product || ""),
     effectiveness: s.effectiveness ?? 5,
+    analysis: cleanPointWord(s.analysis || ""),
+    analyzedAt: s.analyzedAt || s.analyzed_at ? toDate(s.analyzedAt ?? s.analyzed_at) : null,
     createdAt: toDate(s.createdAt ?? s.created_at),
   };
 }
@@ -96,7 +98,7 @@ function cleanPointWord(value: string) {
     .replace(/제품\s*포인트/g, "제품 내용")
     .replace(/처방\s*포인트/g, "처방 관련 내용")
     .replace(/디테일\s*포인트/g, "디테일")
-    .replace(/짧은\s*포인트/g, "짧게")
+    .replace(/짧은\s*포인트/g, "핵심 내용")
     .replace(/차별화\s*포인트/g, "차별점")
     .replace(/매력\s*포인트/g, "강점")
     .replace(/활용\s*포인트/g, "활용 내용")
@@ -113,15 +115,39 @@ type SnippetLike = {
   context: string;
   tags: string[];
   product: string;
+  analysis?: string;
 };
 
 function normalizeSnippetTextForSimilarity(value: string): string {
   return value
     .toLowerCase()
     .replace(/포인트/g, "디테일")
+    .replace(/경구\s*철분제|경구용\s*철분제제+|oral\s*iron/gi, "경구용철분제")
+    .replace(/더딘|늦는|불충분|부족한|반응\s*부족/g, "반응부족")
     .replace(/[^\p{L}\p{N}%]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function getSnippetMeaningKeys(snippet: SnippetLike): Set<string> {
+  const text = normalizeSnippetTextForSimilarity(
+    `${snippet.product} ${snippet.content} ${snippet.context} ${snippet.tags.join(" ")}`
+  );
+  const pairs: Array<[string, RegExp]> = [
+    ["경구용철분제반응부족", /경구용철분제.*반응부족|반응부족.*경구용철분제/],
+    ["1회투여편의성", /1회|한\s*번|원샷|투여.*편의|편의.*투여/],
+    ["급여기준", /급여|보험|기준|청구/],
+    ["Hb회복", /hb|혈색소|헤모글로빈|회복/],
+    ["시험투여부담", /시험투여|아나필락시스|과민|부담/],
+    ["아미노산25증가", /아미노산.*25|25.*아미노산/],
+    ["포도당부담감소", /포도당|혈당|당부하|당\s*부담/],
+    ["중증영양", /중증|중환자|icu|영양/],
+    ["단백보충", /단백|질소균형|보충/],
+    ["오메가3조성", /오메가3|omega\s*3|ω\s*3/],
+    ["수혈부담", /수혈|transfusion/],
+    ["외래추적부담", /외래|추적|내원|재방문/],
+  ];
+  return new Set(pairs.filter(([, pattern]) => pattern.test(text)).map(([key]) => key));
 }
 
 function getSnippetDetailTokens(snippet: SnippetLike): Set<string> {
@@ -161,6 +187,13 @@ function snippetNgramSimilarity(a: string, b: string): number {
 
 function snippetDetailSimilarity(a: SnippetLike, b: SnippetLike): number {
   if (normalizeSnippetProduct(a.product) !== normalizeSnippetProduct(b.product)) return 0;
+  const aKeys = getSnippetMeaningKeys(a);
+  const bKeys = getSnippetMeaningKeys(b);
+  if (aKeys.size > 0 && bKeys.size > 0) {
+    for (const key of aKeys) {
+      if (bKeys.has(key)) return 1;
+    }
+  }
   const aTokens = getSnippetDetailTokens(a);
   const bTokens = getSnippetDetailTokens(b);
   const union = new Set([...aTokens, ...bTokens]);
@@ -383,6 +416,7 @@ router.post("/snippets", wrap(async (req, res) => {
       context: data.context,
       tags: data.tags as string[],
       product: data.product,
+      analysis: data.analysis,
     },
     {
       id: row.id,
@@ -390,6 +424,7 @@ router.post("/snippets", wrap(async (req, res) => {
       context: row.context,
       tags: row.tags as string[],
       product: row.product,
+      analysis: row.analysis,
     }
   ) >= 0.68);
   if (duplicate) {

@@ -46,6 +46,8 @@ export interface GoldenSnippet {
   tags: string[];
   product: string;
   effectiveness: number;
+  analysis?: string;
+  analyzedAt?: string;
   createdAt: string;
 }
 
@@ -334,6 +336,8 @@ function normalizeSnippet(s: any): GoldenSnippet {
     ...s,
     product: normalizeSnippetProduct(s.product ?? ''),
     tags: s.tags ?? [],
+    analysis: s.analysis ?? '',
+    analyzedAt: s.analyzedAt || s.analyzed_at ? toISOStr(s.analyzedAt ?? s.analyzed_at) : undefined,
     createdAt: toISOStr(s.createdAt ?? s.created_at),
   };
 }
@@ -591,9 +595,32 @@ function normalizeSnippetTextForSimilarity(value: string): string {
   return value
     .toLowerCase()
     .replace(/포인트/g, '디테일')
+    .replace(/경구\s*철분제|경구용\s*철분제제+|oral\s*iron/gi, '경구용철분제')
+    .replace(/더딘|늦는|불충분|부족한|반응\s*부족/g, '반응부족')
     .replace(/[^\p{L}\p{N}%]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function getSnippetMeaningKeys(snippet: Pick<GoldenSnippet, 'content' | 'context' | 'tags' | 'product'>): Set<string> {
+  const text = normalizeSnippetTextForSimilarity(
+    `${snippet.product} ${snippet.content} ${snippet.context} ${(snippet.tags ?? []).join(' ')}`
+  );
+  const pairs: Array<[string, RegExp]> = [
+    ['경구용철분제반응부족', /경구용철분제.*반응부족|반응부족.*경구용철분제/],
+    ['1회투여편의성', /1회|한\s*번|원샷|투여.*편의|편의.*투여/],
+    ['급여기준', /급여|보험|기준|청구/],
+    ['Hb회복', /hb|혈색소|헤모글로빈|회복/],
+    ['시험투여부담', /시험투여|아나필락시스|과민|부담/],
+    ['아미노산25증가', /아미노산.*25|25.*아미노산/],
+    ['포도당부담감소', /포도당|혈당|당부하|당\s*부담/],
+    ['중증영양', /중증|중환자|icu|영양/],
+    ['단백보충', /단백|질소균형|보충/],
+    ['오메가3조성', /오메가3|omega\s*3|ω\s*3/],
+    ['수혈부담', /수혈|transfusion/],
+    ['외래추적부담', /외래|추적|내원|재방문/],
+  ];
+  return new Set(pairs.filter(([, pattern]) => pattern.test(text)).map(([key]) => key));
 }
 
 function getSnippetDetailTokens(snippet: Pick<GoldenSnippet, 'content' | 'context' | 'tags' | 'product'>): Set<string> {
@@ -641,6 +668,13 @@ export function snippetDetailSimilarity(
   b: Pick<GoldenSnippet, 'content' | 'context' | 'tags' | 'product'>
 ): number {
   if (normalizeSnippetProduct(a.product) !== normalizeSnippetProduct(b.product)) return 0;
+  const aKeys = getSnippetMeaningKeys(a);
+  const bKeys = getSnippetMeaningKeys(b);
+  if (aKeys.size > 0 && bKeys.size > 0) {
+    for (const key of aKeys) {
+      if (bKeys.has(key)) return 1;
+    }
+  }
   const aTokens = getSnippetDetailTokens(a);
   const bTokens = getSnippetDetailTokens(b);
   const union = new Set([...aTokens, ...bTokens]);
@@ -654,6 +688,19 @@ export function snippetDetailSimilarity(
     `${b.content} ${b.context}`
   );
   return Math.max(tokenScore, textScore);
+}
+
+export function isLowValueSnippet(snippet: Pick<GoldenSnippet, 'content' | 'context' | 'tags' | 'product'>): boolean {
+  const text = normalizeSnippetTextForSimilarity(
+    `${snippet.content} ${snippet.context} ${(snippet.tags ?? []).join(' ')}`
+  );
+  const saysCleanOnly = /깔끔|간단|무난/.test(text);
+  if (!saysCleanOnly) return false;
+
+  const hasConcreteBenefit =
+    getSnippetMeaningKeys(snippet).size > 0 ||
+    /혈당|단백|아미노산|포도당|급여|hb|혈색소|수혈|외래|시험투여|아나필락시스|1회|중환자|영양/.test(text);
+  return !hasConcreteBenefit;
 }
 
 function findSimilarSnippet(
@@ -670,6 +717,9 @@ function chooseSnippetToKeep(a: GoldenSnippet, b: GoldenSnippet): GoldenSnippet 
   if ((a.effectiveness ?? 0) !== (b.effectiveness ?? 0)) {
     return (a.effectiveness ?? 0) > (b.effectiveness ?? 0) ? a : b;
   }
+  const aHasAnalysis = (a.analysis ?? '').trim().length > 0 ? 1 : 0;
+  const bHasAnalysis = (b.analysis ?? '').trim().length > 0 ? 1 : 0;
+  if (aHasAnalysis !== bHasAnalysis) return aHasAnalysis > bHasAnalysis ? a : b;
   const aHasContext = a.context.trim().length > 0 ? 1 : 0;
   const bHasContext = b.context.trim().length > 0 ? 1 : 0;
   if (aHasContext !== bHasContext) return aHasContext > bHasContext ? a : b;
@@ -703,8 +753,33 @@ export const snippetStorage = {
       tags: normalized.tags,
       product: normalized.product,
       effectiveness: normalized.effectiveness,
+      analysis: normalized.analysis ?? '',
+      analyzedAt: normalized.analyzedAt,
     }).catch(console.error);
     return { saved: true };
+  },
+  saveAnalysis(id: string, analysis: string): GoldenSnippet | undefined {
+    const idx = cache.snippets.findIndex((s) => s.id === id);
+    if (idx < 0) return undefined;
+    const updated = {
+      ...cache.snippets[idx],
+      analysis: analysis.trim(),
+      analyzedAt: new Date().toISOString(),
+    };
+    cache.snippets[idx] = updated;
+    persistLocalCache();
+    api('/snippets', 'POST', {
+      id: updated.id,
+      content: updated.content,
+      context: updated.context,
+      tags: updated.tags,
+      product: updated.product,
+      effectiveness: updated.effectiveness,
+      analysis: updated.analysis,
+      analyzedAt: updated.analyzedAt,
+      createdAt: updated.createdAt,
+    }).catch(console.error);
+    return updated;
   },
   findSimilar(snippet: GoldenSnippet): GoldenSnippet | undefined {
     return findSimilarSnippet(normalizeSnippet(snippet), cache.snippets);
@@ -713,6 +788,10 @@ export const snippetStorage = {
     const kept: GoldenSnippet[] = [];
     const removed: GoldenSnippet[] = [];
     for (const snippet of [...cache.snippets].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+      if (isLowValueSnippet(snippet)) {
+        removed.push(snippet);
+        continue;
+      }
       const similar = findSimilarSnippet(snippet, kept);
       if (!similar) {
         kept.push(snippet);

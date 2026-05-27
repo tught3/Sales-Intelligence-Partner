@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { snippetStorage, generateId, type GoldenSnippet } from "@/lib/storage";
+import { snippetDetailSimilarity, snippetStorage, generateId, type GoldenSnippet } from "@/lib/storage";
 import { analyzeSnippetEffectiveness, generateSnippetsFromManuals } from "@/lib/ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,50 +30,12 @@ const TAG_SUGGESTIONS = [
   "임상 데이터", "환자 경험", "초기 처방", "용량 조절",
 ];
 
-function normalizeSnippetText(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "")
-    .trim();
-}
-
-function snippetSimilarity(a: string, b: string): number {
-  const left = normalizeSnippetText(a);
-  const right = normalizeSnippetText(b);
-  if (!left || !right) return 0;
-  if (left === right) return 1;
-
-  const shorter = left.length <= right.length ? left : right;
-  const longer = left.length > right.length ? left : right;
-  if (longer.includes(shorter) && shorter.length >= 12) return 1;
-
-  const grams = (value: string) => {
-    const size = Math.min(3, value.length);
-    const result = new Set<string>();
-    for (let i = 0; i <= value.length - size; i++) {
-      result.add(value.slice(i, i + size));
-    }
-    return result;
-  };
-
-  const leftGrams = grams(left);
-  const rightGrams = grams(right);
-  let overlap = 0;
-  for (const gram of leftGrams) {
-    if (rightGrams.has(gram)) overlap++;
-  }
-  return overlap / Math.max(leftGrams.size, rightGrams.size, 1);
-}
-
 function isDuplicateSnippet(
   candidate: Pick<GoldenSnippet, "content" | "context" | "product">,
-  existing: Array<Pick<GoldenSnippet, "content" | "context" | "product">>
+  existing: Array<Pick<GoldenSnippet, "content" | "context" | "product" | "tags">>
 ): boolean {
-  const candidateText = `${candidate.product} ${candidate.content} ${candidate.context}`;
-  return existing.some((snippet) => {
-    const existingText = `${snippet.product} ${snippet.content} ${snippet.context}`;
-    return snippetSimilarity(candidateText, existingText) >= 0.82;
-  });
+  const withTags = { ...candidate, tags: [] };
+  return existing.some((snippet) => snippetDetailSimilarity(withTags, snippet) >= 0.68);
 }
 
 function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -108,8 +70,11 @@ export default function SnippetsPage() {
   const [search, setSearch] = useState("");
   const [filterProduct, setFilterProduct] = useState("");
   const [analyzing, setAnalyzing] = useState<string | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<Record<string, string>>({});
+  const [analysisResult, setAnalysisResult] = useState<Record<string, string>>(() =>
+    Object.fromEntries(snippetStorage.getAll().filter((s) => s.analysis).map((s) => [s.id, s.analysis || ""]))
+  );
   const [generating, setGenerating] = useState(false);
+  const [analyzingAll, setAnalyzingAll] = useState(false);
 
   useEffect(() => {
     const result = snippetStorage.pruneSimilar();
@@ -117,7 +82,7 @@ export default function SnippetsPage() {
       setSnippets(snippetStorage.getAll());
       toast({
         title: `유사 핵심멘트 ${result.removed.length}건을 정리했습니다`,
-        description: "같은 디테일을 말만 바꾼 항목은 높은 품질 항목만 남겼습니다.",
+        description: "같은 디테일을 말만 바꾼 항목과 구체적 이득이 없는 항목은 정리했습니다.",
       });
     }
   }, [toast]);
@@ -202,7 +167,14 @@ export default function SnippetsPage() {
         count++;
       }
       setSnippets(snippetStorage.getAll());
-      toast({ title: `${count}개 핵심 멘트가 자동 생성되었습니다` });
+      if (count === 0) {
+        toast({
+          title: "더 이상 생성할 핵심멘트가 없습니다",
+          description: "현재 제품 정보와 특장점에서는 기존 멘트와 다른 디테일을 찾지 못했습니다. 추가 제품 정보나 특장점을 넣어주세요.",
+        });
+      } else {
+        toast({ title: `${count}개 핵심 멘트가 자동 생성되었습니다` });
+      }
     } catch (e) {
       toast({ title: "자동 생성 실패", description: String(e), variant: "destructive" });
     } finally {
@@ -214,11 +186,47 @@ export default function SnippetsPage() {
     setAnalyzing(snippet.id);
     try {
       const res = await analyzeSnippetEffectiveness(snippet.content, snippet.product);
+      snippetStorage.saveAnalysis(snippet.id, res);
+      setSnippets(snippetStorage.getAll());
       setAnalysisResult((prev) => ({ ...prev, [snippet.id]: res }));
     } catch (e) {
       toast({ title: "분석 실패", description: String(e), variant: "destructive" });
     } finally {
       setAnalyzing(null);
+    }
+  }
+
+  async function handleAnalyzeAll() {
+    const targets = snippetStorage.getAll().filter((snippet) => !(snippet.analysis ?? "").trim());
+    if (targets.length === 0) {
+      toast({ title: "분석할 핵심멘트가 없습니다", description: "이미 모든 핵심멘트에 AI 분석이 저장되어 있습니다." });
+      return;
+    }
+
+    setAnalyzingAll(true);
+    let success = 0;
+    let failed = 0;
+    try {
+      for (const snippet of targets) {
+        setAnalyzing(snippet.id);
+        try {
+          const res = await analyzeSnippetEffectiveness(snippet.content, snippet.product);
+          snippetStorage.saveAnalysis(snippet.id, res);
+          setAnalysisResult((prev) => ({ ...prev, [snippet.id]: res }));
+          success++;
+        } catch (e) {
+          console.error(e);
+          failed++;
+        }
+      }
+      setSnippets(snippetStorage.getAll());
+      toast({
+        title: `핵심멘트 ${success}건 분석 완료`,
+        description: failed > 0 ? `${failed}건은 분석에 실패했습니다.` : "분석 결과를 자동생성 컨텍스트에 활용할 수 있습니다.",
+      });
+    } finally {
+      setAnalyzing(null);
+      setAnalyzingAll(false);
     }
   }
 
@@ -241,6 +249,10 @@ export default function SnippetsPage() {
           <p className="text-muted-foreground mt-1">효과적인 영업 멘트를 저장하고 AI 분석으로 활용도를 높이세요</p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Button onClick={handleAnalyzeAll} disabled={analyzingAll || snippets.length === 0} variant="outline" className="min-h-11 w-full min-w-0 gap-1.5 px-2 text-xs sm:min-h-9 sm:gap-2 sm:px-4 sm:text-sm">
+            {analyzingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+            {analyzingAll ? "전체 분석 중..." : "전체 분석"}
+          </Button>
           <Button onClick={handleAutoGenerate} disabled={generating} variant="outline" className="min-h-11 w-full min-w-0 gap-1.5 px-2 text-xs sm:min-h-9 sm:gap-2 sm:px-4 sm:text-sm">
             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
             {generating ? "생성 중..." : "AI 자동 생성"}
@@ -460,13 +472,13 @@ export default function SnippetsPage() {
                     )}
 
                     {/* AI analysis result */}
-                    {analysisResult[snippet.id] && (
+                    {(analysisResult[snippet.id] || snippet.analysis) && (
                       <div className="mt-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
                         <p className="text-xs font-semibold text-primary mb-1 flex items-center gap-1">
                           <Lightbulb className="w-3.5 h-3.5" />
                           AI 분석
                         </p>
-                        <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed">{analysisResult[snippet.id]}</pre>
+                        <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed">{analysisResult[snippet.id] || snippet.analysis}</pre>
                       </div>
                     )}
                   </div>
@@ -476,7 +488,7 @@ export default function SnippetsPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleAnalyze(snippet)}
-                      disabled={analyzing === snippet.id}
+                      disabled={analyzing === snippet.id || analyzingAll}
                       className="gap-1 text-xs h-7"
                     >
                       {analyzing === snippet.id ? (

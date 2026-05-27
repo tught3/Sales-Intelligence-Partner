@@ -35,6 +35,8 @@ export const goldenSnippets = pgTable("golden_snippets", {
   tags: jsonb("tags").notNull().default([]),
   product: varchar("product", { length: 200 }).notNull().default(""),
   effectiveness: integer("effectiveness").notNull().default(5),
+  analysis: text("analysis").notNull().default(""),
+  analyzedAt: timestamp("analyzed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

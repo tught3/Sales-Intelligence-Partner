@@ -215,9 +215,25 @@ function buildSnippetContext(department = ''): string {
   }
 
   const lines = selected
-    .map((s) => `- [${s.product}] ${s.content}${s.context ? ` (${s.context})` : ''}`)
+    .map((s) => formatSnippetForPrompt(s))
     .join('\n');
-  return `\n활용 가능한 핵심 멘트 (이 중 오늘 과/맥락에 맞는 것 선택):\n${lines}\n`;
+  return `\n활용 가능한 핵심 멘트 (오늘 과/맥락에 맞는 것을 골라 원문 복붙이 아니라 변형해서 사용):\n${lines}\n`;
+}
+
+function summarizeSnippetAnalysis(analysis = ''): string {
+  return analysis
+    .replace(/\s+/g, ' ')
+    .replace(/["']/g, '')
+    .trim()
+    .slice(0, 260);
+}
+
+function formatSnippetForPrompt(s: ReturnType<typeof snippetStorage.getAll>[number]): string {
+  const parts = [`- [${s.product}] ${s.content}`];
+  if (s.context) parts.push(`상황: ${s.context}`);
+  const analysis = summarizeSnippetAnalysis(s.analysis);
+  if (analysis) parts.push(`분석 활용: ${analysis}`);
+  return parts.join(' / ');
 }
 
 function getSnippetKeywords(text: string): string[] {
@@ -289,7 +305,8 @@ function snippetOverlapScore(snippet: ReturnType<typeof snippetStorage.getAll>[n
   ).length;
   const phrase = snippet.content.replace(/\s+/g, ' ').slice(0, 28).toLowerCase();
   const phraseHit = phrase.length >= 12 && recentTexts.some((text) => text.includes(phrase)) ? 4 : 0;
-  return keywordHits + phraseHit;
+  const analyzedFreshnessBonus = (snippet.analysis ?? '').trim().length > 0 ? -0.25 : 0;
+  return keywordHits + phraseHit + analyzedFreshnessBonus;
 }
 
 function buildContextAwareSnippets(
@@ -332,7 +349,7 @@ function buildContextAwareSnippets(
     const selectedGen = [...sortByFreshness(others.filter(notUsed)), ...sortByFreshness(others.filter(wasUsed))].slice(0, generalCount);
     const selected = shuffle([...selectedIcu, ...selectedGen]);
     return selected
-      .map(s => `  - [${s.product}] ${s.content}${s.context ? ` (상황: ${s.context})` : ''}`)
+      .map(s => `  ${formatSnippetForPrompt(s)}`)
       .join('\n');
   }
 
@@ -364,7 +381,7 @@ function buildContextAwareSnippets(
     ...pickFrom(otherSnippets).slice(0, otherCount),
   ];
   return selected
-    .map(s => `  - [${s.product}] ${s.content}${s.context ? ` (상황: ${s.context})` : ''}`)
+    .map(s => `  ${formatSnippetForPrompt(s)}`)
     .join('\n');
 }
 
@@ -2309,6 +2326,7 @@ ${content}
 2. 어떤 성향의 교수에게 특히 효과적인지 (현재 담당 교수 중 누구에게 잘 먹힐지)
 3. 개선 제안
 4. 변형 멘트 1-2개
+- 변형 멘트는 교수에게 돌아가는 실제 이득이 드러나야 함
 - 큰따옴표("), 작은따옴표(') 모두 사용 금지`;
 
   return callAI(systemPrompt, prompt);
@@ -2340,6 +2358,8 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
 - 디테일포인트는 수치, 환자군, 임상 근거, 경쟁 비교 축, 투여 편의성처럼 서로 구분되는 근거 단위여야 함
 - 기존 멘트와 같은 디테일포인트면 새 문장으로 만들지 말고 제외할 것
 - 담당 교수들의 성향을 고려한 멘트도 포함할 것
+- 교수 입장에서 이득이 모호한 "깔끔합니다", "무난합니다", "쓰기 좋습니다" 수준의 문장은 만들지 말 것
+- 더 이상 새로운 디테일이 없으면 억지로 말투만 바꿔 채우지 말고 빈 JSON 배열 []을 출력할 것
 - "포인트"라는 단어는 content, context, tags 어디에도 절대 쓰지 말 것. 필요하면 "내용", "디테일", "근거", "차별점"으로 바꿀 것
 - 멘트 본문(content)에는 큰따옴표("), 작은따옴표(') 모두 사용 금지 (단, 아래 JSON 구조의 키와 값 구분자는 예외)
 
@@ -2416,7 +2436,7 @@ export async function generateSnippetsForProduct(productName: string): Promise<A
     .getAll()
     .filter((s) => s.product === normalizeSnippetProductName(productName))
     .slice(0, 10)
-    .map((s) => `- ${s.content}`)
+    .map((s) => formatSnippetForPrompt(s))
     .join('\n');
 
   const prompt = `당신은 JW중외제약 MR의 영업 코치입니다.
@@ -2436,6 +2456,8 @@ ${existingForProduct ? `\n[이미 등록된 ${productName} 멘트 (중복 금지
 - 디테일포인트는 수치, 환자군, 임상 근거, 경쟁 비교 축, 투여 편의성처럼 서로 구분되는 근거 단위여야 함
 - 이미 등록된 ${productName} 멘트와 같은 디테일포인트면 새 문장으로 만들지 말고 제외할 것
 - 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필 등) 포함
+- 교수 입장에서 이득이 모호한 "깔끔합니다", "무난합니다", "쓰기 좋습니다" 수준의 문장은 만들지 말 것
+- 더 이상 새로운 디테일이 없으면 억지로 말투만 바꿔 채우지 말고 빈 JSON 배열 []을 출력할 것
 - "포인트"라는 단어는 content, context, tags 어디에도 절대 쓰지 말 것. 필요하면 "내용", "디테일", "근거", "차별점"으로 바꿀 것
 - 멘트 본문(content)에는 큰따옴표("), 작은따옴표(') 모두 사용 금지
 
