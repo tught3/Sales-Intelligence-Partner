@@ -7,7 +7,6 @@ import type { DetailKey } from './types';
 type PlanCandidate = Omit<DetailKey, 'selectionReason'> & {
   departmentTags: string[];
   clinicalDomains: ClinicalDomain[];
-  blockedDepartmentTags?: string[];
 };
 
 const WINUF_CANDIDATES: PlanCandidate[] = [
@@ -31,7 +30,6 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     professorQuestion: '중환자에서 혈당 부담은 어느 정도 차이가 나는지 질문 있어',
     departmentTags: ['중환자의학과', '응급의학과', '외상외과', '흉부외과'],
     clinicalDomains: ['criticalCare', 'recoveryNutrition'],
-    blockedDepartmentTags: ['산부인과', '산과', '부인과', '호흡기내과', '호흡기'],
   },
   {
     product: '위너프에이플러스',
@@ -84,7 +82,6 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     narrativeStyle: '지난 방문 확인형',
     departmentTags: ['중환자의학과', '응급의학과', '외상외과', '흉부외과'],
     clinicalDomains: ['criticalCare', 'recoveryNutrition'],
-    blockedDepartmentTags: ['산부인과', '산과', '부인과', '호흡기내과', '호흡기'],
   },
   {
     product: '위너프에이플러스',
@@ -203,7 +200,7 @@ function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const departmentMatched = domainMatched.filter((candidate) => departmentMatches(candidate.departmentTags, ctx.doctor.department));
   if (departmentMatched.length > 0) return departmentMatched;
   if (domainMatched.length > 0) return domainMatched;
-  return productMatched.filter((candidate) => !departmentMatches(candidate.blockedDepartmentTags ?? [], ctx.doctor.department));
+  return productMatched;
 }
 
 function normalizeDepartmentName(department: string): string {

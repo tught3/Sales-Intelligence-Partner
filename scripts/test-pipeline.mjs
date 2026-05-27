@@ -165,6 +165,10 @@ assert(
   'planner는 진료과 태그와 임상 도메인으로 후보를 먼저 제한해야 합니다.'
 );
 assert(
+  !plannerSource.includes('blockedDepartmentTags'),
+  'planner는 과별 차단 태그가 아니라 clinicalDomains로 현실성 게이트를 처리해야 합니다.'
+);
+assert(
   plannerSource.includes('폐렴 회복기 경구 섭취') &&
     plannerSource.includes('만성 호흡기 질환') &&
     plannerSource.includes('분만 후 피로감') &&
@@ -198,19 +202,21 @@ assert(
 );
 assert(
   aiSource.includes("const VISIT_LOG_MODEL = 'gpt-5.4-mini'") &&
-    aiSource.includes('분만 후 빈혈') &&
-    aiSource.includes('호흡기 감염') &&
-    aiSource.includes('폐렴') &&
-    aiSource.includes('중증 환자') &&
-    aiSource.includes('부인과'),
-  'ai 최종 보정도 gpt-5.4-mini와 과별 허용/금지 테마를 포함해야 합니다.'
+    aiSource.includes('buildClinicalDomainConstraint') &&
+    aiSource.includes('removeMismatchedClinicalDomainSentences') &&
+    aiSource.includes('candidateFitsDepartment') &&
+    !aiSource.includes('DEPT_FEATURE_RULES') &&
+    !aiSource.includes('disallowedThemes') &&
+    !aiSource.includes('removeDisallowedDepartmentThemeSentences'),
+  'ai 최종 보정은 과별 금지어 테이블이 아니라 clinical-domain 게이트를 사용해야 합니다.'
 );
 assert(
   aiSource.includes('buildVisitCandidatePool') &&
     aiSource.includes('pickVisitCandidate') &&
+    aiSource.includes('clinicalDomains') &&
     aiSource.includes('buildFallbackVisitLog(finalAllowedProducts[0] ||') &&
     aiSource.includes('avoidTexts'),
-  'ai 최종 보정은 진료과/기사용 디테일 기반 후보와 avoidTexts를 사용해야 합니다.'
+  'ai 최종 보정 fallback은 임상 도메인 후보와 avoidTexts를 사용해야 합니다.'
 );
 assert(
   visitLogPageSource.includes('todayScopeAvoidTexts') &&

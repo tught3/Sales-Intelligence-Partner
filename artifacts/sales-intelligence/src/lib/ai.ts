@@ -1,5 +1,12 @@
 ﻿import type { Doctor, VisitLog } from './storage';
 import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
+import {
+  buildClinicalDomainConstraint,
+  candidateFitsDepartment,
+  getPrimaryClinicalDomainLabel,
+  removeMismatchedClinicalDomainSentences,
+  type ClinicalDomain,
+} from './visit-generation/clinical-domain';
 import { runVisitGenerationPipeline } from './visit-generation/pipeline';
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
 
@@ -770,79 +777,8 @@ function removeNextVisitPlanFromLog(text: string, department = ''): string {
   return department ? normalizeDepartmentThemeStacks(cleaned, department) : cleaned;
 }
 
-function getThemeVariants(theme: string): string[] {
-  const base = theme.trim();
-  if (!base) return [];
-
-  const variants = new Set<string>([base, base.replace(/\s+/g, '')]);
-  if (base.includes('/')) {
-    const [leftRaw, ...rightParts] = base.split('/');
-    const left = leftRaw.trim();
-    const right = rightParts.join('/').trim();
-    if (left && right) {
-      variants.add(`${left} ${right}`.trim());
-      variants.add(`${left}${right}`.trim());
-      const rightTokens = right.split(/\s+/).filter(Boolean);
-      if (rightTokens.length > 0) {
-        variants.add(`${left} ${rightTokens.join(' ')}`.trim());
-        variants.add(`${left}${rightTokens.join('')}`.trim());
-      }
-    }
-  }
-
-  return [...variants].filter(Boolean).sort((a, b) => b.length - a.length);
-}
-
-function findThemeMatches(sentence: string, rule: DeptFeatureRule): Array<{ theme: string; index: number; variant: string }> {
-  const matches: Array<{ theme: string; index: number; variant: string }> = [];
-  for (const theme of rule.allowedThemes) {
-    for (const variant of getThemeVariants(theme)) {
-      const index = sentence.indexOf(variant);
-      if (index >= 0) {
-        matches.push({ theme, index, variant });
-        break;
-      }
-    }
-  }
-  return matches.sort((a, b) => a.index - b.index || b.variant.length - a.variant.length);
-}
-
 function normalizeDepartmentThemeStacks(text: string, department: string): string {
-  const rule = getDeptFeatureRule(department);
-  if (!rule) return text;
-
-  return text
-    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
-    .map((sentence) => {
-      let result = sentence.trim();
-      if (!result) return result;
-
-      const matches = findThemeMatches(result, rule);
-      if (matches.length <= 1) return result;
-
-      const first = matches[0];
-      const second = matches[1];
-      const between = result.slice(first.index + first.variant.length, second.index);
-      if (/[,，;；:：/·•]|(?:및|그리고|또는|와|과|함께)/.test(between)) {
-        return result;
-      }
-
-      for (const match of matches.slice(1)) {
-        for (const variant of getThemeVariants(match.theme)) {
-          result = result.split(variant).join(' ');
-        }
-      }
-
-      return result
-        .replace(/\s{2,}/g, ' ')
-        .replace(/\s+([.。!?])/g, '$1')
-        .replace(/\s+([,，])/g, '$1')
-        .trim();
-    })
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  return removeMismatchedClinicalDomainSentences(text, department) || text;
 }
 
 function normalizeNextStrategy(text: string, department = ''): string {
@@ -1129,6 +1065,7 @@ function getActiveProductsForGeneration(selectedProducts: string[], department: 
 type FallbackVisitCandidate = {
   product: string;
   keys: string[];
+  clinicalDomains: ClinicalDomain[];
   detail: string;
   log: string;
 };
@@ -1142,12 +1079,14 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['ferric-once-convenience', 'reimbursement-criteria'],
+          clinicalDomains: ['obgyn', 'outpatientAnemia'],
           detail: '수술 전 빈혈에서 급여 기준과 1회 투여 편의성',
           log: '페린젝트의 수술 전 빈혈 급여 기준과 1회 투여 편의성을 산부인과 외래 일정과 연결해 디테일 진행함. 교수님께서 Hb 기준에 맞는 환자는 검토 가능하다는 의견 보임',
         },
         {
           product,
           keys: ['outpatient-followup', 'hb-recovery'],
+          clinicalDomains: ['obgyn', 'outpatientAnemia'],
           detail: '분만 후 외래 추적 부담과 Hb 회복 근거',
           log: '페린젝트의 Hb 회복 근거를 분만 후 외래 재방문이 어려운 빈혈 환자와 연결해 디테일 진행함. 교수님께서 추적 부담이 큰 환자에서는 편의성이 의미 있다는 반응 보임',
         }
@@ -1157,12 +1096,14 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['ferric-once-convenience', 'hb-recovery'],
+          clinicalDomains: ['respiratory', 'outpatientAnemia'],
           detail: '외래 빈혈에서 1회 투여 편의성과 Hb 회복 근거',
           log: '페린젝트의 1회 투여 편의성과 Hb 회복 근거를 호흡기내과 외래 추적 중인 빈혈 환자와 연결해 디테일 진행함. 교수님께서 원내 기준에 맞는 환자는 검토 가능하다는 반응 보임',
         },
         {
           product,
           keys: ['reimbursement-criteria', 'hb-recovery'],
+          clinicalDomains: ['respiratory', 'outpatientAnemia'],
           detail: '폐렴 회복기 외래 빈혈에서 급여 기준과 Hb 회복 근거',
           log: '페린젝트의 급여 기준과 Hb 회복 근거를 폐렴 회복 후 피로감이 남은 철결핍 빈혈 환자와 연결해 디테일 진행함. 교수님께서 Hb 수치와 증상을 같이 보겠다는 의견 보임',
         }
@@ -1172,12 +1113,14 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['transfusion-burden', 'hb-recovery'],
+          clinicalDomains: ['neurosurgery', 'outpatientAnemia'],
           detail: '수술 전후 빈혈에서 수혈 회피 가능성과 Hb 회복 근거',
           log: '페린젝트의 수혈 회피 가능성과 Hb 회복 근거를 신경외과 수술 전후 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수술 일정과 Hb 수치를 같이 보겠다는 반응 보임',
         },
         {
           product,
           keys: ['ferric-once-convenience', 'outpatient-followup'],
+          clinicalDomains: ['neurosurgery', 'outpatientAnemia'],
           detail: '외래 추적이 어려운 빈혈 환자에서 1회 투여 편의성',
           log: '페린젝트의 1회 투여 편의성을 신경외과 외래 추적이 어려운 빈혈 환자와 연결해 디테일 진행함. 교수님께서 재방문 부담이 큰 환자에서는 설명해볼 수 있다는 의견 보임',
         }
@@ -1187,12 +1130,14 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['transfusion-burden'],
+          clinicalDomains: ['generalSurgery', 'outpatientAnemia'],
           detail: '수술 전후 빈혈에서 수혈 회피 가능성 근거',
           log: '페린젝트의 수혈 회피 가능성 근거를 수술 전후 철결핍 빈혈 환자와 연결해 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스에서는 처방 가능성을 검토하겠다는 의견 보임',
         },
         {
           product,
           keys: ['ferric-once-convenience', 'hb-recovery'],
+          clinicalDomains: ['outpatientAnemia'],
           detail: '철결핍 빈혈에서 1회 투여 편의성과 Hb 회복 근거',
           log: '페린젝트의 1회 투여 편의성과 Hb 회복 근거를 경구용철분제 복용 지속이 어려운 외래 빈혈 환자와 연결해 디테일 진행함. 교수님께서 편의성은 공감한다는 반응 보임',
         }
@@ -1204,12 +1149,14 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['winuf-amino-acid', 'winuf-glucose-burden'],
+          clinicalDomains: ['neurosurgery', 'recoveryNutrition'],
           detail: '고아미노산 조성과 혈당 부담 관리',
           log: '위너프에이플러스의 고아미노산 조성과 혈당 부담 관리를 신경외과 수술 후 경구 섭취 지연 환자와 연결해 디테일 진행함. 교수님께서 장기 입원 환자 영양 유지 필요성은 공감하셨음',
         },
         {
           product,
           keys: ['protein-nitrogen'],
+          clinicalDomains: ['neurosurgery', 'recoveryNutrition'],
           detail: '단백 보충과 질소균형 유지',
           log: '위너프에이플러스의 단백 보충과 질소균형 유지 근거를 신경외과 회복기 환자 영양 공백과 연결해 디테일 진행함. 교수님께서 병동 사용 기준은 더 보겠다는 의견 보임',
         }
@@ -1219,12 +1166,14 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['protein-nitrogen'],
+          clinicalDomains: ['respiratory', 'recoveryNutrition'],
           detail: '폐렴 회복기 경구 섭취 어려움에서 단백 공급량 보강',
           log: '위너프에이플러스의 단백 공급량 보강을 폐렴 회복기 경구 섭취가 줄어든 입원 환자와 연결해 디테일 진행함. 교수님께서 감염 회복기 영양 공백 보완은 이해하셨다는 반응 보임',
         },
         {
           product,
           keys: ['winuf-glucose-burden', 'protein-nitrogen'],
+          clinicalDomains: ['respiratory', 'recoveryNutrition'],
           detail: '결핵 치료 회복기 영양 공급에서 저포도당 조성과 단백 보충',
           log: '위너프에이플러스의 저포도당 조성과 단백 보충을 결핵 치료 중 식욕 저하가 있는 입원 회복기 환자와 연결해 디테일 진행함. 교수님께서 장기 치료 환자 영양 유지 필요성은 공감하셨음',
         }
@@ -1234,12 +1183,14 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['winuf-glucose-burden', 'protein-nitrogen'],
+          clinicalDomains: ['obgyn', 'recoveryNutrition'],
           detail: '저포도당 조성과 단백 보충 균형',
           log: '위너프에이플러스의 저포도당 조성과 단백 보충 균형을 산부인과 수술 후 식이 진행이 불안정한 환자와 연결해 디테일 진행함. 교수님께서 회복 지연 환자에서는 검토 가능하다는 의견 보임',
         },
         {
           product,
           keys: ['winuf-comparison'],
+          clinicalDomains: ['obgyn', 'recoveryNutrition'],
           detail: '기존 3챔버 TPN 대비 영양 조성 차이',
           log: '위너프에이플러스의 기존 3챔버 TPN 대비 영양 조성 차이를 산부인과 수술 후 영양 보강 상황과 연결해 디테일 진행함. 교수님께서 실제 사용 케이스는 많지 않다는 반응 보임',
         }
@@ -1249,18 +1200,21 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
         {
           product,
           keys: ['protein-nitrogen'],
+          clinicalDomains: ['generalSurgery', 'recoveryNutrition'],
           detail: '단백 공급량과 질소균형 보강',
           log: '위너프에이플러스의 단백 공급량과 질소균형 보강을 외과 병동 수술 후 금식이 길어지는 환자와 연결해 디테일 진행함. 교수님께서 회복기 영양 공백을 줄이는 접근은 이해하셨음',
         },
         {
           product,
           keys: ['omega3-composition'],
+          clinicalDomains: ['recoveryNutrition'],
           detail: '오메가3 조성과 염증 부담 완화 근거',
           log: '위너프에이플러스의 오메가3 조성과 염증 부담 완화 근거를 장기 입원 환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 감염 회복기 영양 반응을 보겠다는 의견 보임',
         },
         {
           product,
           keys: ['winuf-amino-acid', 'winuf-glucose-burden'],
+          clinicalDomains: ['recoveryNutrition'],
           detail: '아미노산 25% 증가와 저포도당 조성',
           log: '위너프에이플러스의 아미노산 25% 증가와 저포도당 조성을 수술 후 영양 공급이 필요한 환자와 연결해 디테일 진행함. 교수님께서 혈당과 단백 보충을 같이 보겠다는 의견 보임',
         }
@@ -1272,9 +1226,13 @@ function buildVisitCandidatePool(product: string, department: string): FallbackV
 }
 
 function pickVisitCandidate(product: string, department: string, avoidTexts: string[] = []): FallbackVisitCandidate {
-  const pool = buildVisitCandidatePool(product, department);
+  const rawPool = buildVisitCandidatePool(product, department);
+  const pool = rawPool.filter((candidate) =>
+    candidateFitsDepartment(candidate.clinicalDomains, department)
+  );
+  const candidates = pool.length > 0 ? pool : rawPool;
   const usedKeys = detailKeysFromTexts(avoidTexts);
-  return pool.find((candidate) => candidate.keys.every((key) => !usedKeys.has(key))) ?? pool[0];
+  return candidates.find((candidate) => candidate.keys.every((key) => !usedKeys.has(key))) ?? candidates[0];
 }
 
 function getFallbackDetailForProduct(product: string, department: string): string {
@@ -1390,7 +1348,9 @@ function buildDiversifiedVisitLog(
     ...detailKeysFromTexts(avoidTexts),
     ...extractDetailKeys(currentText),
   ]);
-  const candidates = allowedProducts.flatMap((product) => buildVisitCandidatePool(product, department));
+  const candidates = allowedProducts
+    .flatMap((product) => buildVisitCandidatePool(product, department))
+    .filter((candidate) => candidateFitsDepartment(candidate.clinicalDomains, department));
 
   const selected = candidates.find((candidate) => candidate.keys.every((key) => !usedKeys.has(key))) || candidates[0];
   if (!selected) return expandVisitLogIfTooBrief(currentText, allowedProducts, department, avoidTexts);
@@ -1460,8 +1420,7 @@ function buildFollowUpStrategyWithoutRepeatingDetail(
   );
   if (selected) return selected;
 
-  const themeRule = getDeptFeatureRule(department);
-  const theme = themeRule?.allowedThemes[0] || '환자군';
+  const theme = getPrimaryClinicalDomainLabel(department);
   return `다음방문시에는 ${product} ${theme} 처방 상황 디테일 예정`;
 }
 
@@ -1554,81 +1513,6 @@ function buildProductFitConstraint(department: string, selectedProducts: string[
 - 위 목록 밖 품목은 제품 목록, 영업일지, 다음방문전략 어디에도 새로 넣지 말 것.${ignoredLine}\n`;
 }
 
-type DeptFeatureRule = {
-  keywords: string[];
-  allowedThemes: string[];
-  disallowedThemes: string[];
-};
-
-const DEPT_FEATURE_RULES: DeptFeatureRule[] = [
-  {
-    keywords: ['정형외과'],
-    allowedThemes: ['수술 전후 빈혈', 'Hb 회복', '수혈 회피 가능성', '재활 회복', '통증 관리', '염증 관리', '출혈 관리', '외래 투여 편의'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
-  },
-  {
-    keywords: ['산부인과', '산과', '부인과'],
-    allowedThemes: ['산후 빈혈', '분만 후 빈혈', '수술 전후 빈혈', '출혈 후 회복', '외래 추적', 'Hb 회복'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI', '중환자', 'ICU', '중증 환자', '신경외과', '호흡기 감염', '폐렴', '결핵'],
-  },
-  {
-    keywords: ['소화기내과', '소화기', 'IBD', '위장관'],
-    allowedThemes: ['IBD', '위장관 출혈', '장관 영양', '수술 전후 빈혈', '수혈 회피 가능성', '회복', '외래 편의'],
-    disallowedThemes: ['정형외과 환자군', '산부인과 환자군'],
-  },
-  {
-    keywords: ['호흡기내과', '호흡기', '결핵'],
-    allowedThemes: ['폐렴', '호흡기 감염', '결핵', '경구 섭취 어려움', '입원 회복기 영양', '외래 빈혈'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '대장', '장염', '정형외과', '산부인과', '분만', '산후', '임신', '출산', '부인과'],
-  },
-  {
-    keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'],
-    allowedThemes: ['수술 전후 통증 조절', '마취 후 회복', '진통', 'opioid-sparing', '회복실', '수술실'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '대장', '정형외과 환자군'],
-  },
-  {
-    keywords: ['외과', '일반외과', '복부외과', '대장항문외과'],
-    allowedThemes: ['수술 전후', '출혈 관리', '회복', '위장관', '장관 영양', '대장항문', 'IBD', '복부 수술', '영양'],
-    disallowedThemes: [],
-  },
-  {
-    keywords: ['흉부외과', '심혈관외과', '심장외과'],
-    allowedThemes: ['흉부 수술', '심장 수술', '수술 전후 회복', '출혈 관리', 'ICU', '혈역학', '영양'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
-  },
-  {
-    keywords: ['간담췌외과', '간담'],
-    allowedThemes: ['간담췌 수술', '복부 대수술', '수술 전후', '출혈 관리', '영양', '회복'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
-  },
-  {
-    keywords: ['중환자의학과', '중환자', 'ICU'],
-    allowedThemes: ['ICU', '중증 환자', '혈역학', '감염', '영양', '회복', '수술 후'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
-  },
-  {
-    keywords: ['신경외과'],
-    allowedThemes: ['뇌수술', '척추수술', '수술 전후', 'ICU', '회복', '출혈 관리', '중증 환자'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '대장', '소화기내과', '정형외과'],
-  },
-];
-
-function getDeptFeatureRule(department: string): DeptFeatureRule | undefined {
-  const normalized = department.trim();
-  return DEPT_FEATURE_RULES.find((rule) => rule.keywords.some((k) => normalized.includes(k)));
-}
-
-function buildDepartmentFeatureConstraint(department: string): string {
-  const rule = getDeptFeatureRule(department);
-  if (!rule) return '';
-
-  return `\n★★★ 과별 특장점 제한:
-- 이 과(${department})에서는 다음 테마만 중심적으로 사용: ${rule.allowedThemes.join(', ')}
-- 이 과(${department})에 맞지 않는 테마는 제품 정보에 있어도 쓰지 말 것: ${rule.disallowedThemes.join(', ') || '없음'}
-- 허용 테마는 참고용이며, 한 문장에 테마는 하나만 사용. 비슷한 테마를 라벨처럼 연달아 붙이지 말 것.
-- 과 전용 질환명이나 타 과 환자군 표현은 금지. 과와 직접 연결되는 환자군/상황만 디테일할 것.\n`;
-}
-
 function removeDisallowedProductSentences(text: string, department: string): string {
   const allowedProducts = getAllowedProductsForDepartment(department);
   const disallowedProducts = ['위너프에이플러스', '위너프', '페린젝트', '플라주OP', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스']
@@ -1645,21 +1529,6 @@ function removeDisallowedProductSentences(text: string, department: string): str
     .map((sentence) => sentence.trim())
     .filter(Boolean)
     .filter((sentence) => !disallowedProducts.some((product) => sentence.includes(product)));
-  return kept.join(' ').trim();
-}
-
-function removeDisallowedDepartmentThemeSentences(text: string, department: string): string {
-  const rule = getDeptFeatureRule(department);
-  if (!rule) return text;
-
-  const disallowedThemes = rule.disallowedThemes.filter(Boolean);
-  if (disallowedThemes.length === 0) return text;
-
-  const kept = text
-    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean)
-    .filter((sentence) => !disallowedThemes.some((theme) => sentence.includes(theme)));
   return kept.join(' ').trim();
 }
 
@@ -1782,7 +1651,7 @@ async function ensureObjectionHandling(
 - 과: ${doctor.department}
 - 허용 품목: ${getAllowedProductsForDepartment(doctor.department).join(', ')}
 - 이번 중심 품목: ${activeProducts.join(', ')}
-- 과별 특장점 제한: ${buildDepartmentFeatureConstraint(doctor.department).replace(/\n+/g, ' ').trim()}
+- 과별 임상 도메인 제한: ${buildClinicalDomainConstraint(doctor.department).replace(/\n+/g, ' ').trim()}
 - 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
 - 품목 목록 밖 제품 언급 금지
 - 질문/반대 의견 + 답변을 둘 다 포함
@@ -1925,7 +1794,7 @@ async function convertToVisitLogBase(
   // 미도입 제품 여부 판단
   const cvAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
   const cvIntroNote = buildIntroNote(activeProducts, cvAllowNewDrugReview);
-  const cvThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
+  const cvThemeConstraint = buildClinicalDomainConstraint(doctor.department);
   const cvRecentDetailMemory = buildRecentDetailMemory(pastLogs);
   const cvPipelinePlanNote = pipelinePlan
     ? `\n★ 파이프라인 생성 계획:
@@ -1974,7 +1843,7 @@ ${buildVisitLogRules()}
   cleaned = normalizeGeneratedMemoText(cleaned, doctor.department);
   cleaned = normalizeObjectionLanguage(cleaned, activeProducts);
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
-  cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
+  cleaned = removeMismatchedClinicalDomainSentences(cleaned, doctor.department);
   cleaned = removeNextVisitPlanFromLog(cleaned, doctor.department);
   nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy, doctor.department));
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, cvAllowNewDrugReview);
@@ -2004,7 +1873,7 @@ ${buildVisitLogRules()}
     cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts, cvAllowNewDrugReview);
   }
   cleaned = normalizeGeneratedMemoText(cleaned, doctor.department);
-  cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
+  cleaned = removeMismatchedClinicalDomainSentences(cleaned, doctor.department);
   cleaned = removeNextVisitPlanFromLog(cleaned, doctor.department);
   cleaned = removeDisallowedProductSentences(cleaned, doctor.department) || cleaned;
   cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
@@ -2082,7 +1951,7 @@ async function autoGenerateVisitLogBase(
   // 미도입 제품 여부 판단
   const agAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
   const agIntroNote = buildIntroNote(activeProducts, agAllowNewDrugReview);
-  const agThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
+  const agThemeConstraint = buildClinicalDomainConstraint(doctor.department);
   const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
   const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
   const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
@@ -2148,7 +2017,7 @@ ${buildVisitLogRules()}
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   fullLog = normalizeGeneratedMemoText(fullLog, doctor.department);
   fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
-  fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
+  fullLog = removeMismatchedClinicalDomainSentences(fullLog, doctor.department);
   fullLog = removeNextVisitPlanFromLog(fullLog, doctor.department);
   nextStrategy = reducePointWordUsage(normalizeNextStrategy(nextStrategy, doctor.department));
   nextStrategy = normalizeIntroProductLanguage(nextStrategy, activeProducts, agAllowNewDrugReview);
@@ -2180,7 +2049,7 @@ ${buildVisitLogRules()}
   fullLog = normalizeGeneratedMemoText(fullLog, doctor.department);
   fullLog = normalizeObjectionLanguage(fullLog, activeProducts);
   fullLog = normalizeBatchRepeatedLanguage(fullLog, batchAvoidTexts);
-  fullLog = removeDisallowedDepartmentThemeSentences(fullLog, doctor.department);
+  fullLog = removeMismatchedClinicalDomainSentences(fullLog, doctor.department);
   fullLog = removeNextVisitPlanFromLog(fullLog, doctor.department);
   fullLog = removeDisallowedProductSentences(fullLog, doctor.department) || fullLog;
   fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
@@ -2292,7 +2161,7 @@ export async function generateNextVisitStrategy(
 ): Promise<string> {
   const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
   const productFitConstraint = buildProductFitConstraint(doctor.department);
-  const themeConstraint = buildDepartmentFeatureConstraint(doctor.department);
+  const themeConstraint = buildClinicalDomainConstraint(doctor.department);
 
   const prompt = `${contextSection}
 ${productFitConstraint}
@@ -2315,7 +2184,7 @@ ${themeConstraint}
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeNextStrategy(cleaned, doctor.department);
   cleaned = normalizeIntroProductLanguage(cleaned, getAllowedProductsForDepartment(doctor.department), false);
-  cleaned = removeDisallowedDepartmentThemeSentences(cleaned, doctor.department);
+  cleaned = removeMismatchedClinicalDomainSentences(cleaned, doctor.department);
   if (cleaned.length > 120) {
     cleaned = await trimToLimit(systemPrompt, cleaned, 120, 0, '다음방문전략');
   }
@@ -2426,7 +2295,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   log = removeEmptyReactionRequests(log);
   log = removeUnrealisticProfessorMetaSentences(log);
   log = ensureProductFeatureOwnership(log);
-  log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
+  log = removeMismatchedClinicalDomainSentences(log, doctor.department);
   log = removeNextVisitPlanFromLog(log, doctor.department);
   log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
   log = removeEmptyReactionRequests(log);
@@ -2446,7 +2315,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
     log = buildDiversifiedVisitLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department, avoidTexts);
   }
   log = expandVisitLogIfTooBrief(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department, avoidTexts);
-  strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
+  strategy = removeMismatchedClinicalDomainSentences(strategy, doctor.department);
   strategy = normalizeNextStrategy(strategy, doctor.department);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
   strategy = removeEmptyReactionRequests(strategy);
@@ -2462,8 +2331,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   if (log.length > MAX_VISIT_LOG_LENGTH) log = compressTextToLimit(log, MAX_VISIT_LOG_LENGTH);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
   if (!strategy || strategy.trim().length < 5) {
-    const themeRule = getDeptFeatureRule(doctor.department);
-    const theme = themeRule?.allowedThemes[0] || '환자군';
+    const theme = getPrimaryClinicalDomainLabel(doctor.department);
     strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} ${theme} 처방 상황 디테일 예정`;
   }
 

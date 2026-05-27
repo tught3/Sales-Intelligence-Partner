@@ -57,6 +57,17 @@ const DOMAIN_TERM_PATTERNS: Record<ClinicalDomain, RegExp[]> = {
   recoveryNutrition: [/영양/, /정맥영양/, /TPN/, /경구\s*섭취/, /식이/, /회복기/, /단백/, /질소균형/],
 };
 
+const DOMAIN_LABELS: Record<ClinicalDomain, string> = {
+  generalSurgery: '수술 전후 회복/출혈/금식',
+  obgyn: '산후/분만/부인과 수술 회복',
+  respiratory: '폐렴/결핵/호흡기 감염 회복',
+  criticalCare: '중환자/ICU/혈역학',
+  neurosurgery: '신경외과 수술/의식 회복',
+  orthopedics: '정형외과 수술/재활',
+  outpatientAnemia: '외래 빈혈/Hb 회복/철 보충',
+  recoveryNutrition: '입원 회복기 영양/경구 섭취 저하/TPN',
+};
+
 export function getAllowedClinicalDomains(department: string): ClinicalDomain[] {
   const matched = DEPARTMENT_DOMAIN_RULES.find((rule) =>
     rule.departmentPatterns.some((pattern) => pattern.test(department))
@@ -66,6 +77,22 @@ export function getAllowedClinicalDomains(department: string): ClinicalDomain[] 
 
 export function isClinicalDomainAllowed(domain: ClinicalDomain, department: string): boolean {
   return getAllowedClinicalDomains(department).includes(domain);
+}
+
+export function getAllowedClinicalDomainLabels(department: string): string[] {
+  return getAllowedClinicalDomains(department).map((domain) => DOMAIN_LABELS[domain]);
+}
+
+export function getPrimaryClinicalDomainLabel(department: string): string {
+  return getAllowedClinicalDomainLabels(department)[0] ?? '외래 빈혈/Hb 회복/철 보충';
+}
+
+export function buildClinicalDomainConstraint(department: string): string {
+  const labels = getAllowedClinicalDomainLabels(department);
+  return `\n★★★ 진료과 임상 도메인 제한:
+- 이 과(${department})에서 실제로 다룰 법한 환자상황만 사용: ${labels.join(', ')}
+- 제품 자료에 있더라도 위 임상 도메인 밖의 질환명, 수술/처치 상황, 환자군을 새로 섞지 말 것.
+- 사용자가 원 메모에 직접 적은 특이 케이스는 보존하되, 자동생성에서는 허용 도메인 안에서만 작성할 것.\n`;
 }
 
 export function candidateFitsDepartment(candidateDomains: ClinicalDomain[], department: string): boolean {
@@ -91,4 +118,19 @@ export function findMismatchedClinicalDomain(
   }
 
   return null;
+}
+
+export function removeMismatchedClinicalDomainSentences(
+  text: string,
+  department: string,
+  manualRawNotes?: string
+): string {
+  return text
+    .split(/(?<=[.。!?])\s+|[,，]\s*|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .filter((sentence) => !findMismatchedClinicalDomain(sentence, department, manualRawNotes))
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
