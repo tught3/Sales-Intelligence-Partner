@@ -16,12 +16,15 @@ const validatorSource = await readFile(path.join(root, 'artifacts/sales-intellig
 const repairSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/repair.ts'), 'utf8');
 const aiSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/ai.ts'), 'utf8');
 const apiSource = await readFile(path.join(root, 'artifacts/api-server/src/routes/data.ts'), 'utf8');
+const vercelApiBundle = await readFile(path.join(root, 'artifacts/sales-intelligence/api/[...path].js'), 'utf8');
 const schemaSource = await readFile(path.join(root, 'lib/db/src/schema/index.ts'), 'utf8');
 
 assert(schemaSource.includes('visitLogFeedbackEvents'), 'DB schema must define visitLogFeedbackEvents.');
 assert(schemaSource.includes('aiGenerationPreferences'), 'DB schema must define aiGenerationPreferences.');
 assert(apiSource.includes('/visit-log-feedback-events'), 'API must expose feedback event endpoints.');
 assert(apiSource.includes('/ai-generation-preferences'), 'API must expose preference endpoints.');
+assert(vercelApiBundle.includes('/visit-log-feedback-events'), 'Vercel API bundle must include feedback event endpoints.');
+assert(vercelApiBundle.includes('/ai-generation-preferences'), 'Vercel API bundle must include preference endpoints.');
 assert(storageSource.includes('feedbackStorage') && storageSource.includes('preferenceStorage'), 'storage must expose feedback/preference stores.');
 assert(storageSource.includes('rebuildPreferencesFromEvents'), 'storage must rebuild preferences from feedback events.');
 assert(historySource.includes("eventType: 'edit'"), 'editing a visit log must record an edit feedback event.');

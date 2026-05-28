@@ -1,4 +1,11 @@
-import { createRequire as __createRequire } from 'node:module';const require=__createRequire(import.meta.url);
+import { createRequire as __bannerCrReq } from 'node:module';
+import __bannerPath from 'node:path';
+import __bannerUrl from 'node:url';
+
+globalThis.require = __bannerCrReq(import.meta.url);
+globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
+globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
+
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -44511,11 +44518,13 @@ function drizzle(...params) {
 // ../../lib/db/src/schema/index.ts
 var schema_exports = {};
 __export(schema_exports, {
+  aiGenerationPreferences: () => aiGenerationPreferences,
   companyManuals: () => companyManuals,
   departmentProfiles: () => departmentProfiles,
   doctors: () => doctors,
   goldenSnippets: () => goldenSnippets,
   hospitalProfiles: () => hospitalProfiles,
+  visitLogFeedbackEvents: () => visitLogFeedbackEvents,
   visitLogs: () => visitLogs
 });
 var doctors = pgTable("doctors", {
@@ -44544,6 +44553,37 @@ var visitLogs = pgTable("visit_logs", {
   products: jsonb("products").notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow()
 });
+var visitLogFeedbackEvents = pgTable("visit_log_feedback_events", {
+  id: varchar("id", { length: 100 }).primaryKey(),
+  eventType: varchar("event_type", { length: 50 }).notNull(),
+  visitLogId: varchar("visit_log_id", { length: 100 }).notNull().default(""),
+  doctorId: varchar("doctor_id", { length: 100 }).notNull().default(""),
+  doctorName: varchar("doctor_name", { length: 100 }).notNull().default(""),
+  hospital: varchar("hospital", { length: 200 }).notNull().default(""),
+  department: varchar("department", { length: 200 }).notNull().default(""),
+  products: jsonb("products").notNull().default([]),
+  rawNotes: text("raw_notes").notNull().default(""),
+  originalFormattedLog: text("original_formatted_log").notNull().default(""),
+  originalNextStrategy: text("original_next_strategy").notNull().default(""),
+  editedFormattedLog: text("edited_formatted_log").notNull().default(""),
+  editedNextStrategy: text("edited_next_strategy").notNull().default(""),
+  diffSummary: text("diff_summary").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow()
+});
+var aiGenerationPreferences = pgTable("ai_generation_preferences", {
+  id: varchar("id", { length: 160 }).primaryKey(),
+  scope: varchar("scope", { length: 50 }).notNull(),
+  scopeKey: varchar("scope_key", { length: 200 }).notNull().default(""),
+  forbiddenPatterns: jsonb("forbidden_patterns").notNull().default([]),
+  preferredPatterns: jsonb("preferred_patterns").notNull().default([]),
+  avoidedPatientGroups: jsonb("avoided_patient_groups").notNull().default([]),
+  preferredDetailAxes: jsonb("preferred_detail_axes").notNull().default([]),
+  preferredTone: text("preferred_tone").notNull().default(""),
+  averageLength: integer("average_length").notNull().default(0),
+  confidence: integer("confidence").notNull().default(0),
+  summary: text("summary").notNull().default(""),
+  updatedAt: timestamp("updated_at").notNull().defaultNow()
+});
 var goldenSnippets = pgTable("golden_snippets", {
   id: varchar("id", { length: 100 }).primaryKey(),
   content: text("content").notNull(),
@@ -44551,6 +44591,8 @@ var goldenSnippets = pgTable("golden_snippets", {
   tags: jsonb("tags").notNull().default([]),
   product: varchar("product", { length: 200 }).notNull().default(""),
   effectiveness: integer("effectiveness").notNull().default(5),
+  analysis: text("analysis").notNull().default(""),
+  analyzedAt: timestamp("analyzed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow()
 });
 var hospitalProfiles = pgTable("hospital_profiles", {
@@ -44661,6 +44703,41 @@ function prepVisitLog(v) {
     createdAt: toDate(v.createdAt ?? v.created_at)
   };
 }
+function prepFeedbackEvent(v) {
+  return {
+    id: v.id,
+    eventType: v.eventType ?? v.event_type ?? "edit",
+    visitLogId: v.visitLogId ?? v.visit_log_id ?? "",
+    doctorId: v.doctorId ?? v.doctor_id ?? "",
+    doctorName: v.doctorName ?? v.doctor_name ?? "",
+    hospital: v.hospital ?? "",
+    department: v.department ?? "",
+    products: v.products || [],
+    rawNotes: v.rawNotes ?? v.raw_notes ?? "",
+    originalFormattedLog: v.originalFormattedLog ?? v.original_formatted_log ?? "",
+    originalNextStrategy: v.originalNextStrategy ?? v.original_next_strategy ?? "",
+    editedFormattedLog: v.editedFormattedLog ?? v.edited_formatted_log ?? "",
+    editedNextStrategy: v.editedNextStrategy ?? v.edited_next_strategy ?? "",
+    diffSummary: v.diffSummary ?? v.diff_summary ?? "",
+    createdAt: toDate(v.createdAt ?? v.created_at)
+  };
+}
+function prepPreference(v) {
+  return {
+    id: v.id,
+    scope: v.scope ?? "global",
+    scopeKey: v.scopeKey ?? v.scope_key ?? "",
+    forbiddenPatterns: v.forbiddenPatterns ?? v.forbidden_patterns ?? [],
+    preferredPatterns: v.preferredPatterns ?? v.preferred_patterns ?? [],
+    avoidedPatientGroups: v.avoidedPatientGroups ?? v.avoided_patient_groups ?? [],
+    preferredDetailAxes: v.preferredDetailAxes ?? v.preferred_detail_axes ?? [],
+    preferredTone: v.preferredTone ?? v.preferred_tone ?? "",
+    averageLength: Number(v.averageLength ?? v.average_length ?? 0) || 0,
+    confidence: Number(v.confidence ?? v.confidence ?? 0) || 0,
+    summary: v.summary ?? "",
+    updatedAt: toDate(v.updatedAt ?? v.updated_at)
+  };
+}
 function prepSnippet(s) {
   return {
     id: s.id,
@@ -44669,6 +44746,8 @@ function prepSnippet(s) {
     tags: Array.isArray(s.tags) ? s.tags.map((tag) => cleanPointWord(String(tag))) : [],
     product: normalizeSnippetProduct(s.product || ""),
     effectiveness: s.effectiveness ?? 5,
+    analysis: cleanPointWord(s.analysis || ""),
+    analyzedAt: s.analyzedAt || s.analyzed_at ? toDate(s.analyzedAt ?? s.analyzed_at) : null,
     createdAt: toDate(s.createdAt ?? s.created_at)
   };
 }
@@ -44680,7 +44759,99 @@ function normalizeSnippetProduct(product) {
   return product.trim();
 }
 function cleanPointWord(value) {
-  return value.replace(/제품\s*포인트/g, "\uC81C\uD488 \uB0B4\uC6A9").replace(/처방\s*포인트/g, "\uCC98\uBC29 \uAD00\uB828 \uB0B4\uC6A9").replace(/디테일\s*포인트/g, "\uB514\uD14C\uC77C").replace(/짧은\s*포인트/g, "\uC9E7\uAC8C").replace(/차별화\s*포인트/g, "\uCC28\uBCC4\uC810").replace(/매력\s*포인트/g, "\uAC15\uC810").replace(/활용\s*포인트/g, "\uD65C\uC6A9 \uB0B4\uC6A9").replace(/포인트를/g, "\uB0B4\uC6A9\uC744").replace(/포인트는/g, "\uB0B4\uC6A9\uC740").replace(/포인트/g, "\uB0B4\uC6A9").replace(/\s{2,}/g, " ").trim();
+  return value.replace(/제품\s*포인트/g, "\uC81C\uD488 \uB0B4\uC6A9").replace(/처방\s*포인트/g, "\uCC98\uBC29 \uAD00\uB828 \uB0B4\uC6A9").replace(/디테일\s*포인트/g, "\uB514\uD14C\uC77C").replace(/짧은\s*포인트/g, "\uD575\uC2EC \uB0B4\uC6A9").replace(/차별화\s*포인트/g, "\uCC28\uBCC4\uC810").replace(/매력\s*포인트/g, "\uAC15\uC810").replace(/활용\s*포인트/g, "\uD65C\uC6A9 \uB0B4\uC6A9").replace(/포인트를/g, "\uB0B4\uC6A9\uC744").replace(/포인트는/g, "\uB0B4\uC6A9\uC740").replace(/포인트/g, "\uB0B4\uC6A9").replace(/\s{2,}/g, " ").trim();
+}
+function normalizeSnippetTextForSimilarity(value) {
+  return value.toLowerCase().replace(/포인트/g, "\uB514\uD14C\uC77C").replace(/경구\s*철분제|경구용\s*철분제제+|oral\s*iron/gi, "\uACBD\uAD6C\uC6A9\uCCA0\uBD84\uC81C").replace(/더딘|늦는|불충분|부족한|반응\s*부족/g, "\uBC18\uC751\uBD80\uC871").replace(/[^\p{L}\p{N}%]+/gu, " ").replace(/\s+/g, " ").trim();
+}
+function getSnippetMeaningKeys(snippet) {
+  const text2 = normalizeSnippetTextForSimilarity(
+    `${snippet.product} ${snippet.content} ${snippet.context} ${snippet.tags.join(" ")}`
+  );
+  const pairs = [
+    ["\uACBD\uAD6C\uC6A9\uCCA0\uBD84\uC81C\uBC18\uC751\uBD80\uC871", /경구용철분제.*반응부족|반응부족.*경구용철분제/],
+    ["1\uD68C\uD22C\uC5EC\uD3B8\uC758\uC131", /1회|한\s*번|원샷|투여.*편의|편의.*투여/],
+    ["\uAE09\uC5EC\uAE30\uC900", /급여|보험|기준|청구/],
+    ["Hb\uD68C\uBCF5", /hb|혈색소|헤모글로빈|회복/],
+    ["\uC2DC\uD5D8\uD22C\uC5EC\uBD80\uB2F4", /시험투여|아나필락시스|과민|부담/],
+    ["\uC544\uBBF8\uB178\uC0B025\uC99D\uAC00", /아미노산.*25|25.*아미노산/],
+    ["\uD3EC\uB3C4\uB2F9\uBD80\uB2F4\uAC10\uC18C", /포도당|혈당|당부하|당\s*부담/],
+    ["\uC911\uC99D\uC601\uC591", /중증|중환자|icu|영양/],
+    ["\uB2E8\uBC31\uBCF4\uCDA9", /단백|질소균형|보충/],
+    ["\uC624\uBA54\uAC003\uC870\uC131", /오메가3|omega\s*3|ω\s*3/],
+    ["\uC218\uD608\uBD80\uB2F4", /수혈|transfusion/],
+    ["\uC678\uB798\uCD94\uC801\uBD80\uB2F4", /외래|추적|내원|재방문/]
+  ];
+  return new Set(pairs.filter(([, pattern]) => pattern.test(text2)).map(([key]) => key));
+}
+function getSnippetDetailTokens(snippet) {
+  const stopWords = /* @__PURE__ */ new Set([
+    "\uAD50\uC218",
+    "\uAD50\uC218\uB2D8",
+    "\uD658\uC790",
+    "\uC0AC\uC6A9",
+    "\uCC98\uBC29",
+    "\uC124\uBA85",
+    "\uAC15\uC870",
+    "\uB514\uD14C\uC77C",
+    "\uB0B4\uC6A9",
+    "\uADFC\uAC70",
+    "\uC81C\uD488",
+    "\uAD00\uB828",
+    "\uACBD\uC6B0",
+    "\uAC00\uB2A5",
+    "\uC9C4\uD589",
+    "\uD655\uC778",
+    "\uC548\uB0B4",
+    "\uD65C\uC6A9",
+    "\uC0C1\uD669",
+    "\uBE44\uAD50"
+  ]);
+  return new Set(
+    normalizeSnippetTextForSimilarity(`${snippet.product} ${snippet.content} ${snippet.context} ${snippet.tags.join(" ")}`).split(/\s+/).filter((word) => word.length >= 2 && !stopWords.has(word))
+  );
+}
+function snippetNgramSimilarity(a, b) {
+  const left = normalizeSnippetTextForSimilarity(a).replace(/\s+/g, "");
+  const right = normalizeSnippetTextForSimilarity(b).replace(/\s+/g, "");
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  if (shorter.length >= 12 && longer.includes(shorter)) return 1;
+  const size = Math.min(3, shorter.length);
+  const grams = (value) => {
+    const result = /* @__PURE__ */ new Set();
+    for (let i = 0; i <= value.length - size; i++) result.add(value.slice(i, i + size));
+    return result;
+  };
+  const leftGrams = grams(left);
+  const rightGrams = grams(right);
+  let overlap = 0;
+  for (const gram of leftGrams) {
+    if (rightGrams.has(gram)) overlap++;
+  }
+  return overlap / Math.max(leftGrams.size, rightGrams.size, 1);
+}
+function snippetDetailSimilarity(a, b) {
+  if (normalizeSnippetProduct(a.product) !== normalizeSnippetProduct(b.product)) return 0;
+  const aKeys = getSnippetMeaningKeys(a);
+  const bKeys = getSnippetMeaningKeys(b);
+  if (aKeys.size > 0 && bKeys.size > 0) {
+    for (const key of aKeys) {
+      if (bKeys.has(key)) return 1;
+    }
+  }
+  const aTokens = getSnippetDetailTokens(a);
+  const bTokens = getSnippetDetailTokens(b);
+  const union2 = /* @__PURE__ */ new Set([...aTokens, ...bTokens]);
+  let intersection = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) intersection++;
+  }
+  const tokenScore = union2.size ? intersection / union2.size : 0;
+  const textScore = snippetNgramSimilarity(`${a.content} ${a.context}`, `${b.content} ${b.context}`);
+  return Math.max(tokenScore, textScore);
 }
 function prepHospital(h) {
   return {
@@ -44845,12 +45016,59 @@ router3.delete("/visit-logs/:id", wrap(async (req, res) => {
   await db.delete(visitLogs).where(eq(visitLogs.id, id));
   res.json({ ok: true });
 }));
+router3.get("/visit-log-feedback-events", wrap(async (_req, res) => {
+  const all = await db.select().from(visitLogFeedbackEvents);
+  res.json(all);
+}));
+router3.post("/visit-log-feedback-events", wrap(async (req, res) => {
+  const data = prepFeedbackEvent(req.body);
+  await db.insert(visitLogFeedbackEvents).values(data).onConflictDoUpdate({
+    target: visitLogFeedbackEvents.id,
+    set: stripId(data)
+  });
+  res.json({ ok: true });
+}));
+router3.get("/ai-generation-preferences", wrap(async (_req, res) => {
+  const all = await db.select().from(aiGenerationPreferences);
+  res.json(all);
+}));
+router3.post("/ai-generation-preferences", wrap(async (req, res) => {
+  const data = prepPreference(req.body);
+  await db.insert(aiGenerationPreferences).values(data).onConflictDoUpdate({
+    target: aiGenerationPreferences.id,
+    set: { ...stripId(data), updatedAt: /* @__PURE__ */ new Date() }
+  });
+  res.json({ ok: true });
+}));
 router3.get("/snippets", wrap(async (_req, res) => {
   const all = await db.select().from(goldenSnippets);
   res.json(all);
 }));
 router3.post("/snippets", wrap(async (req, res) => {
   const data = prepSnippet(req.body);
+  const existing = await db.select().from(goldenSnippets);
+  const duplicate = existing.find((row) => row.id !== data.id && snippetDetailSimilarity(
+    {
+      id: data.id,
+      content: data.content,
+      context: data.context,
+      tags: data.tags,
+      product: data.product,
+      analysis: data.analysis
+    },
+    {
+      id: row.id,
+      content: row.content,
+      context: row.context,
+      tags: row.tags,
+      product: row.product,
+      analysis: row.analysis
+    }
+  ) >= 0.68);
+  if (duplicate) {
+    res.status(409).json({ error: "duplicate", message: "\uC774\uBBF8 \uAC19\uC740 \uB514\uD14C\uC77C\uC758 \uD575\uC2EC\uBA58\uD2B8\uAC00 \uC788\uC2B5\uB2C8\uB2E4." });
+    return;
+  }
   await db.insert(goldenSnippets).values(data).onConflictDoUpdate({
     target: goldenSnippets.id,
     set: stripId(data)
@@ -44914,9 +45132,11 @@ router3.delete("/manuals/:id", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 router3.post("/export", wrap(async (_req, res) => {
-  const [allDoctors, allVisitLogs, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
+  const [allDoctors, allVisitLogs, allFeedbackEvents, allPreferences, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
     db.select().from(doctors),
     db.select().from(visitLogs),
+    db.select().from(visitLogFeedbackEvents),
+    db.select().from(aiGenerationPreferences),
     db.select().from(goldenSnippets),
     db.select().from(hospitalProfiles),
     db.select().from(departmentProfiles),
@@ -44925,6 +45145,8 @@ router3.post("/export", wrap(async (_req, res) => {
   res.json({
     doctors: allDoctors,
     visitLogs: allVisitLogs,
+    visitLogFeedbackEvents: allFeedbackEvents,
+    aiGenerationPreferences: allPreferences,
     snippets: allSnippets,
     hospitals: allHospitals,
     departments: allDepartments,
@@ -44952,6 +45174,26 @@ router3.post("/import", wrap(async (req, res) => {
         await db.insert(visitLogs).values(row).onConflictDoUpdate({ target: visitLogs.id, set: stripId(row) });
       } catch (e) {
         errors.push(`visitLog ${v.id}: ${e.message}`);
+      }
+    }
+  }
+  if (data.visitLogFeedbackEvents) {
+    for (const item of data.visitLogFeedbackEvents) {
+      try {
+        const row = prepFeedbackEvent(item);
+        await db.insert(visitLogFeedbackEvents).values(row).onConflictDoUpdate({ target: visitLogFeedbackEvents.id, set: stripId(row) });
+      } catch (e) {
+        errors.push(`visitLogFeedbackEvent ${item.id}: ${e.message}`);
+      }
+    }
+  }
+  if (data.aiGenerationPreferences) {
+    for (const item of data.aiGenerationPreferences) {
+      try {
+        const row = prepPreference(item);
+        await db.insert(aiGenerationPreferences).values(row).onConflictDoUpdate({ target: aiGenerationPreferences.id, set: { ...stripId(row), updatedAt: /* @__PURE__ */ new Date() } });
+      } catch (e) {
+        errors.push(`aiGenerationPreference ${item.id}: ${e.message}`);
       }
     }
   }
@@ -45091,6 +45333,41 @@ async function ensureDatabaseSchema() {
     );
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS visit_log_feedback_events (
+      id varchar(100) PRIMARY KEY,
+      event_type varchar(50) NOT NULL,
+      visit_log_id varchar(100) NOT NULL DEFAULT '',
+      doctor_id varchar(100) NOT NULL DEFAULT '',
+      doctor_name varchar(100) NOT NULL DEFAULT '',
+      hospital varchar(200) NOT NULL DEFAULT '',
+      department varchar(200) NOT NULL DEFAULT '',
+      products jsonb NOT NULL DEFAULT '[]'::jsonb,
+      raw_notes text NOT NULL DEFAULT '',
+      original_formatted_log text NOT NULL DEFAULT '',
+      original_next_strategy text NOT NULL DEFAULT '',
+      edited_formatted_log text NOT NULL DEFAULT '',
+      edited_next_strategy text NOT NULL DEFAULT '',
+      diff_summary text NOT NULL DEFAULT '',
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_generation_preferences (
+      id varchar(160) PRIMARY KEY,
+      scope varchar(50) NOT NULL,
+      scope_key varchar(200) NOT NULL DEFAULT '',
+      forbidden_patterns jsonb NOT NULL DEFAULT '[]'::jsonb,
+      preferred_patterns jsonb NOT NULL DEFAULT '[]'::jsonb,
+      avoided_patient_groups jsonb NOT NULL DEFAULT '[]'::jsonb,
+      preferred_detail_axes jsonb NOT NULL DEFAULT '[]'::jsonb,
+      preferred_tone text NOT NULL DEFAULT '',
+      average_length integer NOT NULL DEFAULT 0,
+      confidence integer NOT NULL DEFAULT 0,
+      summary text NOT NULL DEFAULT '',
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS golden_snippets (
       id varchar(100) PRIMARY KEY,
       content text NOT NULL,
@@ -45098,8 +45375,15 @@ async function ensureDatabaseSchema() {
       tags jsonb NOT NULL DEFAULT '[]'::jsonb,
       product varchar(200) NOT NULL DEFAULT '',
       effectiveness integer NOT NULL DEFAULT 5,
+      analysis text NOT NULL DEFAULT '',
+      analyzed_at timestamp,
       created_at timestamp NOT NULL DEFAULT now()
     );
+  `);
+  await pool.query(`
+    ALTER TABLE golden_snippets
+      ADD COLUMN IF NOT EXISTS analysis text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS analyzed_at timestamp;
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hospital_profiles (
@@ -45167,9 +45451,7 @@ async function runDataMigrations() {
 }
 
 // ../sales-intelligence/api/[...path].ts
-var config = {
-  maxDuration: 60
-};
+var config = { maxDuration: 60 };
 var readyPromise;
 var handleRequest = app_default;
 function ensureReady() {
