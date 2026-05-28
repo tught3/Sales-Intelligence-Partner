@@ -23,6 +23,27 @@ function hasDepartmentMismatch(text: string, department: string): boolean {
   return false;
 }
 
+function hasLearnedForbidden(text: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    const sample = pattern.trim();
+    if (sample.length < 6) return false;
+    return text.includes(sample) || text.includes(sample.slice(0, Math.min(14, sample.length)));
+  });
+}
+
+function changedManualFacts(formattedLog: string, ctx: VisitContext): boolean {
+  if (!ctx.manualRawNotes?.trim()) return false;
+  const raw = ctx.manualRawNotes.replace(/\s+/g, '');
+  const output = formattedLog.replace(/\s+/g, '');
+  const rawProducts = ['페린젝트', '위너프에이플러스'].filter((product) => raw.includes(product));
+  if (rawProducts.some((product) => !output.includes(product))) return true;
+
+  const importantKeys = (ctx.manualFactKeys ?? []).filter((key) => key !== '전개방식');
+  if (importantKeys.length === 0) return false;
+  const outputKeys = new Set(extractKeys(formattedLog));
+  return importantKeys.some((key) => !outputKeys.has(key));
+}
+
 export function validate(
   formattedLog: string,
   nextStrategy: string,
@@ -38,6 +59,12 @@ export function validate(
   if (hasForbiddenPhrase(`${formattedLog} ${nextStrategy}`)) failTypes.push('FORBIDDEN_PHRASE');
   if (hasDepartmentMismatch(`${formattedLog} ${nextStrategy}`, ctx.doctor.department || '')) {
     failTypes.push('DEPARTMENT_MISMATCH');
+  }
+  if (hasLearnedForbidden(`${formattedLog} ${nextStrategy}`, ctx.learnedForbiddenPatterns ?? [])) {
+    failTypes.push('LEARNED_FORBIDDEN');
+  }
+  if (changedManualFacts(formattedLog, ctx)) {
+    failTypes.push('MANUAL_FACT_CHANGED');
   }
 
   const logKeys = extractKeys(formattedLog);

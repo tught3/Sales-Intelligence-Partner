@@ -46,7 +46,32 @@ function safePlanForDepartment(plan: DetailKey, ctx: VisitContext): DetailKey {
   return plan;
 }
 
+function buildManualPreservingFallback(plan: DetailKey, ctx: VisitContext): RepairOutput | null {
+  const raw = ctx.manualRawNotes?.trim();
+  if (!raw) return null;
+  const compactRaw = raw.replace(/\s+/g, '');
+  const product = ['페린젝트', '위너프에이플러스'].find((item) => compactRaw.includes(item)) ?? plan.product;
+  const normalizedRaw = raw
+    .replace(/\s+/g, ' ')
+    .replace(/[.。]$/g, '')
+    .trim();
+  const hasReaction = /공감|반응|의견|질문|하심|보임|고려|확인/.test(normalizedRaw);
+  const reaction = hasReaction ? '' : ` 교수님께서 관련 케이스는 진료 흐름에 맞춰 보겠다는 의견 보임`;
+  const preferred = ctx.learnedPreferredPatterns.find((item) => item.includes(product) || /반응|의견|보임/.test(item));
+  const preferredTail = preferred && !normalizedRaw.includes(preferred.slice(0, 8))
+    ? ` ${preferred.replace(/^추가:\s*/, '').slice(0, 45)}`
+    : '';
+  const formattedLog = limit(`${normalizedRaw}${reaction}${preferredTail}`, 230);
+  const nextSeed = plan.nextAction.includes(product)
+    ? plan.nextAction
+    : `${product} 관련 처방 가능 상황과 교수님 반응 확인`;
+  const nextStrategy = limit(`다음방문시에는 ${nextSeed}할예정`, 120);
+  return { formattedLog, nextStrategy, usedFallback: true };
+}
+
 export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput {
+  const manual = buildManualPreservingFallback(plan, ctx);
+  if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
   const formattedLog = limit(
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${safePlan.doctorReaction}하셨고, 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,

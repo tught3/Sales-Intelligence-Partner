@@ -111,8 +111,12 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const all = [...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
+  const manualProducts = ctx.manualRawNotes
+    ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
+    : [];
+  const productPool = manualProducts.length > 0 ? manualProducts : ctx.availableProducts;
   return all.filter((candidate) =>
-    ctx.availableProducts.includes(candidate.product) &&
+    productPool.includes(candidate.product) &&
     isCandidateAllowedForDepartment(candidate, ctx.doctor.department || '')
   );
 }
@@ -137,15 +141,21 @@ export function buildPlan(ctx: VisitContext): DetailKey {
   const ranked = baseCandidates.sort((a, b) => {
     const aKeys = extractKeys(planText(a));
     const bKeys = extractKeys(planText(b));
+    const aText = planText(a);
+    const bText = planText(b);
     const aPenalty =
       aKeys.filter((key) => batchKeys.has(key)).length * 10 +
       aKeys.filter((key) => recentKeySet.has(key)).length * 3 +
-      (ctx.usedProductsRecently.includes(a.product) ? 1 : 0);
+      (ctx.usedProductsRecently.includes(a.product) ? 1 : 0) +
+      ctx.learnedForbiddenPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length * 4;
     const bPenalty =
       bKeys.filter((key) => batchKeys.has(key)).length * 10 +
       bKeys.filter((key) => recentKeySet.has(key)).length * 3 +
-      (ctx.usedProductsRecently.includes(b.product) ? 1 : 0);
-    return aPenalty - bPenalty;
+      (ctx.usedProductsRecently.includes(b.product) ? 1 : 0) +
+      ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4;
+    const aBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length;
+    const bBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length;
+    return (aPenalty - aBonus) - (bPenalty - bBonus);
   });
 
   const selected = ranked[0] ?? candidatesFor({ ...ctx, availableProducts: ['페린젝트', '위너프에이플러스'] })[0] ?? FERINJECT_CANDIDATES[0];

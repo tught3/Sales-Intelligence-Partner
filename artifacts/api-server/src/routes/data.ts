@@ -1,5 +1,15 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { db, doctors, visitLogs, goldenSnippets, hospitalProfiles, departmentProfiles, companyManuals } from "@workspace/db";
+import {
+  db,
+  doctors,
+  visitLogs,
+  visitLogFeedbackEvents,
+  aiGenerationPreferences,
+  goldenSnippets,
+  hospitalProfiles,
+  departmentProfiles,
+  companyManuals,
+} from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const router = Router();
@@ -68,6 +78,43 @@ function prepVisitLog(v: any) {
     aiEditHint: v.aiEditHint ?? v.ai_edit_hint ?? "",
     products: v.products || [],
     createdAt: toDate(v.createdAt ?? v.created_at),
+  };
+}
+
+function prepFeedbackEvent(v: any) {
+  return {
+    id: v.id,
+    eventType: v.eventType ?? v.event_type ?? "edit",
+    visitLogId: v.visitLogId ?? v.visit_log_id ?? "",
+    doctorId: v.doctorId ?? v.doctor_id ?? "",
+    doctorName: v.doctorName ?? v.doctor_name ?? "",
+    hospital: v.hospital ?? "",
+    department: v.department ?? "",
+    products: v.products || [],
+    rawNotes: v.rawNotes ?? v.raw_notes ?? "",
+    originalFormattedLog: v.originalFormattedLog ?? v.original_formatted_log ?? "",
+    originalNextStrategy: v.originalNextStrategy ?? v.original_next_strategy ?? "",
+    editedFormattedLog: v.editedFormattedLog ?? v.edited_formatted_log ?? "",
+    editedNextStrategy: v.editedNextStrategy ?? v.edited_next_strategy ?? "",
+    diffSummary: v.diffSummary ?? v.diff_summary ?? "",
+    createdAt: toDate(v.createdAt ?? v.created_at),
+  };
+}
+
+function prepPreference(v: any) {
+  return {
+    id: v.id,
+    scope: v.scope ?? "global",
+    scopeKey: v.scopeKey ?? v.scope_key ?? "",
+    forbiddenPatterns: v.forbiddenPatterns ?? v.forbidden_patterns ?? [],
+    preferredPatterns: v.preferredPatterns ?? v.preferred_patterns ?? [],
+    avoidedPatientGroups: v.avoidedPatientGroups ?? v.avoided_patient_groups ?? [],
+    preferredDetailAxes: v.preferredDetailAxes ?? v.preferred_detail_axes ?? [],
+    preferredTone: v.preferredTone ?? v.preferred_tone ?? "",
+    averageLength: Number(v.averageLength ?? v.average_length ?? 0) || 0,
+    confidence: Number(v.confidence ?? v.confidence ?? 0) || 0,
+    summary: v.summary ?? "",
+    updatedAt: toDate(v.updatedAt ?? v.updated_at),
   };
 }
 
@@ -401,6 +448,34 @@ router.delete("/visit-logs/:id", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+router.get("/visit-log-feedback-events", wrap(async (_req, res) => {
+  const all = await db.select().from(visitLogFeedbackEvents);
+  res.json(all);
+}));
+
+router.post("/visit-log-feedback-events", wrap(async (req, res) => {
+  const data = prepFeedbackEvent(req.body);
+  await db.insert(visitLogFeedbackEvents).values(data).onConflictDoUpdate({
+    target: visitLogFeedbackEvents.id,
+    set: stripId(data),
+  });
+  res.json({ ok: true });
+}));
+
+router.get("/ai-generation-preferences", wrap(async (_req, res) => {
+  const all = await db.select().from(aiGenerationPreferences);
+  res.json(all);
+}));
+
+router.post("/ai-generation-preferences", wrap(async (req, res) => {
+  const data = prepPreference(req.body);
+  await db.insert(aiGenerationPreferences).values(data).onConflictDoUpdate({
+    target: aiGenerationPreferences.id,
+    set: { ...stripId(data), updatedAt: new Date() },
+  });
+  res.json({ ok: true });
+}));
+
 router.get("/snippets", wrap(async (_req, res) => {
   const all = await db.select().from(goldenSnippets);
   res.json(all);
@@ -505,9 +580,11 @@ router.delete("/manuals/:id", wrap(async (req, res) => {
 }));
 
 router.post("/export", wrap(async (_req, res) => {
-  const [allDoctors, allVisitLogs, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
+  const [allDoctors, allVisitLogs, allFeedbackEvents, allPreferences, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
     db.select().from(doctors),
     db.select().from(visitLogs),
+    db.select().from(visitLogFeedbackEvents),
+    db.select().from(aiGenerationPreferences),
     db.select().from(goldenSnippets),
     db.select().from(hospitalProfiles),
     db.select().from(departmentProfiles),
@@ -516,6 +593,8 @@ router.post("/export", wrap(async (_req, res) => {
   res.json({
     doctors: allDoctors,
     visitLogs: allVisitLogs,
+    visitLogFeedbackEvents: allFeedbackEvents,
+    aiGenerationPreferences: allPreferences,
     snippets: allSnippets,
     hospitals: allHospitals,
     departments: allDepartments,
@@ -541,6 +620,22 @@ router.post("/import", wrap(async (req, res) => {
         const row = prepVisitLog(v);
         await db.insert(visitLogs).values(row).onConflictDoUpdate({ target: visitLogs.id, set: stripId(row) });
       } catch (e: any) { errors.push(`visitLog ${v.id}: ${e.message}`); }
+    }
+  }
+  if (data.visitLogFeedbackEvents) {
+    for (const item of data.visitLogFeedbackEvents) {
+      try {
+        const row = prepFeedbackEvent(item);
+        await db.insert(visitLogFeedbackEvents).values(row).onConflictDoUpdate({ target: visitLogFeedbackEvents.id, set: stripId(row) });
+      } catch (e: any) { errors.push(`visitLogFeedbackEvent ${item.id}: ${e.message}`); }
+    }
+  }
+  if (data.aiGenerationPreferences) {
+    for (const item of data.aiGenerationPreferences) {
+      try {
+        const row = prepPreference(item);
+        await db.insert(aiGenerationPreferences).values(row).onConflictDoUpdate({ target: aiGenerationPreferences.id, set: { ...stripId(row), updatedAt: new Date() } });
+      } catch (e: any) { errors.push(`aiGenerationPreference ${item.id}: ${e.message}`); }
     }
   }
   if (data.snippets) {

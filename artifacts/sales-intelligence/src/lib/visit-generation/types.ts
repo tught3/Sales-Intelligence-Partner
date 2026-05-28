@@ -25,7 +25,9 @@ export type ValidationFailType =
   | 'MISSING_DETAIL'
   | 'MISSING_REACTION'
   | 'FORBIDDEN_PHRASE'
-  | 'DEPARTMENT_MISMATCH';
+  | 'DEPARTMENT_MISMATCH'
+  | 'LEARNED_FORBIDDEN'
+  | 'MANUAL_FACT_CHANGED';
 
 export type ValidationResult =
   | { pass: true }

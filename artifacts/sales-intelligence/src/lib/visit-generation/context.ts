@@ -1,4 +1,11 @@
-import { doctorStorage, visitLogStorage, type Doctor, type VisitLog } from '../storage';
+import {
+  doctorStorage,
+  preferenceStorage,
+  visitLogStorage,
+  type AiGenerationPreference,
+  type Doctor,
+  type VisitLog,
+} from '../storage';
 import { collectKeys } from './detailKeys';
 
 const VISIT_PRODUCTS = ['위너프에이플러스', '페린젝트'];
@@ -15,6 +22,10 @@ export type VisitContext = {
   manualRawNotes?: string;
   hasDailyObFerinject: boolean;
   isObDoctor: boolean;
+  preferences: AiGenerationPreference[];
+  learnedForbiddenPatterns: string[];
+  learnedPreferredPatterns: string[];
+  manualFactKeys: string[];
 };
 
 function isObDepartment(department: string): boolean {
@@ -41,6 +52,11 @@ export function buildContext(
   const sortedLogs = [...pastLogs].sort((a, b) => (b.visitDate || '').localeCompare(a.visitDate || ''));
   const recentTexts = sortedLogs.slice(0, 5).flatMap((log) => [log.formattedLog, log.nextStrategy]);
   const selected = selectedProducts.filter((product) => VISIT_PRODUCTS.includes(product));
+  const detectedManualProducts = manualRawNotes
+    ? VISIT_PRODUCTS.filter((product) => manualRawNotes.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
+    : [];
+  const productScope = selected.length > 0 ? selected : detectedManualProducts;
+  const preferences = preferenceStorage.getForGeneration(doctor, productScope);
 
   const todayDate = new Date().toISOString().split('T')[0];
 
@@ -56,5 +72,9 @@ export function buildContext(
     manualRawNotes,
     hasDailyObFerinject: hasTodayObFerinject(todayDate),
     isObDoctor: isObDepartment(doctor.department),
+    preferences,
+    learnedForbiddenPatterns: [...new Set(preferences.flatMap((pref) => pref.forbiddenPatterns ?? []))].slice(0, 20),
+    learnedPreferredPatterns: [...new Set(preferences.flatMap((pref) => pref.preferredPatterns ?? []))].slice(0, 20),
+    manualFactKeys: collectKeys([manualRawNotes ?? '']),
   };
 }

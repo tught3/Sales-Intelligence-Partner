@@ -1,5 +1,5 @@
 ﻿import type { Doctor, VisitLog } from './storage';
-import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
+import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, preferenceStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
 import { runVisitGenerationPipeline } from './visit-generation/pipeline';
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
 
@@ -1747,6 +1747,28 @@ function buildIntroNote(focusProducts: string[], includeNewDrugReview = false): 
 → 도입 의향은 직접 묻지 말고 특장점만 자연스럽게 전달`;
 }
 
+function buildLearningPreferenceNote(doctor: Doctor, products: string[], mode: 'auto' | 'manual'): string {
+  const preferences = preferenceStorage.getForGeneration(doctor, products).filter((pref) => pref.confidence > 0);
+  if (preferences.length === 0) return '';
+  const forbidden = [...new Set(preferences.flatMap((pref) => pref.forbiddenPatterns ?? []))].slice(0, 8);
+  const preferred = [...new Set(preferences.flatMap((pref) => pref.preferredPatterns ?? []))].slice(0, 8);
+  const detailAxes = [...new Set(preferences.flatMap((pref) => pref.preferredDetailAxes ?? []))].slice(0, 5);
+  const summaries = preferences
+    .slice(0, 4)
+    .map((pref) => `${pref.scope}:${pref.scopeKey || '전체'}(${pref.confidence}) ${pref.summary}`)
+    .join(' / ');
+  const modeRule = mode === 'manual'
+    ? '메모편집에서는 사용자 원문에 있는 제품명, 수치, 환자 상황, 교수 반응을 절대 다른 내용으로 바꾸지 말고, 원문에 없는 연결과 다음방문전략만 보강.'
+    : '자동생성에서는 금지 패턴을 후보에서 제외하고 선호 패턴은 과/제품 맥락에 맞을 때만 반영.';
+  return `\n★★★ 사용자 수정 학습 반영:
+- 적용 범위: ${summaries}
+- 사용자가 지우거나 버린 표현/흐름: ${forbidden.length ? forbidden.join(' / ') : '없음'}
+- 사용자가 추가하거나 선호한 표현/흐름: ${preferred.length ? preferred.join(' / ') : '없음'}
+- 선호 디테일 축: ${detailAxes.length ? detailAxes.join(' / ') : '없음'}
+- ${modeRule}
+`;
+}
+
 async function convertToVisitLogBase(
   rawNotes: string,
   doctor: Doctor,
@@ -1799,6 +1821,7 @@ async function convertToVisitLogBase(
   const cvIntroNote = buildIntroNote(activeProducts, cvAllowNewDrugReview);
   const cvThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
   const cvRecentDetailMemory = buildRecentDetailMemory(pastLogs);
+  const cvLearningNote = buildLearningPreferenceNote(doctor, activeProducts, 'manual');
   const cvPipelinePlanNote = pipelinePlan
     ? `\n★ 파이프라인 생성 계획:
 - 원본 메모의 사실은 최우선으로 유지
@@ -1812,11 +1835,11 @@ async function convertToVisitLogBase(
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvPipelinePlanNote}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
+${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvLearningNote}${cvPipelinePlanNote}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
 아래 [원본 메모]를 변환합니다.
 
 ★★ 변환 원칙 (반드시 준수):
-1. 원본 메모의 내용(상황, 반응, 제품명, 수치 등)은 그대로 유지. 다른 내용으로 대체 금지.
+1. 원본 메모의 내용(상황, 반응, 제품명, 수치 등)은 그대로 유지. 다른 제품/다른 디테일로 대체 금지.
 2. 말투·어미를 아래 규칙(~함, ~보임, ~예정 등)에 맞게 다듬을 것.
 3. 원본 메모의 흐름이 어색하거나 주제가 뚝 끊기면 → 사실은 유지하되 순서/연결을 자연스럽게 재구성할 것.
 4. 원본에 제품 디테일이 없으면 → 이 과(${doctor.department})에 맞는 제품 디테일 1개만 자연스럽게 추가.
@@ -1959,6 +1982,7 @@ async function autoGenerateVisitLogBase(
   const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
   const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
   const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
+  const agLearningNote = buildLearningPreferenceNote(doctor, activeProducts, 'auto');
   const agPipelinePlanNote = pipelinePlan
     ? `\n★ 파이프라인 생성 계획 (반드시 준수):
 - 오늘 제품: ${pipelinePlan.product}
@@ -1976,7 +2000,7 @@ async function autoGenerateVisitLogBase(
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agPipelinePlanNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
+${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agLearningNote}${agPipelinePlanNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원명과 과명에 맞게.)
 아래 제품 디테일 후보 중 최근 방문에서 덜 쓴 내용 1개 이상을 반드시 반영하고, 최근 방문과 같은 수치/근거/환자군 조합으로 대체하지 마세요.

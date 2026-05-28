@@ -28,6 +28,39 @@ export const visitLogs = pgTable("visit_logs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const visitLogFeedbackEvents = pgTable("visit_log_feedback_events", {
+  id: varchar("id", { length: 100 }).primaryKey(),
+  eventType: varchar("event_type", { length: 50 }).notNull(),
+  visitLogId: varchar("visit_log_id", { length: 100 }).notNull().default(""),
+  doctorId: varchar("doctor_id", { length: 100 }).notNull().default(""),
+  doctorName: varchar("doctor_name", { length: 100 }).notNull().default(""),
+  hospital: varchar("hospital", { length: 200 }).notNull().default(""),
+  department: varchar("department", { length: 200 }).notNull().default(""),
+  products: jsonb("products").notNull().default([]),
+  rawNotes: text("raw_notes").notNull().default(""),
+  originalFormattedLog: text("original_formatted_log").notNull().default(""),
+  originalNextStrategy: text("original_next_strategy").notNull().default(""),
+  editedFormattedLog: text("edited_formatted_log").notNull().default(""),
+  editedNextStrategy: text("edited_next_strategy").notNull().default(""),
+  diffSummary: text("diff_summary").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const aiGenerationPreferences = pgTable("ai_generation_preferences", {
+  id: varchar("id", { length: 160 }).primaryKey(),
+  scope: varchar("scope", { length: 50 }).notNull(),
+  scopeKey: varchar("scope_key", { length: 200 }).notNull().default(""),
+  forbiddenPatterns: jsonb("forbidden_patterns").notNull().default([]),
+  preferredPatterns: jsonb("preferred_patterns").notNull().default([]),
+  avoidedPatientGroups: jsonb("avoided_patient_groups").notNull().default([]),
+  preferredDetailAxes: jsonb("preferred_detail_axes").notNull().default([]),
+  preferredTone: text("preferred_tone").notNull().default(""),
+  averageLength: integer("average_length").notNull().default(0),
+  confidence: integer("confidence").notNull().default(0),
+  summary: text("summary").notNull().default(""),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const goldenSnippets = pgTable("golden_snippets", {
   id: varchar("id", { length: 100 }).primaryKey(),
   content: text("content").notNull(),
@@ -76,6 +109,10 @@ export type Doctor = typeof doctors.$inferSelect;
 export type InsertDoctor = typeof doctors.$inferInsert;
 export type VisitLog = typeof visitLogs.$inferSelect;
 export type InsertVisitLog = typeof visitLogs.$inferInsert;
+export type VisitLogFeedbackEvent = typeof visitLogFeedbackEvents.$inferSelect;
+export type InsertVisitLogFeedbackEvent = typeof visitLogFeedbackEvents.$inferInsert;
+export type AiGenerationPreference = typeof aiGenerationPreferences.$inferSelect;
+export type InsertAiGenerationPreference = typeof aiGenerationPreferences.$inferInsert;
 export type GoldenSnippet = typeof goldenSnippets.$inferSelect;
 export type InsertGoldenSnippet = typeof goldenSnippets.$inferInsert;
 export type HospitalProfile = typeof hospitalProfiles.$inferSelect;

@@ -34,6 +34,43 @@ export async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS visit_log_feedback_events (
+      id varchar(100) PRIMARY KEY,
+      event_type varchar(50) NOT NULL,
+      visit_log_id varchar(100) NOT NULL DEFAULT '',
+      doctor_id varchar(100) NOT NULL DEFAULT '',
+      doctor_name varchar(100) NOT NULL DEFAULT '',
+      hospital varchar(200) NOT NULL DEFAULT '',
+      department varchar(200) NOT NULL DEFAULT '',
+      products jsonb NOT NULL DEFAULT '[]'::jsonb,
+      raw_notes text NOT NULL DEFAULT '',
+      original_formatted_log text NOT NULL DEFAULT '',
+      original_next_strategy text NOT NULL DEFAULT '',
+      edited_formatted_log text NOT NULL DEFAULT '',
+      edited_next_strategy text NOT NULL DEFAULT '',
+      diff_summary text NOT NULL DEFAULT '',
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_generation_preferences (
+      id varchar(160) PRIMARY KEY,
+      scope varchar(50) NOT NULL,
+      scope_key varchar(200) NOT NULL DEFAULT '',
+      forbidden_patterns jsonb NOT NULL DEFAULT '[]'::jsonb,
+      preferred_patterns jsonb NOT NULL DEFAULT '[]'::jsonb,
+      avoided_patient_groups jsonb NOT NULL DEFAULT '[]'::jsonb,
+      preferred_detail_axes jsonb NOT NULL DEFAULT '[]'::jsonb,
+      preferred_tone text NOT NULL DEFAULT '',
+      average_length integer NOT NULL DEFAULT 0,
+      confidence integer NOT NULL DEFAULT 0,
+      summary text NOT NULL DEFAULT '',
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS golden_snippets (
       id varchar(100) PRIMARY KEY,
       content text NOT NULL,

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
 import {
   doctorStorage,
+  feedbackStorage,
   visitLogStorage,
   type VisitLog,
 } from "@/lib/storage";
@@ -149,6 +150,25 @@ export default function VisitLogHistoryPage() {
 
   function handleDelete(id: string) {
     if (!confirm("이 일지를 삭제하시겠습니까?")) return;
+    const log = visitLogStorage.getAll().find((item) => item.id === id);
+    const doctor = log ? doctors.find((item) => item.id === log.doctorId) : undefined;
+    if (log) {
+      feedbackStorage.record({
+        eventType: 'delete',
+        visitLogId: log.id,
+        doctorId: log.doctorId,
+        doctorName: doctor?.name ?? '',
+        hospital: doctor?.hospital ?? '',
+        department: doctor?.department ?? '',
+        products: log.products ?? [],
+        rawNotes: log.rawNotes,
+        originalFormattedLog: log.formattedLog,
+        originalNextStrategy: log.nextStrategy,
+        editedFormattedLog: '',
+        editedNextStrategy: '',
+        diffSummary: `삭제: "${log.formattedLog.slice(0, 40)}"`,
+      });
+    }
     visitLogStorage.delete(id);
     setAllLogs(visitLogStorage.getAll());
     if (editingId === id) setEditingId(null);
@@ -197,6 +217,24 @@ export default function VisitLogHistoryPage() {
     if (saveResult.duplicate) {
       toast({ title: "중복된 내용입니다.", description: "이미 같은 방문 기록이 있어 저장하지 않았습니다.", variant: "destructive" });
       return;
+    }
+    if (originalText.trim() !== editedText.trim()) {
+      const doctor = doctors.find((item) => item.id === log.doctorId);
+      feedbackStorage.record({
+        eventType: 'edit',
+        visitLogId: log.id,
+        doctorId: log.doctorId,
+        doctorName: doctor?.name ?? '',
+        hospital: doctor?.hospital ?? '',
+        department: doctor?.department ?? '',
+        products: log.products ?? [],
+        rawNotes: log.rawNotes,
+        originalFormattedLog: log.formattedLog,
+        originalNextStrategy: log.nextStrategy,
+        editedFormattedLog: newFormattedLog,
+        editedNextStrategy: newNextStrategy,
+        diffSummary: hint ?? '',
+      });
     }
     setAllLogs(visitLogStorage.getAll());
     setEditingId(null);

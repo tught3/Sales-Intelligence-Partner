@@ -23,6 +23,43 @@ export interface VisitLog {
   aiEditHint?: string; // 사용자가 AI 생성 일지를 수정한 패턴 기록
 }
 
+export type VisitLogFeedbackEventType = 'edit' | 'delete' | 'regenerate';
+
+export interface VisitLogFeedbackEvent {
+  id: string;
+  eventType: VisitLogFeedbackEventType;
+  visitLogId: string;
+  doctorId: string;
+  doctorName: string;
+  hospital: string;
+  department: string;
+  products: string[];
+  rawNotes: string;
+  originalFormattedLog: string;
+  originalNextStrategy: string;
+  editedFormattedLog: string;
+  editedNextStrategy: string;
+  diffSummary: string;
+  createdAt: string;
+}
+
+export type PreferenceScope = 'global' | 'department' | 'doctor' | 'product';
+
+export interface AiGenerationPreference {
+  id: string;
+  scope: PreferenceScope;
+  scopeKey: string;
+  forbiddenPatterns: string[];
+  preferredPatterns: string[];
+  avoidedPatientGroups: string[];
+  preferredDetailAxes: string[];
+  preferredTone: string;
+  averageLength: number;
+  confidence: number;
+  summary: string;
+  updatedAt: string;
+}
+
 export interface Doctor {
   id: string;
   name: string;
@@ -86,12 +123,16 @@ const LOCAL_CACHE_KEY = 'jw_sales_intelligence_backup_v1';
 const cache: {
   doctors: Doctor[];
   visitLogs: VisitLog[];
+  feedbackEvents: VisitLogFeedbackEvent[];
+  preferences: AiGenerationPreference[];
   snippets: GoldenSnippet[];
   manuals: CompanyManual[];
   loaded: boolean;
 } = {
   doctors: [],
   visitLogs: [],
+  feedbackEvents: [],
+  preferences: [],
   snippets: [],
   manuals: [],
   loaded: false,
@@ -101,6 +142,8 @@ function serializeCache() {
   return {
     doctors: cache.doctors,
     visitLogs: cache.visitLogs,
+    feedbackEvents: cache.feedbackEvents,
+    preferences: cache.preferences,
     snippets: cache.snippets,
     manuals: cache.manuals,
     savedAt: new Date().toISOString(),
@@ -122,6 +165,8 @@ function loadLocalCache(): boolean {
     const data = JSON.parse(raw);
     cache.doctors = (data.doctors || []).map(normalizeDoctor);
     cache.visitLogs = (data.visitLogs || []).map(normalizeVisitLog);
+    cache.feedbackEvents = (data.feedbackEvents || data.visitLogFeedbackEvents || []).map(normalizeFeedbackEvent);
+    cache.preferences = (data.preferences || data.aiGenerationPreferences || []).map(normalizePreference);
     cache.snippets = (data.snippets || []).map(normalizeSnippet);
     cache.manuals = (data.manuals || []).map(normalizeManual);
     return true;
@@ -318,6 +363,191 @@ function normalizeVisitLog(v: any): VisitLog {
   };
 }
 
+function normalizeFeedbackEvent(v: any): VisitLogFeedbackEvent {
+  return {
+    id: v.id,
+    eventType: v.eventType ?? v.event_type ?? 'edit',
+    visitLogId: v.visitLogId ?? v.visit_log_id ?? '',
+    doctorId: v.doctorId ?? v.doctor_id ?? '',
+    doctorName: v.doctorName ?? v.doctor_name ?? '',
+    hospital: v.hospital ?? '',
+    department: v.department ?? '',
+    products: v.products ?? [],
+    rawNotes: v.rawNotes ?? v.raw_notes ?? '',
+    originalFormattedLog: v.originalFormattedLog ?? v.original_formatted_log ?? '',
+    originalNextStrategy: v.originalNextStrategy ?? v.original_next_strategy ?? '',
+    editedFormattedLog: v.editedFormattedLog ?? v.edited_formatted_log ?? '',
+    editedNextStrategy: v.editedNextStrategy ?? v.edited_next_strategy ?? '',
+    diffSummary: v.diffSummary ?? v.diff_summary ?? '',
+    createdAt: toISOStr(v.createdAt ?? v.created_at),
+  };
+}
+
+function normalizePreference(v: any): AiGenerationPreference {
+  return {
+    id: v.id,
+    scope: v.scope ?? 'global',
+    scopeKey: v.scopeKey ?? v.scope_key ?? '',
+    forbiddenPatterns: v.forbiddenPatterns ?? v.forbidden_patterns ?? [],
+    preferredPatterns: v.preferredPatterns ?? v.preferred_patterns ?? [],
+    avoidedPatientGroups: v.avoidedPatientGroups ?? v.avoided_patient_groups ?? [],
+    preferredDetailAxes: v.preferredDetailAxes ?? v.preferred_detail_axes ?? [],
+    preferredTone: v.preferredTone ?? v.preferred_tone ?? '',
+    averageLength: Number(v.averageLength ?? v.average_length ?? 0) || 0,
+    confidence: Number(v.confidence ?? 0) || 0,
+    summary: v.summary ?? '',
+    updatedAt: toISOStr(v.updatedAt ?? v.updated_at),
+  };
+}
+
+function generateClientId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizePatternText(value: string): string {
+  return value
+    .replace(/경구\s*철분제|경구용\s*철분제제+/g, '경구용철분제')
+    .replace(/더딘|늦는|불충분|부족한|반응\s*부족/g, '반응 부족')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function chunksForLearning(value: string): string[] {
+  return normalizePatternText(value)
+    .split(/(?:[.!?。]\s*|,\s*|\n)+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 8)
+    .slice(0, 8);
+}
+
+function uniqueList(values: string[], limit = 12): string[] {
+  const result: string[] = [];
+  for (const value of values.map(normalizePatternText).filter(Boolean)) {
+    if (result.some((existing) => isSimilarText(existing, value, 0.72))) continue;
+    result.push(value);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function preferenceId(scope: PreferenceScope, scopeKey: string): string {
+  return `${scope}:${scopeKey || 'global'}`;
+}
+
+function doctorForLog(log: Pick<VisitLog, 'doctorId'>): Doctor | undefined {
+  return cache.doctors.find((doctor) => doctor.id === log.doctorId);
+}
+
+function mergePreferences(primary: AiGenerationPreference[], fallback: AiGenerationPreference[]): AiGenerationPreference[] {
+  const byId = new Map<string, AiGenerationPreference>();
+  for (const pref of fallback) byId.set(pref.id, pref);
+  for (const pref of primary) byId.set(pref.id, pref);
+  return [...byId.values()];
+}
+
+function buildPreference(scope: PreferenceScope, scopeKey: string, events: VisitLogFeedbackEvent[]): AiGenerationPreference {
+  const deletedChunks = events.flatMap((event) => {
+    if (event.eventType === 'delete') {
+      return chunksForLearning(`${event.originalFormattedLog} ${event.originalNextStrategy}`);
+    }
+    return chunksForLearning(event.diffSummary)
+      .filter((part) => part.includes('삭제'))
+      .concat(chunksForLearning(event.originalFormattedLog).filter((part) => !event.editedFormattedLog.includes(part.slice(0, 8))));
+  });
+  const addedChunks = events.flatMap((event) =>
+    chunksForLearning(event.diffSummary)
+      .filter((part) => part.includes('추가'))
+      .concat(chunksForLearning(event.editedFormattedLog).filter((part) => !event.originalFormattedLog.includes(part.slice(0, 8))))
+  );
+  const editedLengths = events
+    .filter((event) => event.editedFormattedLog.trim())
+    .map((event) => event.editedFormattedLog.length);
+  const averageLength = editedLengths.length
+    ? Math.round(editedLengths.reduce((sum, value) => sum + value, 0) / editedLengths.length)
+    : 0;
+  const forbiddenPatterns = uniqueList(deletedChunks);
+  const preferredPatterns = uniqueList(addedChunks);
+  const preferredDetailAxes = uniqueList(
+    preferredPatterns.filter((text) => /페린젝트|위너프에이플러스|Hb|급여|경구용철분제|아미노산|포도당|수혈|영양/.test(text)),
+    8
+  );
+  const avoidedPatientGroups = uniqueList(
+    forbiddenPatterns.filter((text) => /환자|케이스|분만|산후|IBD|출혈|빈혈|수술/.test(text)),
+    8
+  );
+  const preferredTone = preferredPatterns.some((text) => /보임|하심|의견|반응/.test(text))
+    ? '사용자가 추가한 교수 반응 표현을 우선하고, 원문 사실을 바꾸지 않음'
+    : '원문 사실을 보존하고 메모체로 자연스럽게 정리';
+
+  return {
+    id: preferenceId(scope, scopeKey),
+    scope,
+    scopeKey,
+    forbiddenPatterns,
+    preferredPatterns,
+    avoidedPatientGroups,
+    preferredDetailAxes,
+    preferredTone,
+    averageLength,
+    confidence: Math.min(100, events.length * 20),
+    summary: `수정/삭제 이벤트 ${events.length}건 반영. 금지 ${forbiddenPatterns.length}개, 선호 ${preferredPatterns.length}개.`,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function rebuildPreferencesFromEvents(): AiGenerationPreference[] {
+  const events = cache.feedbackEvents;
+  if (events.length === 0) return buildPreferencesFromExistingHints();
+  const groups: Array<{ scope: PreferenceScope; key: string; events: VisitLogFeedbackEvent[] }> = [
+    { scope: 'global', key: '', events },
+  ];
+  for (const department of uniqueList(events.map((event) => event.department).filter(Boolean), 100)) {
+    groups.push({ scope: 'department', key: department, events: events.filter((event) => event.department === department) });
+  }
+  for (const doctorId of uniqueList(events.map((event) => event.doctorId).filter(Boolean), 200)) {
+    groups.push({ scope: 'doctor', key: doctorId, events: events.filter((event) => event.doctorId === doctorId) });
+  }
+  for (const product of uniqueList(events.flatMap((event) => event.products ?? []), 50)) {
+    groups.push({ scope: 'product', key: product, events: events.filter((event) => event.products?.includes(product)) });
+  }
+  return groups
+    .filter((group) => group.events.length > 0)
+    .map((group) => buildPreference(group.scope, group.key, group.events));
+}
+
+function buildPreferencesFromExistingHints(): AiGenerationPreference[] {
+  const hintEvents = cache.visitLogs
+    .filter((log) => log.aiEditHint?.trim())
+    .map((log): VisitLogFeedbackEvent => {
+      const doctor = doctorForLog(log);
+      return {
+        id: `hint-${log.id}`,
+        eventType: 'edit',
+        visitLogId: log.id,
+        doctorId: log.doctorId,
+        doctorName: doctor?.name ?? '',
+        hospital: doctor?.hospital ?? '',
+        department: doctor?.department ?? '',
+        products: log.products ?? [],
+        rawNotes: log.rawNotes,
+        originalFormattedLog: '',
+        originalNextStrategy: '',
+        editedFormattedLog: log.formattedLog,
+        editedNextStrategy: log.nextStrategy,
+        diffSummary: log.aiEditHint ?? '',
+        createdAt: log.createdAt,
+      };
+    });
+  if (hintEvents.length === 0) return [];
+  return [buildPreference('global', '', hintEvents)];
+}
+
+function syncPreferencesToServer(): void {
+  for (const pref of cache.preferences) {
+    api('/ai-generation-preferences', 'POST', pref).catch(console.error);
+  }
+}
+
 function conversationRecordToVisitLog(doctor: Doctor, record: ConversationRecord): VisitLog {
   return {
     id: `migrated-${record.id}`,
@@ -405,14 +635,18 @@ async function migrateConversationHistoryToVisitLogs(): Promise<void> {
 export async function initStorage(): Promise<void> {
   const hadLocalCache = hydrateLocalCache();
   try {
-    const [docs, logs, snips, mans] = await Promise.all([
+    const [docs, logs, feedback, prefs, snips, mans] = await Promise.all([
       api('/doctors'),
       api('/visit-logs'),
+      api('/visit-log-feedback-events').catch(() => []),
+      api('/ai-generation-preferences').catch(() => []),
       api('/snippets'),
       api('/manuals'),
     ]);
     cache.doctors = (docs || []).map(normalizeDoctor);
     cache.visitLogs = (logs || []).map(normalizeVisitLog);
+    cache.feedbackEvents = (feedback || []).map(normalizeFeedbackEvent);
+    cache.preferences = mergePreferences((prefs || []).map(normalizePreference), rebuildPreferencesFromEvents());
     cache.snippets = (snips || []).map(normalizeSnippet);
     cache.manuals = (mans || []).map(normalizeManual);
     await migrateConversationHistoryToVisitLogs();
@@ -573,6 +807,57 @@ export const visitLogStorage = {
     cache.visitLogs = cache.visitLogs.filter((v) => v.id !== id);
     persistLocalCache();
     api(`/visit-logs/${id}`, 'DELETE').catch(console.error);
+  },
+};
+
+export const feedbackStorage = {
+  getAll(): VisitLogFeedbackEvent[] {
+    return [...cache.feedbackEvents].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  },
+  record(event: Omit<VisitLogFeedbackEvent, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): VisitLogFeedbackEvent {
+    const row: VisitLogFeedbackEvent = {
+      ...event,
+      id: event.id ?? generateClientId('feedback'),
+      createdAt: event.createdAt ?? new Date().toISOString(),
+    };
+    const idx = cache.feedbackEvents.findIndex((item) => item.id === row.id);
+    if (idx >= 0) cache.feedbackEvents[idx] = row;
+    else cache.feedbackEvents.push(row);
+    cache.preferences = rebuildPreferencesFromEvents();
+    persistLocalCache();
+    api('/visit-log-feedback-events', 'POST', row).catch(console.error);
+    syncPreferencesToServer();
+    return row;
+  },
+};
+
+export const preferenceStorage = {
+  getAll(): AiGenerationPreference[] {
+    return [...cache.preferences];
+  },
+  getForGeneration(doctor: Doctor, products: string[] = []): AiGenerationPreference[] {
+    const productSet = new Set(products);
+    return cache.preferences
+      .filter((pref) => {
+        if (pref.scope === 'global') return true;
+        if (pref.scope === 'doctor') return pref.scopeKey === doctor.id;
+        if (pref.scope === 'department') return pref.scopeKey === doctor.department;
+        if (pref.scope === 'product') return productSet.has(pref.scopeKey);
+        return false;
+      })
+      .sort((a, b) => {
+        const rank = (pref: AiGenerationPreference) =>
+          pref.scope === 'doctor' ? 0 :
+          pref.scope === 'department' ? 1 :
+          pref.scope === 'product' ? 2 : 3;
+        return rank(a) - rank(b) || b.confidence - a.confidence;
+      });
+  },
+  rebuild(): AiGenerationPreference[] {
+    cache.preferences = rebuildPreferencesFromEvents();
+    persistLocalCache();
+    syncPreferencesToServer();
+    return this.getAll();
   },
 };
 
