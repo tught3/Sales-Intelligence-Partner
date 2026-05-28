@@ -1,10 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 
 const root = process.cwd();
 const detailKeysPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/detailKeys.ts');
+const normalizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/normalizer.ts');
+const validatorPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/validator.ts');
 const plannerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/planner.ts');
 const pipelinePath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/pipeline.ts');
 
@@ -28,6 +31,30 @@ async function importTsModule(filePath, moduleName) {
   await writeFile(outFile, output, 'utf8');
   return {
     module: await import(`file:///${outFile.replace(/\\/g, '/')}`),
+    cleanup: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+async function importVisitGenerationCjs(entryFile) {
+  const dir = path.join(tmpdir(), `sip-pipeline-cjs-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  await mkdir(dir, { recursive: true });
+  for (const [sourcePath, moduleName] of [
+    [detailKeysPath, 'detailKeys.js'],
+    [normalizerPath, 'normalizer.js'],
+    [validatorPath, 'validator.js'],
+  ]) {
+    const source = await readFile(sourcePath, 'utf8');
+    const output = ts.transpileModule(source, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2020,
+      },
+    }).outputText;
+    await writeFile(path.join(dir, moduleName), output, 'utf8');
+  }
+  const require = createRequire(import.meta.url);
+  return {
+    module: require(path.join(dir, entryFile)),
     cleanup: () => rm(dir, { recursive: true, force: true }),
   };
 }
@@ -58,6 +85,67 @@ try {
   );
 } finally {
   await imported.cleanup();
+}
+
+const normalizer = await importVisitGenerationCjs('normalizer.js');
+try {
+  const { normalize } = normalizer.module;
+  const result = normalize(
+    {
+      formattedLog: '페린젝트의 페린젝트의 1회 투여 편의성과 Hb 회복 근거를 디테일 진행함. 교수님께서 재방문 부담이 있는 환자에서는 고려 가능하다는 의견 보임',
+      nextStrategy: '다음방문시에는 페린젝트의 페린젝트의 급여 기준에 맞는 외래 빈혈 케이스 확인',
+    },
+    { product: '페린젝트' }
+  );
+  assert(!result.formattedLog.includes('페린젝트의 페린젝트의'), '본문의 제품명 반복 접두는 제거되어야 합니다.');
+  assert(!result.nextStrategy.includes('페린젝트의 페린젝트의'), '다음방문전략의 제품명 반복 접두는 제거되어야 합니다.');
+  const particleResult = normalize(
+    {
+      formattedLog: '페린젝트의의 1회 투여 편의성과 Hb 회복 근거를 디테일 진행함. 교수님께서 재방문 부담이 있는 환자에서는 고려 가능하다는 의견 보임',
+      nextStrategy: '다음방문시에는 페린젝트의의 급여 기준 확인',
+    },
+    { product: '페린젝트' }
+  );
+  assert(!particleResult.formattedLog.includes('페린젝트의의'), '본문의 중복 조사는 제거되어야 합니다.');
+  assert(!particleResult.nextStrategy.includes('페린젝트의의'), '다음방문전략의 중복 조사는 제거되어야 합니다.');
+} finally {
+  await normalizer.cleanup();
+}
+
+const validator = await importVisitGenerationCjs('validator.js');
+try {
+  const { validate } = validator.module;
+  const plan = {
+    product: '페린젝트',
+    patientGroup: '위장관 출혈 이후 경구용철분제로 Hb 회복이 더딘 소화기내과 외래 빈혈 환자',
+    detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+    doctorReaction: '재방문 부담이 있는 환자에서는 고려 가능하다는 반응',
+    nextAction: '위너프에이플러스 IBD 악화 환자의 영양 보충 필요성 확인',
+    narrativeStyle: '환자 케이스 연결형',
+    selectionReason: 'test',
+  };
+  const ctx = {
+    doctor: { department: '소화기내과' },
+    batchAvoidTexts: [],
+    pastLogs: [],
+  };
+  const bad = validate(
+    '페린젝트의 1회 투여 편의성을 분만 후 외래 재방문이 어려운 환자 상황과 연결해 디테일 진행함. 교수님께서 편의성은 공감하셨고 급여 기준은 확인해보겠다는 의견 보임',
+    '다음방문시에는 위너프에이플러스 IBD 악화 환자의 영양 보충 필요성 확인할예정',
+    plan,
+    ctx
+  );
+  assert(!bad.pass && bad.failTypes.includes('DEPARTMENT_MISMATCH'), '소화기내과에 분만/산후 맥락이 나오면 실패해야 합니다.');
+
+  const good = validate(
+    '페린젝트의 1회 투여 편의성과 Hb 회복 근거를 위장관 출혈 이후 경구용철분제로 회복이 더딘 외래 빈혈 환자 상황과 연결해 디테일 진행함. 교수님께서 재방문 부담이 있는 환자에서는 고려 가능하다는 반응 보임',
+    '다음방문시에는 위너프에이플러스 IBD 악화 환자의 영양 보충 필요성 확인할예정',
+    plan,
+    ctx
+  );
+  assert(good.pass || !good.failTypes.includes('DEPARTMENT_MISMATCH'), '소화기내과 허용 맥락은 진료과 불일치로 실패하면 안 됩니다.');
+} finally {
+  await validator.cleanup();
 }
 
 const plannerSource = await readFile(plannerPath, 'utf8');

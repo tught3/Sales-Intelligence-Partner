@@ -13,6 +13,16 @@ function hasForbiddenPhrase(text: string): boolean {
   return /실제\s*적용\s*환자군|적용\s*환자군\s*확인|환자군\s*중심으로|추가\s*디테일\s*진행할예정/.test(text);
 }
 
+function hasDepartmentMismatch(text: string, department: string): boolean {
+  if (/소화기/.test(department) && /분만|산후|산부인과|부인과|제왕절개/.test(text)) {
+    return true;
+  }
+  if (/산부인과|산과|부인과/.test(department) && /IBD|크론|궤양성대장염|위장관\s*출혈/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
 export function validate(
   formattedLog: string,
   nextStrategy: string,
@@ -26,6 +36,9 @@ export function validate(
   if (formattedLog.length > MAX_VISIT_LOG_LENGTH) failTypes.push('LENGTH_LONG');
   if (!formattedLog.includes(plan.product)) failTypes.push('MISSING_PRODUCT');
   if (hasForbiddenPhrase(`${formattedLog} ${nextStrategy}`)) failTypes.push('FORBIDDEN_PHRASE');
+  if (hasDepartmentMismatch(`${formattedLog} ${nextStrategy}`, ctx.doctor.department || '')) {
+    failTypes.push('DEPARTMENT_MISMATCH');
+  }
 
   const logKeys = extractKeys(formattedLog);
   const detailKeys = extractKeys(`${plan.detailAxis} ${plan.patientGroup}`);

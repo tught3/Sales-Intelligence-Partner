@@ -18,6 +18,29 @@ function clean(text: string): string {
     .trim();
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasProduct(text: string, product: string): boolean {
+  const compactText = text.replace(/\s+/g, '');
+  const compactProduct = product.replace(/\s+/g, '');
+  return compactText.includes(compactProduct);
+}
+
+function normalizeRepeatedProductPrefix(text: string, product: string): string {
+  const productPattern = escapeRegExp(product).replace(/\\\s\+/g, '\\s*');
+  const repeatedPrefix = new RegExp(`^(${productPattern})(?:\\s*의)?\\s+\\1(?:\\s*의)?\\s*`, 'i');
+  const repeatedAny = new RegExp(`(${productPattern})(?:\\s*의)?\\s+\\1(?:\\s*의)?`, 'gi');
+  return text
+    .replace(repeatedPrefix, `${product}의 `)
+    .replace(repeatedAny, `${product}의`)
+    .replace(new RegExp(`^${productPattern}\\s*의\\s*의\\s*`, 'i'), `${product}의 `)
+    .replace(new RegExp(`(${productPattern})\\s*의\\s*의`, 'gi'), `${product}의`)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function normalize(
   raw: { formattedLog: string; nextStrategy: string },
   plan: DetailKey
@@ -25,9 +48,13 @@ export function normalize(
   let formattedLog = clean(raw.formattedLog);
   let nextStrategy = clean(raw.nextStrategy);
 
-  if (formattedLog && !formattedLog.includes(plan.product)) {
+  formattedLog = normalizeRepeatedProductPrefix(formattedLog, plan.product);
+  nextStrategy = normalizeRepeatedProductPrefix(nextStrategy, plan.product);
+
+  if (formattedLog && !hasProduct(formattedLog, plan.product)) {
     formattedLog = `${plan.product}의 ${formattedLog}`;
   }
+  formattedLog = normalizeRepeatedProductPrefix(formattedLog, plan.product);
 
   if (nextStrategy && !nextStrategy.startsWith('다음방문시에는')) {
     nextStrategy = `다음방문시에는 ${nextStrategy.replace(/^다음\s*방문(?:시)?에는?\s*/, '')}`;
@@ -36,6 +63,7 @@ export function normalize(
   if (nextStrategy && !nextStrategy.endsWith('할예정')) {
     nextStrategy = `${nextStrategy.replace(/[.。]$/, '')}할예정`;
   }
+  nextStrategy = normalizeRepeatedProductPrefix(nextStrategy, plan.product);
 
   return { formattedLog, nextStrategy };
 }

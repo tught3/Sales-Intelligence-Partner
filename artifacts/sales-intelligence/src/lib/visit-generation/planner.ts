@@ -12,6 +12,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '혈당을 보면서 단백 보충을 같이 가져갈 수 있다는 점에는 동의',
     nextAction: '페린젝트 급여 기준에 맞는 외래 빈혈 케이스 사용 경험 확인',
     narrativeStyle: '환자 케이스 연결형',
+    allowedDepartments: ['외과', '흉부외과', '신경외과', '정형외과', '간담췌외과'],
   },
   {
     product: '위너프에이플러스',
@@ -21,6 +22,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '페린젝트 수혈 부담을 줄이고 싶은 퇴원 전 빈혈 케이스 확인',
     narrativeStyle: '지난 방문 확인형',
     professorQuestion: '중환자에서 혈당 부담은 어느 정도 차이가 나는지 질문 있어',
+    allowedDepartments: ['중환자의학과', '호흡기내과', '응급의학과', '흉부외과', '신경외과'],
   },
   {
     product: '위너프에이플러스',
@@ -30,6 +32,16 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '페린젝트 Hb 회복 경과와 수혈 회피 가능 케이스 확인',
     narrativeStyle: '교수 질문 답변형',
     professorQuestion: '기존 위너프와 어떤 차이로 봐야 하는지 질문 있어',
+    allowedDepartments: ['외과', '흉부외과', '신경외과', '정형외과', '간담췌외과', '산부인과'],
+  },
+  {
+    product: '위너프에이플러스',
+    patientGroup: 'IBD 악화나 식사량 저하로 영양 보충을 같이 보는 소화기내과 환자',
+    detailAxis: '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소',
+    doctorReaction: '식사량이 떨어지는 환자에서는 영양 보충 필요성은 공감하셨고 혈당 부담은 처방 전 같이 보겠다는 의견',
+    nextAction: '페린젝트 위장관 출혈 후 Hb 회복이 더딘 외래 빈혈 케이스 사용 경험 확인',
+    narrativeStyle: '환자 케이스 연결형',
+    allowedDepartments: ['소화기내과'],
   },
 ];
 
@@ -41,6 +53,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '반복 내원이 어려운 환자에서는 설명해볼 수 있겠다는 반응',
     nextAction: '위너프에이플러스 수술 후 식이 지연 환자 영양 보충 반응 확인',
     narrativeStyle: '처방 경험 확인형',
+    blockedDepartments: ['산부인과'],
   },
   {
     product: '페린젝트',
@@ -50,6 +63,16 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '위너프에이플러스 포도당 부담 감소를 수술 후 영양 흐름과 연결해 확인',
     narrativeStyle: '급여 기준 재확인형',
     professorQuestion: '급여 적용 시 Hb 기준을 어디까지 봐야 하는지 질문 있어',
+    blockedDepartments: ['산부인과'],
+  },
+  {
+    product: '페린젝트',
+    patientGroup: '위장관 출혈 이후 경구용철분제로 Hb 회복이 더딘 소화기내과 외래 빈혈 환자',
+    detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+    doctorReaction: '재방문 부담이 있는 환자에서는 1회 투여 장점은 이해하셨고 급여 기준에 맞는지는 차트로 확인해보겠다는 반응',
+    nextAction: '위너프에이플러스 IBD 악화나 식사량 저하 환자의 영양 보충 필요성 확인',
+    narrativeStyle: '환자 케이스 연결형',
+    allowedDepartments: ['소화기내과'],
   },
   {
     product: '페린젝트',
@@ -58,6 +81,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '분만 후 외래 재방문이 어려운 환자에서는 편의성은 인정하셨음',
     nextAction: '위너프에이플러스 수술 전후 영양 공급 시 혈당 부담 차이 확인',
     narrativeStyle: '지난 방문 확인형',
+    allowedDepartments: ['산부인과', '산과', '부인과'],
   },
 ];
 
@@ -65,9 +89,32 @@ function planText(candidate: PlanCandidate): string {
   return `${candidate.product} ${candidate.patientGroup} ${candidate.detailAxis} ${candidate.doctorReaction} ${candidate.nextAction} ${candidate.narrativeStyle}`;
 }
 
+function departmentMatches(department: string, patterns: string[] = []): boolean {
+  return patterns.some((pattern) => department.includes(pattern));
+}
+
+function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: string): boolean {
+  if (candidate.allowedDepartments?.length && !departmentMatches(department, candidate.allowedDepartments)) {
+    return false;
+  }
+  if (candidate.blockedDepartments?.length && departmentMatches(department, candidate.blockedDepartments)) {
+    return false;
+  }
+  if (/소화기/.test(department) && /분만|산후|산부인과|부인과|제왕절개/.test(planText(candidate))) {
+    return false;
+  }
+  if (/산부인과|산과|부인과/.test(department) && /IBD|크론|궤양성대장염|위장관\s*출혈/.test(planText(candidate))) {
+    return false;
+  }
+  return true;
+}
+
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const all = [...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
-  return all.filter((candidate) => ctx.availableProducts.includes(candidate.product));
+  return all.filter((candidate) =>
+    ctx.availableProducts.includes(candidate.product) &&
+    isCandidateAllowedForDepartment(candidate, ctx.doctor.department || '')
+  );
 }
 
 export function buildPlan(ctx: VisitContext): DetailKey {
@@ -101,7 +148,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     return aPenalty - bPenalty;
   });
 
-  const selected = ranked[0] ?? FERINJECT_CANDIDATES[0];
+  const selected = ranked[0] ?? candidatesFor({ ...ctx, availableProducts: ['페린젝트', '위너프에이플러스'] })[0] ?? FERINJECT_CANDIDATES[0];
   return {
     ...selected,
     selectionReason: `과=${ctx.doctor.department}, 최근키=${recentKeys.join(', ') || '없음'}, 배치키=${ctx.batchUsedDetailKeys.join(', ') || '없음'} 기준으로 중복이 가장 적은 조합 선택`,
