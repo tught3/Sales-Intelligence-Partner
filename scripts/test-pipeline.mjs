@@ -273,5 +273,11 @@ assert(
   storageSource.includes('sharedKeys.length >= 2') && dataRouteSource.includes('sharedKeys.length >= 2'),
   '핵심멘트 중복 판정은 의미 키 1개만 겹친다고 즉시 중복 처리하면 안 됩니다.'
 );
+assert(
+  aiSource.includes('coverageLine') &&
+    aiSource.includes('전체 후보') &&
+    aiSource.includes('강릉아산과 원주세브란스 양쪽 교수들을 모두 자동생성 후보로 같이 고려'),
+  '분석과 자동생성은 같은 진료과가 여러 병원에 있으면 양쪽을 모두 후보로 봐야 합니다.'
+);
 
 console.log('pipeline cases passed');

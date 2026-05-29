@@ -662,6 +662,16 @@ function buildDoctorRosterForSnippetAnalysis(doctors: Doctor[]): string {
   return [...byDepartment.entries()]
     .sort(([a], [b]) => a.localeCompare(b, 'ko'))
     .map(([department, hospitalMap]) => {
+      const coverageLine = [...hospitalMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+        .map(([hospital, items]) => {
+          const names = items
+            .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+            .map((doctor) => doctor.name)
+            .join(', ');
+          return `${hospital}(${names})`;
+        })
+        .join(' / ');
       const hospitals = [...hospitalMap.entries()]
         .sort(([a], [b]) => a.localeCompare(b, 'ko'))
         .map(([hospital, items]) => {
@@ -676,7 +686,7 @@ function buildDoctorRosterForSnippetAnalysis(doctors: Doctor[]): string {
           return `  - ${hospital}: ${names}`;
         })
         .join('\n');
-      return `[${department}]\n${hospitals}`;
+      return `[${department}]\n- 전체 후보: ${coverageLine}\n${hospitals}`;
     })
     .join('\n\n');
 }
@@ -2445,10 +2455,11 @@ ${content}
 2. 어떤 성향의 교수에게 특히 효과적인지 (현재 담당 교수 중 누구에게 잘 먹힐지)
 3. 개선 제안
 4. 변형 멘트 최대 5개
-- 잘 맞는 교수를 쓸 때는 먼저 진료과 적합성을 판단하고, 해당 진료과가 여러 병원에 있으면 모든 병원의 해당 진료과 교수를 함께 나열할 것
+- 잘 맞는 교수를 쓸 때는 먼저 진료과 적합성을 판단하고, 해당 진료과가 여러 병원에 있으면 모든 병원의 해당 진료과 교수를 빠짐없이 함께 나열할 것
+- 같은 진료과가 강릉아산과 원주세브란스 양쪽에 있으면 반드시 둘 다 써야 하고, 한 병원만 적으면 잘못된 분석으로 간주할 것
 - 예: 흉부외과가 잘 맞으면 강릉아산 흉부외과와 원주세브란스 흉부외과를 모두 확인해 누락하지 말 것
 - 예: 산부인과가 잘 맞으면 강릉아산 산부인과와 원주세브란스 산부인과를 모두 확인해 누락하지 말 것
-- 병원 한 곳의 특정 과와 다른 병원의 다른 과를 섞어 쓰지 말 것. 과 적합성 기준이면 같은 과 전체, 특정 교수 성향 기준이면 그 이유를 따로 적을 것
+- 병원 한 곳의 특정 과와 다른 병원의 다른 과를 섞어 쓰지 말 것. 과 적합성 기준이면 같은 과 전체를 병원별로 모두 적고, 특정 교수 성향 기준이면 그 이유를 따로 적을 것
 - 변형 멘트는 1~5개 작성하되, 중복되지 않고 실제 현장에서 말할 법한 내용만 쓸 것
 - 억지로 5개를 채우지 말고, 새 디테일이나 화법 차이가 없으면 적게 작성할 것
 - 변형 멘트는 교수에게 돌아가는 실제 이득이 드러나야 함
@@ -2484,6 +2495,7 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
 - 기존 멘트와 같은 디테일포인트면 새 문장으로 만들지 말고 제외할 것
 - 단, 제품명이나 큰 주제 하나만 같다고 중복으로 보지 말 것. 환자 상황, 수치 근거, 반박 포인트, 처방 이득 중 2개 이상이 달라지면 새 멘트로 생성할 것
 - 제품정보에 새 수치, 새 환자군, 새 급여/투여 조건, 새 반박 대응이 있으면 기존 멘트와 일부 단어가 겹쳐도 반드시 활용할 것
+- 분석에서 잘 맞는 진료과가 여러 병원에 걸치면, 강릉아산과 원주세브란스 양쪽 교수들을 모두 자동생성 후보로 같이 고려할 것. 한 병원만 참고하지 말 것
 - 담당 교수들의 성향을 고려한 멘트도 포함할 것
 - 교수 입장에서 이득이 모호한 "깔끔합니다", "무난합니다", "쓰기 좋습니다" 수준의 문장은 만들지 말 것
 - 더 이상 새로운 디테일이 없으면 억지로 말투만 바꿔 채우지 말고 빈 JSON 배열 []을 출력할 것
