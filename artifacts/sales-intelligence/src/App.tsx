@@ -50,17 +50,18 @@ function RouteFallback() {
 
 function App() {
   const [ready, setReady] = useState(() => hydrateLocalCache());
-  const [syncVersion, setSyncVersion] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     setReady(true);
+    setIsSyncing(true);
     initStorage()
       .then(() => {
         setReady(true);
-        setSyncVersion((version) => version + 1);
         initDefaultData().catch(console.error);
       })
-      .catch(() => setReady(true));
+      .catch(() => setReady(true))
+      .finally(() => setIsSyncing(false));
   }, []);
 
   if (!ready) {
@@ -78,8 +79,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router key={syncVersion} />
+          <Router />
         </WouterRouter>
+        {isSyncing && (
+          <div className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-md border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-sm">
+            <div className="h-3 w-3 animate-spin rounded-full border-b-2 border-primary" />
+            데이터 동기화 중...
+          </div>
+        )}
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

@@ -1,5 +1,6 @@
 ﻿import { useState, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
+import { useEffect } from "react";
 import {
   doctorStorage,
   visitLogStorage,
@@ -33,6 +34,51 @@ import {
 } from "lucide-react";
 
 const PRODUCTS = ["위너프에이플러스", "페린젝트"];
+const VISIT_LOG_TAB_STORAGE_KEY = "sip.visitLog.activeTab";
+const VISIT_LOG_HOSPITAL_STORAGE_KEY = "sip.visitLog.selectedHospital";
+const VISIT_LOG_DEPT_STORAGE_KEY = "sip.visitLog.selectedDept";
+
+type VisitLogTab = 'manual' | 'auto' | 'import';
+type BulkFailure = {
+  doctorName: string;
+  reason: string;
+};
+
+function readSessionValue(key: string): string {
+  if (typeof window === "undefined") return "";
+  return window.sessionStorage.getItem(key) ?? "";
+}
+
+function readStoredTab(): VisitLogTab {
+  const stored = readSessionValue(VISIT_LOG_TAB_STORAGE_KEY);
+  return stored === "auto" || stored === "import" || stored === "manual" ? stored : "manual";
+}
+
+function writeSessionValue(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  if (value) {
+    window.sessionStorage.setItem(key, value);
+  } else {
+    window.sessionStorage.removeItem(key);
+  }
+}
+
+function classifyGenerationFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Visit generation failed final validation|final validation/i.test(message)) {
+    const match = message.match(/failTypes=([^;]+)/);
+    return `검증 실패${match ? ` (${match[1].trim()})` : ""}`;
+  }
+  if (/AI 호출 실패|OpenAI|rate limit|Too many requests|429/i.test(message)) {
+    if (/429|Too many requests|rate limit/i.test(message)) return "AI 호출 실패 (요청이 몰렸습니다)";
+    if (/not configured|api key|인증|401|403/i.test(message)) return "AI 호출 실패 (키/권한 확인 필요)";
+    if (/model|does not exist|Invalid request|400/i.test(message)) return "AI 호출 실패 (모델 또는 요청 형식)";
+    return "AI 호출 실패";
+  }
+  if (/duplicate|중복/i.test(message)) return "중복 저장";
+  if (/timeout|timed out|ETIMEDOUT/i.test(message)) return "AI 호출 실패 (시간 초과)";
+  return message.length > 80 ? `${message.slice(0, 77)}...` : message;
+}
 
 function getWeekKey(dateString: string): string {
   const date = new Date(dateString);
@@ -54,8 +100,8 @@ export default function VisitLogPage() {
   const [doctors] = useState(() => doctorStorage.getAll());
   const [allLogs, setAllLogs] = useState(() => visitLogStorage.getAll());
 
-  const [selectedHospital, setSelectedHospital] = useState("");
-  const [selectedDept, setSelectedDept] = useState("");
+  const [selectedHospital, setSelectedHospital] = useState(() => readSessionValue(VISIT_LOG_HOSPITAL_STORAGE_KEY));
+  const [selectedDept, setSelectedDept] = useState(() => readSessionValue(VISIT_LOG_DEPT_STORAGE_KEY));
   const [selectedDoctorId, setSelectedDoctorId] = useState(preselectedDoctorId);
   const [visitDate, setVisitDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [rawNotes, setRawNotes] = useState("");
@@ -66,10 +112,11 @@ export default function VisitLogPage() {
   const [result, setResult] = useState<{ formattedLog: string; nextStrategy: string } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [importAnalysis, setImportAnalysis] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'manual' | 'auto' | 'import'>('manual');
+  const [activeTab, setActiveTab] = useState<VisitLogTab>(() => readStoredTab());
   const [bulkCount, setBulkCount] = useState(3);
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; doctorName: string } | null>(null);
   const [bulkResults, setBulkResults] = useState<Array<{ doctor: Doctor; log: VisitLog }>>([]);
+  const [bulkFailures, setBulkFailures] = useState<BulkFailure[]>([]);
   const [savedLogId, setSavedLogId] = useState<string | null>(null);
 
   const hospitals = useMemo(() => {
@@ -93,6 +140,22 @@ export default function VisitLogPage() {
   }, [doctors, selectedHospital, selectedDept]);
   const autoTargetCount = selectedHospital ? filteredDoctors.length : 0;
 
+  useEffect(() => {
+    if (selectedHospital && !hospitals.includes(selectedHospital)) {
+      setSelectedHospital("");
+      setSelectedDept("");
+      writeSessionValue(VISIT_LOG_HOSPITAL_STORAGE_KEY, "");
+      writeSessionValue(VISIT_LOG_DEPT_STORAGE_KEY, "");
+    }
+  }, [hospitals, selectedHospital]);
+
+  useEffect(() => {
+    if (selectedDept && !departments.includes(selectedDept)) {
+      setSelectedDept("");
+      writeSessionValue(VISIT_LOG_DEPT_STORAGE_KEY, "");
+    }
+  }, [departments, selectedDept]);
+
   const selectedDoctor = useMemo(
     () => doctors.find((d) => d.id === selectedDoctorId),
     [doctors, selectedDoctorId]
@@ -108,13 +171,21 @@ export default function VisitLogPage() {
     setSelectedHospital(h);
     setSelectedDept("");
     setSelectedDoctorId("");
+    writeSessionValue(VISIT_LOG_HOSPITAL_STORAGE_KEY, h);
+    writeSessionValue(VISIT_LOG_DEPT_STORAGE_KEY, "");
     resetResult();
   }
 
   function handleDeptChange(d: string) {
     setSelectedDept(d);
     setSelectedDoctorId("");
+    writeSessionValue(VISIT_LOG_DEPT_STORAGE_KEY, d);
     resetResult();
+  }
+
+  function handleTabChange(tab: VisitLogTab) {
+    setActiveTab(tab);
+    writeSessionValue(VISIT_LOG_TAB_STORAGE_KEY, tab);
   }
 
   function toggleProduct(p: string) {
@@ -232,7 +303,9 @@ export default function VisitLogPage() {
     setIsAutoGenerating(true);
     resetResult();
     setBulkResults([]);
+    setBulkFailures([]);
     const generated: Array<{ doctor: Doctor; log: VisitLog }> = [];
+    const failures: BulkFailure[] = [];
     try {
       for (let i = 0; i < targets.length; i++) {
         const doctor = targets[i];
@@ -241,7 +314,10 @@ export default function VisitLogPage() {
         try {
           const batchAvoidTexts = generated.map(({ log }) => `${log.formattedLog} ${log.nextStrategy ?? ""}`);
           const res = await autoGenerateVisitLog(doctor, docPastLogs, [], batchAvoidTexts);
-          if (!res.formattedLog || res.formattedLog.trim().length < 10) continue;
+          if (!res.formattedLog || res.formattedLog.trim().length < 10) {
+            failures.push({ doctorName: doctor.name, reason: "결과 없음" });
+            continue;
+          }
           // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
           const finalFormattedLog = res.formattedLog.length > 230
             ? compressTextToLimit(res.formattedLog, 230)
@@ -258,22 +334,26 @@ export default function VisitLogPage() {
           };
           const saveResult = visitLogStorage.save(log);
           if (saveResult.duplicate) {
+            failures.push({ doctorName: doctor.name, reason: "중복 저장" });
             continue;
           }
           generated.push({ doctor, log });
           setBulkResults([...generated]);
         } catch (e) {
+          failures.push({ doctorName: doctor.name, reason: classifyGenerationFailure(e) });
           console.error(`${doctor.name} 일지 생성 실패`, e);
         }
       }
+      setBulkFailures(failures);
       setAllLogs(visitLogStorage.getAll());
       toast({
         title: `${generated.length}건의 영업 일지가 자동 저장되었습니다`,
-        description: targets.length > generated.length
-          ? `${targets.length - generated.length}건 실패. 방문 일지 기록에서 확인하세요.`
+        description: failures.length
+          ? `${failures.length}건 실패: ${failures.slice(0, 2).map((item) => `${item.doctorName} ${item.reason}`).join(", ")}${failures.length > 2 ? "..." : ""}`
           : "방문 일지 기록에서 확인 및 수정할 수 있습니다.",
       });
     } catch (e) {
+      setBulkFailures([{ doctorName: "일괄 생성", reason: classifyGenerationFailure(e) }]);
       toast({ title: "자동 생성 실패", description: String(e), variant: "destructive" });
     } finally {
       setIsAutoGenerating(false);
@@ -342,13 +422,13 @@ export default function VisitLogPage() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
         <div className="lg:col-span-3 space-y-4">
           <div className="mobile-scroll-row sm:w-fit sm:overflow-visible p-1 bg-muted rounded-lg">
-            <button className={tabClass('manual')} onClick={() => setActiveTab('manual')}>
+            <button className={tabClass('manual')} onClick={() => handleTabChange('manual')}>
               <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> 메모 변환</span>
             </button>
-            <button className={tabClass('auto')} onClick={() => setActiveTab('auto')}>
+            <button className={tabClass('auto')} onClick={() => handleTabChange('auto')}>
               <span className="flex items-center gap-1.5"><Wand2 className="w-3.5 h-3.5" /> 자동 생성</span>
             </button>
-            <button className={tabClass('import')} onClick={() => setActiveTab('import')}>
+            <button className={tabClass('import')} onClick={() => handleTabChange('import')}>
               <span className="flex items-center gap-1.5"><Upload className="w-3.5 h-3.5" /> 기록 가져오기</span>
             </button>
           </div>
@@ -616,6 +696,18 @@ export default function VisitLogPage() {
                       <div className="flex items-center gap-2 text-xs text-primary bg-white rounded-md px-3 py-2 border border-primary/20">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         {bulkProgress.current}/{bulkProgress.total} - {bulkProgress.doctorName} 교수 일지 생성 중...
+                      </div>
+                    )}
+
+                    {bulkFailures.length > 0 && !isAutoGenerating && (
+                      <div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive space-y-1">
+                        <p className="font-semibold">생성 실패 사유</p>
+                        {bulkFailures.slice(0, 6).map((failure, index) => (
+                          <p key={`${failure.doctorName}-${index}`}>
+                            {failure.doctorName}: {failure.reason}
+                          </p>
+                        ))}
+                        {bulkFailures.length > 6 && <p>외 {bulkFailures.length - 6}건</p>}
                       </div>
                     )}
 

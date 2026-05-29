@@ -12,24 +12,36 @@ const MIN_VISIT_LOG_LENGTH = 100;
 const MAX_VISIT_LOG_LENGTH = 230;
 
 async function callAI(systemPrompt: string, userPrompt: string, model = OPENAI_DEFAULT_MODEL): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/ai/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_completion_tokens: 8192,
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`AI 호출 실패: ${err}`);
+  async function request(requestModel: string): Promise<string> {
+    const res = await fetch(`${API_BASE}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: requestModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_completion_tokens: 8192,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`AI 호출 실패(${requestModel}): ${err}`);
+    }
+    const data = await res.json() as { choices: { message: { content: string } }[] };
+    return data.choices[0].message.content;
   }
-  const data = await res.json() as { choices: { message: { content: string } }[] };
-  return data.choices[0].message.content;
+
+  try {
+    return await request(model);
+  } catch (error) {
+    if (model === VISIT_LOG_MODEL) {
+      console.warn('Visit log AI primary model failed; retrying with fallback model.', error);
+      return request(OPENAI_DEFAULT_MODEL);
+    }
+    throw error;
+  }
 }
 
 async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBase64: string, mimeType: string): Promise<string> {

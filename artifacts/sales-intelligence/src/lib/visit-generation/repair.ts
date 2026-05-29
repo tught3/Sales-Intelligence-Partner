@@ -33,7 +33,7 @@ function hasUsedReaction(reaction: string, ctx: VisitContext): boolean {
 
 function selectNonDuplicateReaction(plan: DetailKey, ctx: VisitContext): string {
   if (!hasUsedReaction(plan.doctorReaction, ctx)) return plan.doctorReaction;
-  return REACTION_REPLACEMENTS.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? plan.doctorReaction;
+  return REACTION_REPLACEMENTS.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? '진료 흐름에 맞춰 케이스별로 판단하겠다는 의견';
 }
 
 function safePlanForDepartment(plan: DetailKey, ctx: VisitContext): DetailKey {
@@ -98,6 +98,19 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
   const formattedLog = limit(
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${doctorReaction} 보임. 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,
+    230
+  );
+  const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);
+  return { formattedLog, nextStrategy, usedFallback: true };
+}
+
+export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext): RepairOutput {
+  const manual = buildManualPreservingFallback(plan, ctx);
+  if (manual) return manual;
+  const safePlan = safePlanForDepartment(plan, ctx);
+  const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
+  const formattedLog = limit(
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함. 교수님께서 ${doctorReaction} 보임. 급여와 처방 시점은 차트와 당일 진료 흐름을 보고 판단하겠다는 의견 보임`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);

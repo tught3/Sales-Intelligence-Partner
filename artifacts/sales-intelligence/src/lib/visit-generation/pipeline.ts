@@ -2,7 +2,7 @@ import { buildContext } from './context';
 import { generateWithPlan } from './generator';
 import { normalize } from './normalizer';
 import { buildPlan, preCheckUniqueness } from './planner';
-import { buildFallback, repair, MAX_REPAIR_ATTEMPTS } from './repair';
+import { buildFallback, buildValidationSafeFallback, repair, MAX_REPAIR_ATTEMPTS } from './repair';
 import { initTrace } from './trace';
 import type { GenerationResult, VisitGenerationDependencies, VisitGenerationInput } from './types';
 import { resolveRepairTarget, validate } from './validator';
@@ -84,7 +84,31 @@ export async function runVisitGenerationPipeline(
       });
     }
     if (!finalValidation.pass) {
-      throw new Error(`Visit generation failed final validation: ${finalValidation.details}`);
+      current = normalize(buildValidationSafeFallback(plan, ctx), plan);
+      usedFallback = true;
+      finalValidation = validate(current.formattedLog, current.nextStrategy, plan, ctx);
+      trace.add('validation_safe_fallback', {
+        output: finalValidation.pass ? current : finalValidation.details,
+        failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
+      });
+    }
+    if (!finalValidation.pass) {
+      const remaining = finalValidation.failTypes;
+      const nonBlockingFailures = ['DUPLICATE_BATCH', 'DUPLICATE_PAST', 'DUPLICATE_REACTION', 'DUPLICATE_STRATEGY'];
+      if (remaining.every((type) => nonBlockingFailures.includes(type))) {
+        const final = trace.finish('fallback');
+        return {
+          formattedLog: current.formattedLog,
+          nextStrategy: current.nextStrategy,
+          visitDate: raw.visitDate ?? ctx.todayDate,
+          products: raw.products?.length ? raw.products : [plan.product],
+          usedFallback: true,
+          trace: final,
+        };
+      }
+      throw new Error(
+        `Visit generation failed final validation for ${ctx.doctor.name ?? ctx.doctor.id}: ${finalValidation.details}`
+      );
     }
 
     const final = trace.finish('fallback');
