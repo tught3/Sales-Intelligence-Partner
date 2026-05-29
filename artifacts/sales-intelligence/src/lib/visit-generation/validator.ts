@@ -24,10 +24,20 @@ function hasDepartmentMismatch(text: string, department: string): boolean {
 }
 
 function hasLearnedForbidden(text: string, patterns: string[]): boolean {
+  const compactText = text.replace(/\s+/g, '');
   return patterns.some((pattern) => {
-    const sample = pattern.trim();
-    if (sample.length < 6) return false;
-    return text.includes(sample) || text.includes(sample.slice(0, Math.min(14, sample.length)));
+    const sample = pattern.replace(/\s+/g, '').trim();
+    if (sample.length < 16) return false;
+    if (compactText.includes(sample)) return true;
+    if (sample.length < 32) return false;
+
+    const anchors = [
+      sample.slice(0, 24),
+      sample.slice(Math.max(0, Math.floor(sample.length / 2) - 12), Math.floor(sample.length / 2) + 12),
+      sample.slice(-24),
+    ].filter((anchor) => anchor.length >= 16);
+
+    return anchors.filter((anchor) => compactText.includes(anchor)).length >= 2;
   });
 }
 

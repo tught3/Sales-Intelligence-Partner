@@ -183,6 +183,20 @@ try {
     !duplicateReaction.pass && duplicateReaction.failTypes.includes('DUPLICATE_REACTION'),
     'batch 안에서 같은 의미의 교수 반응이 반복되면 DUPLICATE_REACTION으로 실패해야 합니다.'
   );
+  const learnedForbiddenShortAnchor = validate(
+    '페린젝트의 1회 투여 편의성과 Hb 회복 근거를 위장관 출혈 이후 외래 빈혈 환자 상황에 맞춰 설명함. 교수님께서 급여 기준에 맞는 케이스부터 차트로 확인해보겠다는 의견 보임',
+    '다음방문시에는 위너프에이플러스 IBD 악화 환자 영양 보충 필요성 확인할예정',
+    { ...plan, product: '페린젝트', detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거' },
+    {
+      ...ctx,
+      doctor: { department: '소화기내과' },
+      learnedForbiddenPatterns: ['페린젝트의 1회 투여 편의성과 Hb 회복 근거를 경구용철분제로 Hb 회복이 충분하지 않은 외래 빈혈 환자 상황과 연결해 디테일 진행함'],
+    }
+  );
+  assert(
+    !learnedForbiddenShortAnchor.failTypes?.includes('LEARNED_FORBIDDEN'),
+    '학습 금지는 앞부분 일부만 겹친 정상 문장을 막으면 안 됩니다.'
+  );
 } finally {
   await validator.cleanup();
 }
@@ -236,6 +250,10 @@ assert(
 assert(
   pipelineSource.includes('validate_final') && pipelineSource.includes('hard_fallback') && pipelineSource.includes('failed final validation'),
   'pipeline은 repair 이후 최종 검증과 hard fallback 실패 차단을 포함해야 합니다.'
+);
+assert(
+  pipelineSource.includes("'LEARNED_FORBIDDEN'"),
+  'LEARNED_FORBIDDEN 단독 잔여 실패는 생성 자체를 막지 않는 non-blocking fallback 대상이어야 합니다.'
 );
 assert(
   !/실제 적용 환자군|적용 가능 환자군/.test(aiSource + plannerSource),

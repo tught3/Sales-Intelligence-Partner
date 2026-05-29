@@ -94,7 +94,13 @@ export async function runVisitGenerationPipeline(
     }
     if (!finalValidation.pass) {
       const remaining = finalValidation.failTypes;
-      const nonBlockingFailures = ['DUPLICATE_BATCH', 'DUPLICATE_PAST', 'DUPLICATE_REACTION', 'DUPLICATE_STRATEGY'];
+      const nonBlockingFailures = [
+        'DUPLICATE_BATCH',
+        'DUPLICATE_PAST',
+        'DUPLICATE_REACTION',
+        'DUPLICATE_STRATEGY',
+        'LEARNED_FORBIDDEN',
+      ];
       if (remaining.every((type) => nonBlockingFailures.includes(type))) {
         const final = trace.finish('fallback');
         return {
