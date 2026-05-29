@@ -955,11 +955,6 @@ export function snippetDetailSimilarity(
   if (normalizeSnippetProduct(a.product) !== normalizeSnippetProduct(b.product)) return 0;
   const aKeys = getSnippetMeaningKeys(a);
   const bKeys = getSnippetMeaningKeys(b);
-  if (aKeys.size > 0 && bKeys.size > 0) {
-    for (const key of aKeys) {
-      if (bKeys.has(key)) return 1;
-    }
-  }
   const aTokens = getSnippetDetailTokens(a);
   const bTokens = getSnippetDetailTokens(b);
   const union = new Set([...aTokens, ...bTokens]);
@@ -972,6 +967,11 @@ export function snippetDetailSimilarity(
     `${a.content} ${a.context}`,
     `${b.content} ${b.context}`
   );
+  const sharedKeys = [...aKeys].filter((key) => bKeys.has(key));
+  if (sharedKeys.length >= 2) return 1;
+  if (sharedKeys.length === 1 && Math.max(tokenScore, textScore) >= 0.46) {
+    return Math.max(0.7, tokenScore, textScore);
+  }
   return Math.max(tokenScore, textScore);
 }
 

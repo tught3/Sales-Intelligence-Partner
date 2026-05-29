@@ -514,6 +514,7 @@ export default function ProductsPage() {
     try {
       const items = await generateSnippetsForProduct(productName);
       let count = 0;
+      let duplicateCount = 0;
       for (const item of items) {
         const s: GoldenSnippet = {
           id: generateId(),
@@ -526,14 +527,29 @@ export default function ProductsPage() {
         };
         const saveResult = snippetStorage.save(s);
         if (saveResult.duplicate) {
+          duplicateCount++;
           continue;
         }
         count++;
       }
-      toast({
-        title: `${productName} 멘트 ${count}개 생성 완료`,
-        description: '핵심 멘트 라이브러리에서 확인하세요',
-      });
+      if (items.length === 0) {
+        toast({
+          title: `${productName} 멘트 생성 0개`,
+          description: "AI가 새 디테일을 찾지 못했습니다. 제품정보의 새 수치, 환자군, 급여 조건, 반박 대응을 더 구체적으로 넣으면 생성 가능성이 높아집니다.",
+        });
+      } else if (count === 0 && duplicateCount > 0) {
+        toast({
+          title: `${productName} 멘트 저장 0개`,
+          description: `AI가 ${items.length}개를 만들었지만 기존 멘트와 유사하다고 판단되어 저장하지 않았습니다. 중복 기준을 완화했으니 다시 생성해보세요.`,
+        });
+      } else {
+        toast({
+          title: `${productName} 멘트 ${count}개 생성 완료`,
+          description: duplicateCount > 0
+            ? `핵심 멘트 라이브러리에 저장했습니다. 유사 중복 ${duplicateCount}개는 제외했습니다.`
+            : "핵심 멘트 라이브러리에서 확인하세요.",
+        });
+      }
     } catch (e: any) {
       toast({
         title: "멘트 생성 실패",

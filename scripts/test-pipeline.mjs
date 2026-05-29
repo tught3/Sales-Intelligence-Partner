@@ -230,6 +230,8 @@ try {
 const plannerSource = await readFile(plannerPath, 'utf8');
 const pipelineSource = await readFile(pipelinePath, 'utf8');
 const aiSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/ai.ts'), 'utf8');
+const storageSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/storage.ts'), 'utf8');
+const dataRouteSource = await readFile(path.join(root, 'artifacts/api-server/src/routes/data.ts'), 'utf8');
 assert(
   plannerSource.includes('hasDailyObFerinject') && plannerSource.includes('산부인과 페린젝트'),
   'planner는 하루 1건 산부인과 페린젝트 보장 규칙을 포함해야 합니다.'
@@ -262,6 +264,14 @@ assert(
 assert(
   aiSource.includes("const VISIT_LOG_MODEL = 'gpt-5.5'"),
   '방문일지 생성 전용 모델은 gpt-5.5여야 합니다.'
+);
+assert(
+  aiSource.includes('manual: { title: string; content: string }') && aiSource.includes('detectKey(m) === productName'),
+  '제품별 핵심멘트 생성은 제목뿐 아니라 제품정보 본문까지 보고 대상 자료를 골라야 합니다.'
+);
+assert(
+  storageSource.includes('sharedKeys.length >= 2') && dataRouteSource.includes('sharedKeys.length >= 2'),
+  '핵심멘트 중복 판정은 의미 키 1개만 겹친다고 즉시 중복 처리하면 안 됩니다.'
 );
 
 console.log('pipeline cases passed');

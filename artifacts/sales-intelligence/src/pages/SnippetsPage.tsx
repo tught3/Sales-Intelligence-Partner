@@ -146,6 +146,7 @@ export default function SnippetsPage() {
       const existing = snippetStorage.getAll();
       const accepted: GoldenSnippet[] = [];
       let count = 0;
+      let duplicateCount = 0;
       for (const item of items) {
         const snippet: GoldenSnippet = {
           id: generateId(),
@@ -157,10 +158,12 @@ export default function SnippetsPage() {
           createdAt: new Date().toISOString(),
         };
         if (isDuplicateSnippet(snippet, [...existing, ...accepted])) {
+          duplicateCount++;
           continue;
         }
         const saveResult = snippetStorage.save(snippet);
         if (saveResult.duplicate) {
+          duplicateCount++;
           continue;
         }
         accepted.push(snippet);
@@ -169,11 +172,16 @@ export default function SnippetsPage() {
       setSnippets(snippetStorage.getAll());
       if (count === 0) {
         toast({
-          title: "더 이상 생성할 핵심멘트가 없습니다",
-          description: "현재 제품 정보와 특장점에서는 기존 멘트와 다른 디테일을 찾지 못했습니다. 추가 제품 정보나 특장점을 넣어주세요.",
+          title: items.length === 0 ? "더 이상 생성할 핵심멘트가 없습니다" : "핵심 멘트 저장 0개",
+          description: items.length === 0
+            ? "AI가 현재 제품 정보에서 기존 멘트와 다른 디테일을 찾지 못했습니다. 새 수치, 환자군, 급여 조건, 반박 대응을 더 구체적으로 넣어주세요."
+            : `AI가 ${items.length}개를 만들었지만 유사 중복 ${duplicateCount}개가 제외되었습니다. 중복 기준을 완화했으니 다시 생성해보세요.`,
         });
       } else {
-        toast({ title: `${count}개 핵심 멘트가 자동 생성되었습니다` });
+        toast({
+          title: `${count}개 핵심 멘트가 자동 생성되었습니다`,
+          description: duplicateCount > 0 ? `유사 중복 ${duplicateCount}개는 제외했습니다.` : undefined,
+        });
       }
     } catch (e) {
       toast({ title: "자동 생성 실패", description: String(e), variant: "destructive" });

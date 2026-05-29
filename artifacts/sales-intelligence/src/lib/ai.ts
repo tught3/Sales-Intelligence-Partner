@@ -2482,6 +2482,8 @@ ${snippetContext ? `\n기존에 등록된 멘트:\n${snippetContext}\n위 멘트
 - 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필, 편의성 강조 등)을 커버하되 같은 디테일포인트를 표현만 바꿔 반복하지 말 것
 - 디테일포인트는 수치, 환자군, 임상 근거, 경쟁 비교 축, 투여 편의성처럼 서로 구분되는 근거 단위여야 함
 - 기존 멘트와 같은 디테일포인트면 새 문장으로 만들지 말고 제외할 것
+- 단, 제품명이나 큰 주제 하나만 같다고 중복으로 보지 말 것. 환자 상황, 수치 근거, 반박 포인트, 처방 이득 중 2개 이상이 달라지면 새 멘트로 생성할 것
+- 제품정보에 새 수치, 새 환자군, 새 급여/투여 조건, 새 반박 대응이 있으면 기존 멘트와 일부 단어가 겹쳐도 반드시 활용할 것
 - 담당 교수들의 성향을 고려한 멘트도 포함할 것
 - 교수 입장에서 이득이 모호한 "깔끔합니다", "무난합니다", "쓰기 좋습니다" 수준의 문장은 만들지 말 것
 - 더 이상 새로운 디테일이 없으면 억지로 말투만 바꿔 채우지 말고 빈 JSON 배열 []을 출력할 것
@@ -2530,20 +2532,20 @@ export async function generateSnippetsForProduct(productName: string): Promise<A
   const systemPrompt = buildSystemPrompt();
   const allManuals = manualStorage.getAll();
 
-  const detectKey = (title: string): string => {
-    const t = title.toLowerCase();
-    if (title.includes('위너프에이플러스') || t.includes('winuf a')) return '위너프에이플러스';
-    if (title.includes('위너프') || t.includes('winuf')) return '위너프';
-    if (title.includes('페린젝트') || t.includes('ferinject')) return '페린젝트';
-    if (title.includes('플라주') || t.includes('plaju')) return '플라주OP';
-    if (title.includes('이부프로펜') || title.includes('프리브로펜') || t.includes('ibuprofen') || t.includes('pribrophen')) return '이부프로펜프리믹스';
-    if (title.includes('포스페넴') || title.includes('포스포마이신') || t.includes('fospenem') || t.includes('fosfomycin')) return '포스페넴';
-    if (title.includes('프리페넴') || title.includes('에르타페넴') || t.includes('pripenem') || t.includes('ertapenem')) return '프리페넴';
+  const detectKey = (manual: { title: string; content: string }): string => {
+    const source = `${manual.title} ${manual.content}`.toLowerCase();
+    if (source.includes('위너프에이플러스') || source.includes('winuf a')) return '위너프에이플러스';
+    if (source.includes('페린젝트') || source.includes('ferinject')) return '페린젝트';
+    if (source.includes('위너프') || source.includes('winuf')) return '위너프';
+    if (source.includes('플라주') || source.includes('plaju')) return '플라주OP';
+    if (source.includes('이부프로펜') || source.includes('프리브로펜') || source.includes('ibuprofen') || source.includes('pribrophen')) return '이부프로펜프리믹스';
+    if (source.includes('포스페넴') || source.includes('포스포마이신') || source.includes('fospenem') || source.includes('fosfomycin')) return '포스페넴';
+    if (source.includes('프리페넴') || source.includes('에르타페넴') || source.includes('pripenem') || source.includes('ertapenem')) return '프리페넴';
     return '기타';
   };
 
   const productManuals = allManuals.filter(
-    (m) => m.category === 'product' && detectKey(m.title) === productName
+    (m) => m.category === 'product' && detectKey(m) === productName
   );
 
   if (productManuals.length === 0) {
@@ -2582,6 +2584,8 @@ ${existingForProduct ? `\n[이미 등록된 ${productName} 멘트 (중복 금지
 - 제품의 특장점, 임상 데이터, 차별점, 편의성 등 다양한 각도에서 커버하되 같은 디테일포인트를 말만 바꿔 반복하지 말 것
 - 디테일포인트는 수치, 환자군, 임상 근거, 경쟁 비교 축, 투여 편의성처럼 서로 구분되는 근거 단위여야 함
 - 이미 등록된 ${productName} 멘트와 같은 디테일포인트면 새 문장으로 만들지 말고 제외할 것
+- 단, ${productName}이라는 제품명이나 큰 주제 하나만 같다고 중복으로 보지 말 것. 환자 상황, 수치 근거, 반박 포인트, 처방 이득 중 2개 이상이 달라지면 새 멘트로 생성할 것
+- 제품정보에 새 수치, 새 환자군, 새 급여/투여 조건, 새 반박 대응이 있으면 기존 멘트와 일부 단어가 겹쳐도 반드시 활용할 것
 - 다양한 상황(첫 처방 유도, 가격 반박, 경쟁사 비교, 임상 데이터 어필 등) 포함
 - 교수 입장에서 이득이 모호한 "깔끔합니다", "무난합니다", "쓰기 좋습니다" 수준의 문장은 만들지 말 것
 - 더 이상 새로운 디테일이 없으면 억지로 말투만 바꿔 채우지 말고 빈 JSON 배열 []을 출력할 것
