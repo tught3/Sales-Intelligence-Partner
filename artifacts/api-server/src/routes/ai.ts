@@ -153,7 +153,7 @@ router.post("/ai/chat", async (req, res) => {
 
   const bodyStr = JSON.stringify({
     model: openaiModel,
-    max_completion_tokens: max_completion_tokens ?? 8192,
+    max_completion_tokens: max_completion_tokens ?? 1000,
     messages,
   });
 

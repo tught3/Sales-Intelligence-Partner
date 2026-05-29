@@ -640,7 +640,7 @@ export default function VisitLogPage() {
                       className="w-full min-h-12 gap-2 sm:min-h-9"
                     >
                       {isGenerating ? (
-                        <><Loader2 className="w-4 h-4 animate-spin" />일지를 다듬는 중...</>
+                        <><Loader2 className="w-4 h-4 animate-spin" />일지를 다듬는 중... (약 10-20초)</>
                       ) : (
                         <><Sparkles className="w-4 h-4" />AI 일지 생성</>
                       )}

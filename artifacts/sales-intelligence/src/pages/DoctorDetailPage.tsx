@@ -148,6 +148,7 @@ export default function DoctorDetailPage() {
       const result = await analyzePastConversations(convText, doctor, convPeriod);
       setConvAnalysisResult(result);
     } catch (e) {
+      setConvAnalysisResult(null);
       toast({ title: "분석 실패", description: String(e), variant: "destructive" });
     } finally {
       setAnalyzingConv(false);

@@ -5,13 +5,22 @@ import { extractReactionKeys as extractVisitReactionKeys } from './visit-generat
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
 
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
-const VISIT_LOG_MODEL = 'gpt-5.5';
+const VISIT_LOG_MODEL = 'gpt-5.4-mini';
+const DEFAULT_MAX_COMPLETION_TOKENS = 1000;
+const VISIT_LOG_MAX_COMPLETION_TOKENS = 800;
 const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
 const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 const MIN_VISIT_LOG_LENGTH = 100;
 const MAX_VISIT_LOG_LENGTH = 230;
 
-async function callAI(systemPrompt: string, userPrompt: string, model = OPENAI_DEFAULT_MODEL): Promise<string> {
+async function callAI(
+  systemPrompt: string,
+  userPrompt: string,
+  model = OPENAI_DEFAULT_MODEL,
+  maxCompletionTokens?: number
+): Promise<string> {
+  const completionTokens = maxCompletionTokens ?? DEFAULT_MAX_COMPLETION_TOKENS;
+
   async function request(requestModel: string): Promise<string> {
     const res = await fetch(`${API_BASE}/api/ai/chat`, {
       method: 'POST',
@@ -22,7 +31,7 @@ async function callAI(systemPrompt: string, userPrompt: string, model = OPENAI_D
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_completion_tokens: 8192,
+        max_completion_tokens: completionTokens,
       }),
     });
     if (!res.ok) {
@@ -36,12 +45,12 @@ async function callAI(systemPrompt: string, userPrompt: string, model = OPENAI_D
   try {
     return await request(model);
   } catch (error) {
-    if (model === VISIT_LOG_MODEL) {
-      console.warn('Visit log AI primary model failed; retrying with fallback model.', error);
-      return request(OPENAI_DEFAULT_MODEL);
-    }
     throw error;
   }
+}
+
+async function callVisitLogAI(systemPrompt: string, userPrompt: string): Promise<string> {
+  return callAI(systemPrompt, userPrompt, VISIT_LOG_MODEL, VISIT_LOG_MAX_COMPLETION_TOKENS);
 }
 
 async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBase64: string, mimeType: string): Promise<string> {
@@ -60,7 +69,7 @@ async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBa
           ],
         },
       ],
-      max_completion_tokens: 8192,
+      max_completion_tokens: DEFAULT_MAX_COMPLETION_TOKENS,
     }),
   });
   if (!res.ok) {
@@ -1901,7 +1910,7 @@ ${buildVisitLogRules()}
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
-  const response = await callAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes), VISIT_LOG_MODEL);
+  const response = await callVisitLogAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes));
   let cleaned = extractSection(response, ['===영업일지===', '===다음방문전략===']);
   let nextStrategy = extractSection(response, ['===다음방문전략===']);
 
@@ -2060,7 +2069,7 @@ ${buildVisitLogRules()}
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
-  const response = await callAI(systemPrompt, prompt, VISIT_LOG_MODEL);
+  const response = await callVisitLogAI(systemPrompt, prompt);
 
   const productMatch = response.match(/===제품===\s*([\s\S]*?)(?:===(?:영업일지|전문영업일지)===|$)/);
   const logMatch = response.match(/===(?:영업일지|전문영업일지)===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
@@ -2249,7 +2258,7 @@ ${themeConstraint}
 
 예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 디테일할예정"`;
 
-  const result = await callAI(systemPrompt, prompt, VISIT_LOG_MODEL);
+  const result = await callVisitLogAI(systemPrompt, prompt);
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeNextStrategy(cleaned, doctor.department);
   cleaned = normalizeIntroProductLanguage(cleaned, getAllowedProductsForDepartment(doctor.department), false);
@@ -2273,7 +2282,7 @@ export async function validateAndFixVisitLog(
   allowNewDrugReview = false,
   avoidTexts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
-  const MAX_ROUNDS = 2;
+  const MAX_ROUNDS = 1;
   let log = formattedLog;
   let strategy = nextStrategy;
   const allowedProducts = getAllowedProductsForDepartment(doctor.department);
@@ -2340,7 +2349,7 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
 ===수정 다음방문전략===
 (PASS이면 원본 그대로, FAIL이면 수정본)`;
 
-    const result = await callAI(systemPrompt, reviewPrompt, VISIT_LOG_MODEL);
+    const result = await callVisitLogAI(systemPrompt, reviewPrompt);
     const firstLine = result.trim().split('\n')[0].trim().toUpperCase();
     const passed = firstLine.startsWith('PASS');
 

@@ -262,8 +262,13 @@ assert(
   '생성 프롬프트와 planner 후보에는 금지된 환자군 표현이 남아 있으면 안 됩니다.'
 );
 assert(
-  aiSource.includes("const VISIT_LOG_MODEL = 'gpt-5.5'"),
-  '방문일지 생성 전용 모델은 gpt-5.5여야 합니다.'
+  aiSource.includes("const VISIT_LOG_MODEL = 'gpt-5.4-mini'"),
+  '방문일지 생성 전용 모델은 gpt-5.4-mini여야 합니다.'
+);
+assert(
+  aiSource.includes('const VISIT_LOG_MAX_COMPLETION_TOKENS = 800') &&
+    aiSource.includes('const DEFAULT_MAX_COMPLETION_TOKENS = 1000'),
+  '방문일지 전용 max tokens와 기본 max tokens는 각각 800, 1000이어야 합니다.'
 );
 assert(
   aiSource.includes('manual: { title: string; content: string }') && aiSource.includes('detectKey(m) === productName'),
