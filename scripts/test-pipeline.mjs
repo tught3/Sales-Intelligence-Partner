@@ -8,6 +8,7 @@ const root = process.cwd();
 const detailKeysPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/detailKeys.ts');
 const normalizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/normalizer.ts');
 const validatorPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/validator.ts');
+const repairPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/repair.ts');
 const plannerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/planner.ts');
 const pipelinePath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/pipeline.ts');
 
@@ -42,6 +43,7 @@ async function importVisitGenerationCjs(entryFile) {
     [detailKeysPath, 'detailKeys.js'],
     [normalizerPath, 'normalizer.js'],
     [validatorPath, 'validator.js'],
+    [repairPath, 'repair.js'],
   ]) {
     const source = await readFile(sourcePath, 'utf8');
     const output = ts.transpileModule(source, {
@@ -60,8 +62,10 @@ async function importVisitGenerationCjs(entryFile) {
 }
 
 const imported = await importTsModule(detailKeysPath, 'detailKeys.mjs');
+let extractReactionKeysForTest;
 try {
   const { extractKeys, similarityRatio, normalizeTerminology, extractReactionKeys, collectReactionKeys } = imported.module;
+  extractReactionKeysForTest = extractReactionKeys;
 
   const today = '페린젝트의 1회 투여 편의성과 경구용철분제 반응이 더딘 케이스 중심으로 디테일 진행함';
   const next = '다음방문시에는 경구용철분제 반응이 늦는 케이스 중심으로 페린젝트 처방 상황 확인할예정';
@@ -69,14 +73,16 @@ try {
   const reactionA = '교수님께서 반복 내원이 어려운 환자에서는 설명해볼 수 있겠다는 반응 보임';
   const reactionB = '교수님께서 재방문 부담이 있는 환자에서는 고려 가능하다는 의견 보임';
   const reactionC = '교수님께서 외래 재방문이 어려운 환자에서는 편의성은 인정하셨음';
+  const reactionD = '교수님께서 외래 추적이 어려운 환자에서는 편의성은 이해하셨음';
+  const reactionE = '교수님께서 경구용철분제 복용 지속이 어려운 환자에서 검토 가능하다는 의견 보임';
 
   assert(
     extractReactionKeys(reactionA).includes('반복내원재방문부담'),
     '반복 내원 어려움 반응은 반복내원재방문부담 키로 잡혀야 합니다'
   );
   assert(
-    collectReactionKeys([reactionA, reactionB, reactionC]).length === 1,
-    '반복 내원, 재방문 부담, 외래 재방문 불편은 같은 교수 반응으로 묶여야 합니다'
+    collectReactionKeys([reactionA, reactionB, reactionC, reactionD, reactionE]).length === 1,
+    '반복 내원, 재방문 부담, 외래 재방문 불편, 외래 추적 어려움, 복용 지속 어려움은 같은 교수 반응으로 묶여야 합니다'
   );
 
   assert(
@@ -120,6 +126,15 @@ try {
   );
   assert(!particleResult.formattedLog.includes('페린젝트의의'), '본문의 중복 조사는 제거되어야 합니다.');
   assert(!particleResult.nextStrategy.includes('페린젝트의의'), '다음방문전략의 중복 조사는 제거되어야 합니다.');
+  const grammarResult = normalize(
+    {
+      formattedLog: '페린젝트의 1회 투여 편의성과 Hb 회복 근거을 디테일 진행함. 교수님께서 반복 내원이 어려운 환자에서는 설명해볼 수 있겠다는 반응하셨고',
+      nextStrategy: '위너프에이플러스 수술 후 식이 지연 환자 영양 보충 반응 확인',
+    },
+    { product: '페린젝트' }
+  );
+  assert(!grammarResult.formattedLog.includes('근거을'), '근거을은 근거를로 정리되어야 합니다.');
+  assert(!grammarResult.formattedLog.includes('반응하셨고'), '반응하셨고는 저장 전 자연스러운 표현으로 정리되어야 합니다.');
 } finally {
   await normalizer.cleanup();
 }
@@ -172,6 +187,32 @@ try {
   await validator.cleanup();
 }
 
+const repairer = await importVisitGenerationCjs('repair.js');
+try {
+  const { buildFallback } = repairer.module;
+  const plan = {
+    product: '페린젝트',
+    patientGroup: '경구용철분제로 Hb 회복이 충분하지 않은 외래 빈혈 환자',
+    detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+    doctorReaction: '반복 내원이 어려운 환자에서는 설명해볼 수 있겠다는 반응',
+    nextAction: '위너프에이플러스 수술 후 식이 지연 환자 영양 보충 반응 확인',
+    narrativeStyle: '처방 경험 확인형',
+    selectionReason: 'test',
+  };
+  const ctx = {
+    doctor: { department: '소화기내과' },
+    batchUsedReactionKeys: ['반복내원재방문부담'],
+    learnedPreferredPatterns: [],
+  };
+  const repaired = buildFallback(plan, ctx);
+  assert(
+    !extractReactionKeysForTest(repaired.formattedLog).includes('반복내원재방문부담'),
+    'repair fallback은 이미 사용된 반복내원재방문부담 반응을 다시 쓰면 안 됩니다.'
+  );
+} finally {
+  await repairer.cleanup();
+}
+
 const plannerSource = await readFile(plannerPath, 'utf8');
 const pipelineSource = await readFile(pipelinePath, 'utf8');
 const aiSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/ai.ts'), 'utf8');
@@ -191,6 +232,10 @@ assert(
     pipelineSource.includes('validate_') &&
     pipelineSource.includes('repair_'),
   'pipeline은 context -> plan -> generate -> normalize -> validate/repair 단계를 trace해야 합니다.'
+);
+assert(
+  pipelineSource.includes('validate_final') && pipelineSource.includes('hard_fallback') && pipelineSource.includes('failed final validation'),
+  'pipeline은 repair 이후 최종 검증과 hard fallback 실패 차단을 포함해야 합니다.'
 );
 assert(
   !/실제 적용 환자군|적용 가능 환자군/.test(aiSource + plannerSource),

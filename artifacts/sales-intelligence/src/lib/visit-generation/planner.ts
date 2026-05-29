@@ -4,6 +4,15 @@ import type { DetailKey } from './types';
 
 type PlanCandidate = Omit<DetailKey, 'selectionReason'>;
 
+const REACTION_FALLBACKS = [
+  '급여 기준에 맞는 케이스부터 차트로 확인해보겠다는 의견',
+  'Hb 수치와 증상을 같이 보고 필요 시 선별하겠다는 반응',
+  '처방 경험이 많지는 않아도 기준에 맞으면 확인해보겠다는 의견',
+  '영양 보충 필요성은 공감하지만 처방 시점은 환자 상태를 보고 판단하겠다는 반응',
+  '처방 전환은 케이스별로 보되 Hb 회복 근거는 참고하겠다는 반응',
+  '수혈 부담을 줄일 수 있는 케이스에서는 검토 여지가 있다는 반응',
+];
+
 const WINUF_CANDIDATES: PlanCandidate[] = [
   {
     product: '위너프에이플러스',
@@ -121,6 +130,19 @@ function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   );
 }
 
+function hasUsedReaction(candidate: PlanCandidate, ctx: VisitContext): boolean {
+  const reactionKeys = extractReactionKeys(candidate.doctorReaction);
+  return reactionKeys.some((key) => ctx.batchUsedReactionKeys.includes(key));
+}
+
+function withUnusedReaction<T extends PlanCandidate>(candidate: T, ctx: VisitContext): T {
+  if (!hasUsedReaction(candidate, ctx)) return candidate;
+  const replacement = REACTION_FALLBACKS.find((reaction) =>
+    extractReactionKeys(reaction).every((key) => !ctx.batchUsedReactionKeys.includes(key))
+  );
+  return replacement ? { ...candidate, doctorReaction: replacement } : candidate;
+}
+
 export function buildPlan(ctx: VisitContext): DetailKey {
   const recentKeys = collectKeys([
     ...ctx.pastLogs.slice(0, 3).flatMap((log) => [log.formattedLog, log.nextStrategy]),
@@ -130,13 +152,14 @@ export function buildPlan(ctx: VisitContext): DetailKey {
   const recentKeySet = new Set(recentKeys);
 
   const baseCandidates = candidatesFor(ctx);
+  const reactionSafeCandidates = baseCandidates.filter((candidate) => !hasUsedReaction(candidate, ctx));
+  const selectableCandidates = reactionSafeCandidates.length > 0 ? reactionSafeCandidates : baseCandidates.map((candidate) => withUnusedReaction(candidate, ctx));
   if (ctx.isObDoctor && !ctx.hasDailyObFerinject && ctx.availableProducts.includes('페린젝트')) {
+    const forcedCandidates = baseCandidates.filter((candidate) => candidate.product === '페린젝트');
+    const reactionSafeForced = forcedCandidates.filter((candidate) => !hasUsedReaction(candidate, ctx));
     const forced =
-      baseCandidates.find((candidate) =>
-        candidate.product === '페린젝트' &&
-        extractReactionKeys(candidate.doctorReaction).every((key) => !ctx.batchUsedReactionKeys.includes(key))
-      ) ??
-      baseCandidates.find((candidate) => candidate.product === '페린젝트') ??
+      reactionSafeForced[0] ??
+      (forcedCandidates[0] ? withUnusedReaction(forcedCandidates[0], ctx) : undefined) ??
       FERINJECT_CANDIDATES[0];
     return {
       ...forced,
@@ -144,7 +167,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     };
   }
 
-  const ranked = baseCandidates.sort((a, b) => {
+  const ranked = selectableCandidates.sort((a, b) => {
     const aKeys = extractKeys(planText(a));
     const bKeys = extractKeys(planText(b));
     const aReactionKeys = extractReactionKeys(a.doctorReaction);
@@ -170,7 +193,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
 
   const selected = ranked[0] ?? candidatesFor({ ...ctx, availableProducts: ['페린젝트', '위너프에이플러스'] })[0] ?? FERINJECT_CANDIDATES[0];
   return {
-    ...selected,
+    ...withUnusedReaction(selected, ctx),
     selectionReason: `과=${ctx.doctor.department}, 최근키=${recentKeys.join(', ') || '없음'}, 배치키=${ctx.batchUsedDetailKeys.join(', ') || '없음'} 기준으로 중복이 가장 적은 조합 선택`,
   };
 }
@@ -188,9 +211,9 @@ export function preCheckUniqueness(plan: DetailKey, ctx: VisitContext): DetailKe
     return keys.every((key) => !used.has(key)) && reactionKeys.every((key) => !usedReaction.has(key));
   });
 
-  if (!alternative) return plan;
+  if (!alternative) return withUnusedReaction(plan, ctx);
   return {
-    ...alternative,
+    ...withUnusedReaction(alternative, ctx),
     selectionReason: `${plan.selectionReason}; precheck에서 중복 키 감지 후 대체 조합 선택`,
   };
 }

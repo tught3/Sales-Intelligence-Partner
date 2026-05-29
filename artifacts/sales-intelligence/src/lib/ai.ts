@@ -1,6 +1,7 @@
 ﻿import type { Doctor, VisitLog } from './storage';
 import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, preferenceStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
 import { runVisitGenerationPipeline } from './visit-generation/pipeline';
+import { extractReactionKeys as extractVisitReactionKeys } from './visit-generation/detailKeys';
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
 
 const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
@@ -743,7 +744,13 @@ function cleanRedundantPreviousUseFocus(text: string): string {
 }
 
 function normalizeGeneratedMemoText(text: string, department = ''): string {
-  const cleaned = cleanRedundantPreviousUseFocus(cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text))));
+  const cleaned = cleanRedundantPreviousUseFocus(cleanPreviousVisitConnection(reducePointWordUsage(normalizeMemoTone(text))))
+    .replace(/근거을/g, '근거를')
+    .replace(/반응하셨고/g, '반응 보였고')
+    .replace(/반응하셨음/g, '반응 보임')
+    .replace(/의견하셨고/g, '의견 보였고')
+    .replace(/교수님께서\s+([^。.!?]{2,120}?)(?:라는\s*)?반응\s*보임\s*보임/g, '교수님께서 $1라는 반응 보임')
+    .replace(/교수님께서\s+([^。.!?]{2,120}?)(?:라는\s*)?의견\s*보임\s*보임/g, '교수님께서 $1라는 의견 보임');
   return department ? normalizeDepartmentThemeStacks(cleaned, department) : cleaned;
 }
 
@@ -1204,6 +1211,11 @@ function getDetailKeyOverlap(a: string, b: string): string[] {
   return extractDetailKeys(a).filter((key) => bKeys.has(key));
 }
 
+function getReactionKeyOverlap(a: string, b: string): string[] {
+  const bKeys = new Set(extractVisitReactionKeys(b));
+  return extractVisitReactionKeys(a).filter((key) => bKeys.has(key));
+}
+
 function getTextSimilarity(a: string, b: string): number {
   const tokenize = (value: string) => normalizeOralIronTerminology(value)
     .replace(/더딘|늦는|늦은|느린|불충분|부족|미흡/g, '반응부족')
@@ -1226,6 +1238,7 @@ function getTextSimilarity(a: string, b: string): number {
 function hasBatchConflict(text: string, avoidTexts: string[]): boolean {
   return avoidTexts.some((avoidText) =>
     getDetailKeyOverlap(text, avoidText).length > 0 ||
+    getReactionKeyOverlap(text, avoidText).length > 0 ||
     getTextSimilarity(text, avoidText) >= 0.52
   );
 }
@@ -1241,6 +1254,7 @@ function buildDiversifiedVisitLog(
     ...detailKeysFromTexts(avoidTexts),
     ...extractDetailKeys(currentText),
   ]);
+  const usedReactionKeys = new Set(avoidTexts.flatMap(extractVisitReactionKeys));
   const candidates = [
     {
       product: '위너프에이플러스',
@@ -1260,11 +1274,14 @@ function buildDiversifiedVisitLog(
     {
       product: '페린젝트',
       keys: ['hb-recovery'],
-      text: '페린젝트의 Hb 회복 근거를 외래 추적이 어려운 철결핍 빈혈 상황과 연결해 디테일 진행함. 교수님께서 경구용철분제 복용 지속이 어려운 환자에서 검토 가능하다는 의견 보임',
+      text: '페린젝트의 Hb 회복 근거를 경구용철분제 반응이 부족한 철결핍 빈혈 상황과 연결해 디테일 진행함. 교수님께서 급여 기준에 맞는 환자부터 차트로 확인해보겠다는 의견 보임',
     },
   ].filter((candidate) => allowedProducts.includes(candidate.product));
 
-  const selected = candidates.find((candidate) => candidate.keys.every((key) => !usedKeys.has(key))) || candidates[0];
+  const selected = candidates.find((candidate) =>
+    candidate.keys.every((key) => !usedKeys.has(key)) &&
+    extractVisitReactionKeys(candidate.text).every((key) => !usedReactionKeys.has(key))
+  ) || candidates.find((candidate) => extractVisitReactionKeys(candidate.text).every((key) => !usedReactionKeys.has(key))) || candidates[0];
   if (!selected) return expandVisitLogIfTooBrief(currentText, allowedProducts, department);
   return selected.text.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(selected.text, MAX_VISIT_LOG_LENGTH) : selected.text;
 }

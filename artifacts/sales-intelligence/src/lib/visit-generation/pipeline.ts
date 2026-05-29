@@ -2,7 +2,7 @@ import { buildContext } from './context';
 import { generateWithPlan } from './generator';
 import { normalize } from './normalizer';
 import { buildPlan, preCheckUniqueness } from './planner';
-import { repair, MAX_REPAIR_ATTEMPTS } from './repair';
+import { buildFallback, repair, MAX_REPAIR_ATTEMPTS } from './repair';
 import { initTrace } from './trace';
 import type { GenerationResult, VisitGenerationDependencies, VisitGenerationInput } from './types';
 import { resolveRepairTarget, validate } from './validator';
@@ -67,6 +67,24 @@ export async function runVisitGenerationPipeline(
       usedFallback = usedFallback || repaired.usedFallback;
       current = normalize(repaired, plan);
       trace.add(`repair_${attempt}`, { output: current, failTypes: validation.failTypes });
+    }
+
+    let finalValidation = validate(current.formattedLog, current.nextStrategy, plan, ctx);
+    trace.add('validate_final', {
+      output: finalValidation.pass ? 'PASS' : finalValidation.details,
+      failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
+    });
+    if (!finalValidation.pass) {
+      current = normalize(buildFallback(plan, ctx), plan);
+      usedFallback = true;
+      finalValidation = validate(current.formattedLog, current.nextStrategy, plan, ctx);
+      trace.add('hard_fallback', {
+        output: finalValidation.pass ? current : finalValidation.details,
+        failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
+      });
+    }
+    if (!finalValidation.pass) {
+      throw new Error(`Visit generation failed final validation: ${finalValidation.details}`);
     }
 
     const final = trace.finish('fallback');
