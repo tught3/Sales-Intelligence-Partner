@@ -1,5 +1,5 @@
 import type { VisitContext } from './context';
-import { collectKeys, extractKeys } from './detailKeys';
+import { collectKeys, extractKeys, extractReactionKeys } from './detailKeys';
 import type { DetailKey } from './types';
 
 type PlanCandidate = Omit<DetailKey, 'selectionReason'>;
@@ -131,7 +131,13 @@ export function buildPlan(ctx: VisitContext): DetailKey {
 
   const baseCandidates = candidatesFor(ctx);
   if (ctx.isObDoctor && !ctx.hasDailyObFerinject && ctx.availableProducts.includes('페린젝트')) {
-    const forced = baseCandidates.find((candidate) => candidate.product === '페린젝트') ?? FERINJECT_CANDIDATES[0];
+    const forced =
+      baseCandidates.find((candidate) =>
+        candidate.product === '페린젝트' &&
+        extractReactionKeys(candidate.doctorReaction).every((key) => !ctx.batchUsedReactionKeys.includes(key))
+      ) ??
+      baseCandidates.find((candidate) => candidate.product === '페린젝트') ??
+      FERINJECT_CANDIDATES[0];
     return {
       ...forced,
       selectionReason: `오늘(${ctx.todayDate}) 산부인과 페린젝트 기록이 아직 없어 1일 1건 보장 규칙으로 선택`,
@@ -141,15 +147,19 @@ export function buildPlan(ctx: VisitContext): DetailKey {
   const ranked = baseCandidates.sort((a, b) => {
     const aKeys = extractKeys(planText(a));
     const bKeys = extractKeys(planText(b));
+    const aReactionKeys = extractReactionKeys(a.doctorReaction);
+    const bReactionKeys = extractReactionKeys(b.doctorReaction);
     const aText = planText(a);
     const bText = planText(b);
     const aPenalty =
       aKeys.filter((key) => batchKeys.has(key)).length * 10 +
+      aReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       aKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(a.product) ? 1 : 0) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length * 4;
     const bPenalty =
       bKeys.filter((key) => batchKeys.has(key)).length * 10 +
+      bReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       bKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(b.product) ? 1 : 0) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4;
@@ -167,12 +177,15 @@ export function buildPlan(ctx: VisitContext): DetailKey {
 
 export function preCheckUniqueness(plan: DetailKey, ctx: VisitContext): DetailKey {
   const planKeys = extractKeys(planText(plan));
+  const planReactionKeys = extractReactionKeys(plan.doctorReaction);
   const used = new Set([...ctx.batchUsedDetailKeys, ...collectKeys(ctx.recentStrategies)]);
-  if (!planKeys.some((key) => used.has(key))) return plan;
+  const usedReaction = new Set(ctx.batchUsedReactionKeys);
+  if (!planKeys.some((key) => used.has(key)) && !planReactionKeys.some((key) => usedReaction.has(key))) return plan;
 
   const alternative = candidatesFor(ctx).find((candidate) => {
     const keys = extractKeys(planText(candidate));
-    return keys.every((key) => !used.has(key));
+    const reactionKeys = extractReactionKeys(candidate.doctorReaction);
+    return keys.every((key) => !used.has(key)) && reactionKeys.every((key) => !usedReaction.has(key));
   });
 
   if (!alternative) return plan;

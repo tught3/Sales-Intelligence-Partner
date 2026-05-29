@@ -1,5 +1,6 @@
 import type { VisitContext } from './context';
 import type { DetailKey, RepairTarget, ValidationResult } from './types';
+import { extractReactionKeys } from './detailKeys';
 
 export const MAX_REPAIR_ATTEMPTS = 2;
 
@@ -9,9 +10,30 @@ export type RepairOutput = {
   usedFallback: boolean;
 };
 
+const REACTION_REPLACEMENTS = [
+  '급여 기준에 맞는 케이스부터 차트로 확인해보겠다는 의견',
+  'Hb 수치와 증상을 같이 보고 필요 시 선별하겠다는 반응',
+  '경구용철분제 반응이 부족한 경우부터 고려 가능하다는 의견',
+  '수혈 부담을 줄일 수 있는 케이스에서는 검토 여지가 있다는 반응',
+  '처방 경험이 많지는 않아도 기준에 맞으면 확인해보겠다는 의견',
+  '영양 보충 필요성은 공감하지만 처방 시점은 환자 상태를 보고 판단하겠다는 반응',
+  '차트상 빈혈 추이와 외래 일정이 맞는 환자부터 확인해보겠다는 의견',
+  '처방 전환은 케이스별로 보되 Hb 회복 근거는 참고하겠다는 반응',
+];
+
 function limit(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max - 3).replace(/[,\s]+$/g, '') + '...';
+}
+
+function hasUsedReaction(reaction: string, ctx: VisitContext): boolean {
+  const keys = extractReactionKeys(reaction);
+  return keys.length > 0 && keys.some((key) => ctx.batchUsedReactionKeys.includes(key));
+}
+
+function selectNonDuplicateReaction(plan: DetailKey, ctx: VisitContext): string {
+  if (!hasUsedReaction(plan.doctorReaction, ctx)) return plan.doctorReaction;
+  return REACTION_REPLACEMENTS.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? plan.doctorReaction;
 }
 
 function safePlanForDepartment(plan: DetailKey, ctx: VisitContext): DetailKey {
@@ -73,8 +95,9 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   const manual = buildManualPreservingFallback(plan, ctx);
   if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
+  const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
   const formattedLog = limit(
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${safePlan.doctorReaction}하셨고, 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${doctorReaction} 보임. 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);

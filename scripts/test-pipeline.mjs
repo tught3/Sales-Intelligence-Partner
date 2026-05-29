@@ -61,11 +61,23 @@ async function importVisitGenerationCjs(entryFile) {
 
 const imported = await importTsModule(detailKeysPath, 'detailKeys.mjs');
 try {
-  const { extractKeys, similarityRatio, normalizeTerminology } = imported.module;
+  const { extractKeys, similarityRatio, normalizeTerminology, extractReactionKeys, collectReactionKeys } = imported.module;
 
   const today = '페린젝트의 1회 투여 편의성과 경구용철분제 반응이 더딘 케이스 중심으로 디테일 진행함';
   const next = '다음방문시에는 경구용철분제 반응이 늦는 케이스 중심으로 페린젝트 처방 상황 확인할예정';
   const winuf = '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소를 중증 수술 환자 중심으로 디테일 진행함';
+  const reactionA = '교수님께서 반복 내원이 어려운 환자에서는 설명해볼 수 있겠다는 반응 보임';
+  const reactionB = '교수님께서 재방문 부담이 있는 환자에서는 고려 가능하다는 의견 보임';
+  const reactionC = '교수님께서 외래 재방문이 어려운 환자에서는 편의성은 인정하셨음';
+
+  assert(
+    extractReactionKeys(reactionA).includes('반복내원재방문부담'),
+    '반복 내원 어려움 반응은 반복내원재방문부담 키로 잡혀야 합니다'
+  );
+  assert(
+    collectReactionKeys([reactionA, reactionB, reactionC]).length === 1,
+    '반복 내원, 재방문 부담, 외래 재방문 불편은 같은 교수 반응으로 묶여야 합니다'
+  );
 
   assert(
     extractKeys(today).includes('경구용철분제반응부족'),
@@ -127,6 +139,7 @@ try {
   const ctx = {
     doctor: { department: '소화기내과' },
     batchAvoidTexts: [],
+    batchUsedReactionKeys: [],
     pastLogs: [],
   };
   const bad = validate(
@@ -144,6 +157,17 @@ try {
     ctx
   );
   assert(good.pass || !good.failTypes.includes('DEPARTMENT_MISMATCH'), '소화기내과 허용 맥락은 진료과 불일치로 실패하면 안 됩니다.');
+
+  const duplicateReaction = validate(
+    '페린젝트의 1회 투여 편의성과 Hb 회복 근거를 위장관 출혈 이후 경구용철분제로 Hb 회복이 더딘 소화기내과 외래 빈혈 환자 상황과 연결해 디테일 진행함. 교수님께서 재방문 부담이 있는 환자에서는 고려 가능하다는 의견 보임',
+    '다음방문시에는 위너프에이플러스 IBD 악화 환자의 영양 보충 필요성 확인할예정',
+    plan,
+    { ...ctx, batchUsedReactionKeys: ['반복내원재방문부담'] }
+  );
+  assert(
+    !duplicateReaction.pass && duplicateReaction.failTypes.includes('DUPLICATE_REACTION'),
+    'batch 안에서 같은 의미의 교수 반응이 반복되면 DUPLICATE_REACTION으로 실패해야 합니다.'
+  );
 } finally {
   await validator.cleanup();
 }

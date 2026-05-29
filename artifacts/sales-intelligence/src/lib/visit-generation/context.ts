@@ -6,7 +6,7 @@ import {
   type Doctor,
   type VisitLog,
 } from '../storage';
-import { collectKeys } from './detailKeys';
+import { collectKeys, collectReactionKeys } from './detailKeys';
 
 const VISIT_PRODUCTS = ['위너프에이플러스', '페린젝트'];
 
@@ -18,6 +18,7 @@ export type VisitContext = {
   availableProducts: string[];
   batchAvoidTexts: string[];
   batchUsedDetailKeys: string[];
+  batchUsedReactionKeys: string[];
   todayDate: string;
   manualRawNotes?: string;
   hasDailyObFerinject: boolean;
@@ -59,6 +60,13 @@ export function buildContext(
   const preferences = preferenceStorage.getForGeneration(doctor, productScope);
 
   const todayDate = new Date().toISOString().split('T')[0];
+  const todayReactionTexts = manualRawNotes
+    ? []
+    : visitLogStorage
+        .getAll()
+        .filter((log) => log.visitDate === todayDate)
+        .map((log) => `${log.formattedLog} ${log.nextStrategy ?? ''}`);
+  const reactionAvoidTexts = [...batchAvoidTexts, ...todayReactionTexts];
 
   return {
     doctor,
@@ -68,6 +76,7 @@ export function buildContext(
     availableProducts: selected.length > 0 ? selected : VISIT_PRODUCTS,
     batchAvoidTexts,
     batchUsedDetailKeys: collectKeys(batchAvoidTexts),
+    batchUsedReactionKeys: collectReactionKeys(reactionAvoidTexts),
     todayDate,
     manualRawNotes,
     hasDailyObFerinject: hasTodayObFerinject(todayDate),

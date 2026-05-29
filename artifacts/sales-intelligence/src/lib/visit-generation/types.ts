@@ -19,6 +19,7 @@ export type ValidationFailType =
   | 'DUPLICATE_BATCH'
   | 'DUPLICATE_PAST'
   | 'DUPLICATE_STRATEGY'
+  | 'DUPLICATE_REACTION'
   | 'LENGTH_SHORT'
   | 'LENGTH_LONG'
   | 'MISSING_PRODUCT'

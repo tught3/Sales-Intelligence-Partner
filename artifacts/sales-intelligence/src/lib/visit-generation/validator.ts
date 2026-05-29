@@ -1,5 +1,5 @@
 import type { VisitContext } from './context';
-import { extractKeys, isDuplicateOf, similarityRatio } from './detailKeys';
+import { extractKeys, extractReactionKeys, isDuplicateOf, similarityRatio } from './detailKeys';
 import type { DetailKey, RepairTarget, ValidationFailType, ValidationResult } from './types';
 
 const MIN_VISIT_LOG_LENGTH = 100;
@@ -44,6 +44,13 @@ function changedManualFacts(formattedLog: string, ctx: VisitContext): boolean {
   return importantKeys.some((key) => !outputKeys.has(key));
 }
 
+function hasDuplicateReaction(formattedLog: string, ctx: VisitContext): boolean {
+  if (ctx.manualRawNotes?.trim()) return false;
+  const currentKeys = extractReactionKeys(formattedLog);
+  if (currentKeys.length === 0) return false;
+  return currentKeys.some((key) => ctx.batchUsedReactionKeys.includes(key));
+}
+
 export function validate(
   formattedLog: string,
   nextStrategy: string,
@@ -66,6 +73,9 @@ export function validate(
   if (changedManualFacts(formattedLog, ctx)) {
     failTypes.push('MANUAL_FACT_CHANGED');
   }
+  if (hasDuplicateReaction(formattedLog, ctx)) {
+    failTypes.push('DUPLICATE_REACTION');
+  }
 
   const logKeys = extractKeys(formattedLog);
   const detailKeys = extractKeys(`${plan.detailAxis} ${plan.patientGroup}`);
@@ -86,6 +96,9 @@ export function validate(
 
 export function resolveRepairTarget(failTypes: ValidationFailType[]): RepairTarget {
   const unique = [...new Set(failTypes)];
+  if (unique.length === 1 && unique[0] === 'DUPLICATE_REACTION') {
+    return { field: 'formattedLog', reasons: unique };
+  }
   if (unique.length === 1 && unique[0] === 'DUPLICATE_STRATEGY') {
     return { field: 'nextStrategy', reasons: unique };
   }

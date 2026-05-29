@@ -29,6 +29,17 @@ const KEY_RULES: Array<[string, RegExp]> = [
   ['사용반응확인', /사용.*반응|써보|처방.*반응/],
 ];
 
+const REACTION_RULES: Array<[string, RegExp]> = [
+  ['반복내원재방문부담', /반복.*내원|재방문.*부담|외래.*재방문.*어려|재방문.*어려|내원.*어려|방문.*어려|편의.*인정|편의.*이해/],
+  ['급여기준확인', /급여기준|급여.*맞|보험.*기준|청구.*기준/],
+  ['Hb증상같이봄', /Hb.*증상|증상.*Hb|Hb.*수치|수치.*증상|혈색소.*증상/],
+  ['차트확인', /차트.*확인|기록.*확인|차트로.*확인/],
+  ['케이스제한적', /케이스.*많지|많지는.*않|제한적|드물|많지.*않/],
+  ['영양필요성공감', /영양.*필요성.*공감|영양.*공감|필요성.*공감|영양.*동의/],
+  ['처방전환케이스별', /처방전환.*케이스별|전환.*케이스별|케이스별.*처방|케이스별.*전환/],
+  ['혈당단백동의', /혈당.*단백.*동의|단백.*혈당.*동의|혈당.*보면서.*단백/],
+];
+
 export function normalizeText(text: string): string {
   let normalized = text;
   for (const [pattern, replacement] of SYNONYM_PATTERNS) {
@@ -66,6 +77,20 @@ export function isDuplicateOf(textA: string, candidateList: string[], threshold 
 
 export function collectKeys(texts: string[]): string[] {
   return [...new Set(texts.flatMap(extractKeys))];
+}
+
+export function extractReactionKeys(text: string): string[] {
+  const compact = normalizeText(text);
+  const keys = new Set<string>();
+  for (const [key, pattern] of REACTION_RULES) {
+    if (pattern.test(compact)) keys.add(key);
+    pattern.lastIndex = 0;
+  }
+  return [...keys];
+}
+
+export function collectReactionKeys(texts: string[]): string[] {
+  return [...new Set(texts.flatMap(extractReactionKeys))];
 }
 
 export function normalizeTerminology(text: string): string {
