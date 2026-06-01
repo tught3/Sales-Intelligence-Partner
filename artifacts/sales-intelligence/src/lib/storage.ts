@@ -942,8 +942,9 @@ export const externalCasePatternStorage = {
     const normalized = normalizeExternalCasePattern(pattern);
     const idx = cache.externalCasePatterns.findIndex((item) => item.id === normalized.id);
     const duplicate = cache.externalCasePatterns.find((item) => item.id !== normalized.id && isSimilarExternalCase(normalized, item));
-    if (duplicate) {
-      return { saved: false, duplicate: true, message: '이미 비슷한 외부 사례 패턴이 있습니다.' };
+    if (duplicate && duplicate.id !== normalized.id) {
+      cache.externalCasePatterns = cache.externalCasePatterns.filter((item) => item.id !== duplicate.id);
+      api(`/external-case-patterns/${duplicate.id}`, 'DELETE').catch(console.error);
     }
     if (idx >= 0) cache.externalCasePatterns[idx] = normalized;
     else cache.externalCasePatterns.push(normalized);

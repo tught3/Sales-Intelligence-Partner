@@ -36,7 +36,7 @@ export default function ExternalCasesPage() {
 
   const grouped = useMemo(() => {
     return patterns.reduce<Record<string, ExternalCasePattern[]>>((acc, pattern) => {
-      const key = `${pattern.department || "미분류"} · ${pattern.product || "품목 없음"}`;
+      const key = `${pattern.department || "미분류"} ${pattern.product || "품목 없음"}`;
       acc[key] = acc[key] ?? [];
       acc[key].push(pattern);
       return acc;

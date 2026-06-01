@@ -11,7 +11,7 @@ export type ExternalCasePatternDraft = {
 
 const DEPARTMENT_PATTERNS: Array<[RegExp, string]> = [
   [/혈액\s*종양|혈종|종양혈액|혈액내과|hemato/i, '혈액종양내과'],
-  [/종양내과|항암|암환자|cia/i, '종양내과'],
+  [/종양내과|종양|oncology|항암|암환자|cia/i, '종양내과'],
   [/산부인과|obgy|ob\/gy|산과|부인과|고위험\s*산모|her\s*story|her스토리|her\s*켐페인|her\s*캠페인/i, '산부인과'],
   [/소화기|위장관|ibd|크론|궤양성대장염/i, '소화기내과'],
   [/정형외과|\bos\b|ortho|tka|tha|고관절|슬관절|척추/i, '정형외과'],
@@ -185,7 +185,7 @@ function nextActionFrom(text: string, department: string, product: string, detai
 }
 
 function sourceSummaryFrom(department: string, product: string, patientGroup: string, detailAxis: string): string {
-  return `${department} ${patientGroup}에서 ${product} ${detailAxis} 포인트 추출`;
+  return `${department} ${product} 패턴 요약`;
 }
 
 function normalizeComparable(value: string): string {

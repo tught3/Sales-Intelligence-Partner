@@ -117,6 +117,10 @@ try {
     '종양내과 페린젝트 암환자/경구용철분제 한계 패턴을 추출해야 합니다.'
   );
   assert(
+    patterns.some((p) => p.department === '종양내과' && p.product === '위너프에이플러스' && p.sourceSummary.startsWith('종양내과 위너프에이플러스')),
+    '종양 관련 위너프 사례는 종양내과 위너프에이플러스로 짧게 분류되어야 합니다.'
+  );
+  assert(
     patterns.some((p) => p.department === '산부인과' && p.product === '페린젝트' && /산후|부인과|철결핍|수술/.test(p.patientGroup)),
     'HER 캠페인 같은 표현은 산부인과 빈혈 환자 패턴으로 변환되어야 합니다.'
   );
