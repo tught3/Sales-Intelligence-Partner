@@ -171,6 +171,118 @@ ${rawText}
   return callAI(system, prompt);
 }
 
+export type ExternalCasePatternDraft = {
+  department: string;
+  product: string;
+  patientGroup: string;
+  detailAxis: string;
+  reactionPattern: string;
+  nextAction: string;
+  sourceSummary: string;
+  confidence: number;
+};
+
+function normalizeExternalCaseProduct(product: string): string {
+  const compact = product.replace(/\s+/g, '');
+  if (compact.includes('위너프에이플러스')) return '위너프에이플러스';
+  if (compact.includes('페린젝트')) return '페린젝트';
+  return '';
+}
+
+function normalizeExternalCaseDepartment(department: string): string {
+  const compact = department.replace(/\s+/g, '');
+  if (/혈액종양|종양혈액/.test(compact)) return '혈액종양내과';
+  if (/종양/.test(compact)) return '종양내과';
+  if (/산부인과|산과|부인과/.test(compact)) return '산부인과';
+  if (/소화기/.test(compact)) return '소화기내과';
+  if (/호흡기/.test(compact)) return '호흡기내과';
+  if (/정형/.test(compact)) return '정형외과';
+  if (/흉부/.test(compact)) return '흉부외과';
+  if (/신경외과/.test(compact)) return '신경외과';
+  if (/외과/.test(compact)) return '외과';
+  if (/중환자/.test(compact)) return '중환자의학과';
+  return department.trim();
+}
+
+function fallbackExternalCasePatterns(rawText: string): ExternalCasePatternDraft[] {
+  const text = rawText.replace(/\s+/g, ' ').trim();
+  const drafts: ExternalCasePatternDraft[] = [];
+  const add = (draft: ExternalCasePatternDraft) => {
+    if (!draft.department || !draft.product || !draft.patientGroup || !draft.detailAxis) return;
+    drafts.push(draft);
+  };
+
+  if (/종양|암|항암|햅시딘/i.test(text) && /페린젝트|철분|빈혈/i.test(text)) {
+    add({
+      department: '종양내과',
+      product: '페린젝트',
+      patientGroup: '항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈이 오래 가는 환자',
+      detailAxis: '페린젝트의 1회 투여와 Hb 회복 근거',
+      reactionPattern: '경구용철분제로 회복이 더딘 암환자에서는 참고하겠다는 의견',
+      nextAction: '항암 전후 빈혈에서 급여 기준과 실제 적용 가능 환자 확인',
+      sourceSummary: '종양내과 암환자 빈혈에서 경구용철분제 한계와 페린젝트 활용 포인트 추출',
+      confidence: 86,
+    });
+  }
+  if (/산후|분만|부인과|산부인과|제왕절개/.test(text) && /페린젝트|빈혈|Hb/i.test(text)) {
+    add({
+      department: '산부인과',
+      product: '페린젝트',
+      patientGroup: '산후 빈혈이나 부인과 수술 전후 Hb 회복을 추적 중인 환자',
+      detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+      reactionPattern: '외래 추적이 부담인 환자에서는 편의성을 인정하신 것으로 보임',
+      nextAction: '산후 외래나 수술 전후 회복기 환자에서 적용 가능 케이스 확인',
+      sourceSummary: '산부인과 빈혈 환자에서 페린젝트 1회 투여와 Hb 회복 포인트 추출',
+      confidence: 80,
+    });
+  }
+  return drafts;
+}
+
+export async function analyzeExternalCasePatterns(rawText: string): Promise<ExternalCasePatternDraft[]> {
+  const system = `당신은 JW중외제약 MR 방문일지 사례를 구조화하는 분석 AI입니다.
+원문 문장을 베끼지 말고 진료과, 품목, 환자군, 디테일 포인트, 교수 반응, 다음 액션만 추출합니다.`;
+  const prompt = `아래 여러 방문일지 예시에서 구조화 가능한 패턴만 JSON 배열로 추출하세요.
+
+규칙:
+- 원문 문장 복사 금지. 내용 의미만 짧게 재구성.
+- department가 불명확하면 제외.
+- product는 위너프에이플러스 또는 페린젝트만 허용.
+- 각 항목 필드: department, product, patientGroup, detailAxis, reactionPattern, nextAction, sourceSummary, confidence
+- confidence는 0-100 정수.
+- JSON 배열만 출력.
+
+예시 입력:
+종양내과 암환자는 햅시딘이 높아 경구용철분제 흡수가 잘 안 되고 GI 트러블도 있어 페린젝트를 설명함
+
+예시 출력:
+[{"department":"종양내과","product":"페린젝트","patientGroup":"항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈이 오래 가는 환자","detailAxis":"페린젝트의 1회 투여와 Hb 회복 근거","reactionPattern":"경구용철분제로 회복이 더딘 암환자에서는 참고하겠다는 의견","nextAction":"항암 전후 빈혈에서 급여 기준과 실제 적용 가능 환자 확인","sourceSummary":"종양내과 암환자 빈혈에서 경구용철분제 한계와 페린젝트 활용 포인트 추출","confidence":86}]
+
+원문:
+${rawText}`;
+
+  try {
+    const res = await callVisitLogAI(system, prompt);
+    const json = res.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return fallbackExternalCasePatterns(rawText);
+    return parsed
+      .map((item): ExternalCasePatternDraft => ({
+        department: normalizeExternalCaseDepartment(String(item.department ?? '')),
+        product: normalizeExternalCaseProduct(String(item.product ?? '')),
+        patientGroup: String(item.patientGroup ?? '').trim(),
+        detailAxis: String(item.detailAxis ?? '').trim(),
+        reactionPattern: String(item.reactionPattern ?? '').trim(),
+        nextAction: String(item.nextAction ?? '').trim(),
+        sourceSummary: String(item.sourceSummary ?? '').trim(),
+        confidence: Math.max(0, Math.min(100, Number(item.confidence ?? 60) || 60)),
+      }))
+      .filter((item) => item.department && item.product && item.patientGroup && item.detailAxis);
+  } catch {
+    return fallbackExternalCasePatterns(rawText);
+  }
+}
+
 function buildSystemPrompt(): string {
   const ruleText = manualStorage.getByCategory('rule')
     .map((m) => `[${m.title}]\n${m.content}`)
@@ -1151,6 +1263,9 @@ function getFallbackDetailForProduct(product: string, department: string): strin
     if (/정형외과|산부인과|산과|부인과|외과/.test(department)) {
       return '수술 전후 빈혈에서 1회 투여로 Hb 회복과 수혈 부담 감소 근거';
     }
+    if (/종양내과|혈액종양내과|종양혈액내과|혈액내과/.test(department)) {
+      return '항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈이 오래 가는 환자에서 1회 투여와 Hb 회복 근거';
+    }
     if (/소화기|IBD|위장관/.test(department)) {
       return '위장관 출혈과 IBD 빈혈에서 1회 투여 후 Hb 회복 근거';
     }
@@ -1177,6 +1292,9 @@ function buildFallbackVisitLog(product: string, department: string): string {
 function buildDetailedVisitLog(product: string, department: string): string {
   const detail = getFallbackDetailForProduct(product, department);
   if (product === '페린젝트') {
+    if (/종양내과|혈액종양내과|종양혈액내과|혈액내과/.test(department)) {
+      return `${product}의 ${detail}을 항암치료 중 경구용철분제 흡수가 더딘 빈혈 환자와 연결해 디테일 진행함. 교수님께서 경구용철분제로는 회복이 늦을 수 있어 빠르게 보려는 케이스에서 참고하겠다는 의견 보임`;
+    }
     return `${product}의 ${detail}을 외래 빈혈 케이스와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 처방 상황을 확인해보겠다는 의견 보임`;
   }
   if (/산부인과|산과|부인과/.test(department)) {

@@ -19,6 +19,8 @@ const REACTION_REPLACEMENTS = [
   '영양 보충 필요성은 공감하지만 처방 시점은 환자 상태를 보고 판단하겠다는 반응',
   '차트상 빈혈 추이와 외래 일정이 맞는 환자부터 확인해보겠다는 의견',
   '처방 전환은 케이스별로 보되 Hb 회복 근거는 참고하겠다는 반응',
+  '외래 경과와 차트를 보고 적용 가능 케이스를 다시 보겠다는 의견',
+  '실제 처방은 환자 추이를 보고 다시 판단하겠다는 반응',
 ];
 
 function formatDoctorReactionSentence(reaction: string): string {
@@ -42,7 +44,63 @@ function hasUsedReaction(reaction: string, ctx: VisitContext): boolean {
 
 function selectNonDuplicateReaction(plan: DetailKey, ctx: VisitContext): string {
   if (!hasUsedReaction(plan.doctorReaction, ctx)) return plan.doctorReaction;
-  return REACTION_REPLACEMENTS.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? '진료 흐름에 맞춰 케이스별로 판단하겠다는 의견';
+  return REACTION_REPLACEMENTS.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? '차트상 빈혈 추이와 증상을 함께 보고 다시 판단하겠다는 의견';
+}
+
+function selectFollowUpClause(plan: DetailKey, ctx: VisitContext): string {
+  const department = ctx.doctor.department || '';
+  const product = plan.product;
+  const options = (() => {
+    if (/산부인과|산과|부인과/.test(department) && product === '페린젝트') {
+      return [
+        '다음에는 산후 외래나 수술 전후 회복기 환자에서 적용 가능 케이스를 다시 볼예정',
+        '다음에는 분만 후 빈혈 환자의 외래 추이를 다시 확인할예정',
+        '다음에는 수술 전후 빈혈에서 급여 기준과 적용 케이스를 살펴볼예정',
+      ];
+    }
+    if (/종양|혈액종양|혈액내과/.test(department) && product === '페린젝트') {
+      return [
+        '다음에는 항암 전후 빈혈에서 급여 기준과 실제 적용 환자를 다시 확인할예정',
+        '다음에는 햅시딘 상승이 의심되는 환자에서 경구용철분제 반응을 다시 볼예정',
+        '다음에는 항암치료 중 Hb 추이를 보며 적용 가능 케이스를 살펴볼예정',
+      ];
+    }
+    if (/소화기/.test(department) && product === '페린젝트') {
+      return [
+        '다음에는 위장관 출혈 뒤 Hb 회복이 더딘 외래 환자를 다시 확인할예정',
+        '다음에는 경구용철분제 반응이 부족한 빈혈 환자를 다시 볼예정',
+        '다음에는 급여 기준에 맞는 외래 빈혈 환자를 살펴볼예정',
+      ];
+    }
+    if (/소화기/.test(department) && product === '위너프에이플러스') {
+      return [
+        '다음에는 식사량 저하나 IBD 환자에서 영양 반응을 살펴볼예정',
+        '다음에는 장관 영양 부담이 큰 환자에서 혈당 부담 차이를 확인할예정',
+        '다음에는 영양 보충이 필요한 외래 환자에서 실제 반응을 볼예정',
+      ];
+    }
+    if (/산부인과|산과|부인과/.test(department) && product === '위너프에이플러스') {
+      return [
+        '다음에는 분만 후 식이 지연이나 회복기 환자에서 영양 반응을 확인할예정',
+        '다음에는 산후 회복기 환자의 식사 진행과 함께 확인할예정',
+        '다음에는 수술 전후 회복기에서 영양 공급 반응을 살펴볼예정',
+      ];
+    }
+    if (product === '페린젝트') {
+      return [
+        '다음에는 외래 빈혈 환자에서 급여 기준과 적용 케이스를 다시 볼예정',
+        '다음에는 Hb 회복 속도를 보며 적용 가능 환자를 확인할예정',
+        '다음에는 수혈 부담이 있는 환자에서 처방 가능성을 살펴볼예정',
+      ];
+    }
+    return [
+      '다음에는 수술 후 식이 지연 환자에서 실제 적용 반응을 살펴볼예정',
+      '다음에는 영양 공급이 늦어지는 환자에서 혈당 부담 차이를 확인할예정',
+      '다음에는 회복기 환자에서 단백 보충 반응을 볼예정',
+    ];
+  })();
+  const chosen = options.find((item) => !extractReactionKeys(item).some((key) => ctx.batchUsedReactionKeys.includes(key))) ?? options[0];
+  return chosen;
 }
 
 function safePlanForDepartment(plan: DetailKey, ctx: VisitContext): DetailKey {
@@ -87,7 +145,7 @@ function buildManualPreservingFallback(plan: DetailKey, ctx: VisitContext): Repa
     .replace(/[.。]$/g, '')
     .trim();
   const hasReaction = /공감|반응|의견|질문|하심|보임|고려|확인/.test(normalizedRaw);
-  const reaction = hasReaction ? '' : ` 교수님께서 관련 케이스는 진료 흐름에 맞춰 보겠다는 의견 보임`;
+  const reaction = hasReaction ? '' : ` 교수님께서 관련 케이스는 차트상 먼저 보겠다는 의견 보임`;
   const preferred = ctx.learnedPreferredPatterns.find((item) => item.includes(product) || /반응|의견|보임/.test(item));
   const preferredTail = preferred && !normalizedRaw.includes(preferred.slice(0, 8))
     ? ` ${preferred.replace(/^추가:\s*/, '').slice(0, 45)}`
@@ -105,8 +163,9 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
+  const followUp = selectFollowUpClause(safePlan, ctx);
   const formattedLog = limit(
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. ${followUp}`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);
@@ -118,8 +177,9 @@ export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext):
   if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
+  const followUp = selectFollowUpClause(safePlan, ctx);
   const formattedLog = limit(
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. 급여와 처방 시점은 차트와 당일 진료 흐름을 보고 판단하겠다는 의견 보임`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. ${followUp}`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);

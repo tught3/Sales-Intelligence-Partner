@@ -25,7 +25,10 @@ assert(apiSource.includes('/visit-log-feedback-events'), 'API must expose feedba
 assert(apiSource.includes('/ai-generation-preferences'), 'API must expose preference endpoints.');
 assert(vercelApiBundle.includes('/visit-log-feedback-events'), 'Vercel API bundle must include feedback event endpoints.');
 assert(vercelApiBundle.includes('/ai-generation-preferences'), 'Vercel API bundle must include preference endpoints.');
+assert(apiSource.includes('/external-case-patterns'), 'API must expose external case pattern endpoints.');
+assert(vercelApiBundle.includes('/external-case-patterns'), 'Vercel API bundle must include external case pattern endpoints.');
 assert(storageSource.includes('feedbackStorage') && storageSource.includes('preferenceStorage'), 'storage must expose feedback/preference stores.');
+assert(storageSource.includes('externalCasePatternStorage'), 'storage must expose external case pattern store.');
 assert(storageSource.includes('rebuildPreferencesFromEvents'), 'storage must rebuild preferences from feedback events.');
 assert(historySource.includes("eventType: 'edit'"), 'editing a visit log must record an edit feedback event.');
 assert(historySource.includes("eventType: 'delete'"), 'deleting a visit log must record a delete feedback event.');

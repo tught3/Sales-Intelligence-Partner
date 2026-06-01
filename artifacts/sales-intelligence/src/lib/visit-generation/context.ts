@@ -1,9 +1,11 @@
 import {
   doctorStorage,
+  externalCasePatternStorage,
   preferenceStorage,
   visitLogStorage,
   type AiGenerationPreference,
   type Doctor,
+  type ExternalCasePattern,
   type VisitLog,
 } from '../storage';
 import { collectKeys, collectReactionKeys } from './detailKeys';
@@ -27,6 +29,7 @@ export type VisitContext = {
   learnedForbiddenPatterns: string[];
   learnedPreferredPatterns: string[];
   manualFactKeys: string[];
+  externalCasePatterns: ExternalCasePattern[];
 };
 
 function isObDepartment(department: string): boolean {
@@ -58,6 +61,9 @@ export function buildContext(
     : [];
   const productScope = selected.length > 0 ? selected : detectedManualProducts;
   const preferences = preferenceStorage.getForGeneration(doctor, productScope);
+  const externalCasePatterns = manualRawNotes
+    ? []
+    : externalCasePatternStorage.getForGeneration(doctor.department, productScope.length > 0 ? productScope : VISIT_PRODUCTS);
 
   const todayDate = new Date().toISOString().split('T')[0];
   const todayReactionTexts = manualRawNotes
@@ -85,5 +91,6 @@ export function buildContext(
     learnedForbiddenPatterns: [...new Set(preferences.flatMap((pref) => pref.forbiddenPatterns ?? []))].slice(0, 20),
     learnedPreferredPatterns: [...new Set(preferences.flatMap((pref) => pref.preferredPatterns ?? []))].slice(0, 20),
     manualFactKeys: collectKeys([manualRawNotes ?? '']),
+    externalCasePatterns,
   };
 }

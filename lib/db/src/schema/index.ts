@@ -61,6 +61,19 @@ export const aiGenerationPreferences = pgTable("ai_generation_preferences", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const externalCasePatterns = pgTable("external_case_patterns", {
+  id: varchar("id", { length: 100 }).primaryKey(),
+  department: varchar("department", { length: 200 }).notNull().default(""),
+  product: varchar("product", { length: 200 }).notNull().default(""),
+  patientGroup: text("patient_group").notNull().default(""),
+  detailAxis: text("detail_axis").notNull().default(""),
+  reactionPattern: text("reaction_pattern").notNull().default(""),
+  nextAction: text("next_action").notNull().default(""),
+  sourceSummary: text("source_summary").notNull().default(""),
+  confidence: integer("confidence").notNull().default(60),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const goldenSnippets = pgTable("golden_snippets", {
   id: varchar("id", { length: 100 }).primaryKey(),
   content: text("content").notNull(),
@@ -113,6 +126,8 @@ export type VisitLogFeedbackEvent = typeof visitLogFeedbackEvents.$inferSelect;
 export type InsertVisitLogFeedbackEvent = typeof visitLogFeedbackEvents.$inferInsert;
 export type AiGenerationPreference = typeof aiGenerationPreferences.$inferSelect;
 export type InsertAiGenerationPreference = typeof aiGenerationPreferences.$inferInsert;
+export type ExternalCasePattern = typeof externalCasePatterns.$inferSelect;
+export type InsertExternalCasePattern = typeof externalCasePatterns.$inferInsert;
 export type GoldenSnippet = typeof goldenSnippets.$inferSelect;
 export type InsertGoldenSnippet = typeof goldenSnippets.$inferInsert;
 export type HospitalProfile = typeof hospitalProfiles.$inferSelect;

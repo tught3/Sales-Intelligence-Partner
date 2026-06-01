@@ -9,8 +9,9 @@ const REACTION_FALLBACKS = [
   'Hb 수치와 증상을 같이 보고 필요 시 선별하겠다는 반응',
   '처방 경험이 많지는 않아도 기준에 맞으면 확인해보겠다는 의견',
   '영양 보충 필요성은 공감하지만 처방 시점은 환자 상태를 보고 판단하겠다는 반응',
-  '처방 전환은 케이스별로 보되 Hb 회복 근거는 참고하겠다는 반응',
+  '외래 경과와 차트를 보고 적용 가능 케이스를 다시 보겠다는 반응',
   '수혈 부담을 줄일 수 있는 케이스에서는 검토 여지가 있다는 반응',
+  '실제 처방은 환자 추이를 보고 다시 판단하겠다는 의견',
 ];
 
 const WINUF_CANDIDATES: PlanCandidate[] = [
@@ -37,7 +38,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     product: '위너프에이플러스',
     patientGroup: '수술 전후로 경구 섭취가 불안정한 환자',
     detailAxis: '위너프에이플러스의 포도당 부담 감소와 단백 공급량 차이',
-    doctorReaction: '기존 TPN 대비 차이는 이해하셨지만 처방 전환은 케이스별로 보겠다는 반응',
+    doctorReaction: '기존 TPN 대비 차이는 이해하셨지만 실제 적용은 회복기 환자부터 보겠다는 반응',
     nextAction: '페린젝트 Hb 회복 경과와 수혈 회피 가능 케이스 확인',
     narrativeStyle: '교수 질문 답변형',
     professorQuestion: '기존 위너프와 어떤 차이로 봐야 하는지 질문 있어',
@@ -63,6 +64,15 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     nextAction: '위너프에이플러스 수술 후 식이 지연 환자 영양 보충 반응 확인',
     narrativeStyle: '처방 경험 확인형',
     blockedDepartments: ['산부인과'],
+  },
+  {
+    product: '페린젝트',
+    patientGroup: '항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈이 오래 가는 환자',
+    detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+    doctorReaction: '경구용철분제로는 회복이 더딜 수 있어 빠르게 보려는 케이스에서 참고하겠다는 의견',
+    nextAction: '항암 전후 빈혈에서 급여 기준과 처방 후보 확인',
+    narrativeStyle: '환자 케이스 연결형',
+    allowedDepartments: ['종양내과', '혈액종양내과', '종양혈액내과', '혈액내과'],
   },
   {
     product: '페린젝트',
@@ -119,7 +129,16 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
 }
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
-  const all = [...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
+  const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.map((pattern) => ({
+    product: pattern.product,
+    patientGroup: pattern.patientGroup,
+    detailAxis: pattern.detailAxis,
+    doctorReaction: pattern.reactionPattern || '관련 케이스에서는 참고하겠다는 의견',
+    nextAction: pattern.nextAction || `${pattern.product} 관련 적용 가능 케이스 확인`,
+    narrativeStyle: '환자 케이스 연결형',
+    allowedDepartments: [pattern.department],
+  }));
+  const all = [...externalCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const manualProducts = ctx.manualRawNotes
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
     : [];
@@ -141,6 +160,16 @@ function withUnusedReaction<T extends PlanCandidate>(candidate: T, ctx: VisitCon
     extractReactionKeys(reaction).every((key) => !ctx.batchUsedReactionKeys.includes(key))
   );
   return replacement ? { ...candidate, doctorReaction: replacement } : candidate;
+}
+
+function externalPatternBonus(candidate: PlanCandidate, ctx: VisitContext): number {
+  const matched = ctx.externalCasePatterns.find((pattern) =>
+    candidate.product === pattern.product &&
+    candidate.patientGroup === pattern.patientGroup &&
+    candidate.detailAxis === pattern.detailAxis
+  );
+  if (!matched) return 0;
+  return 4 + Math.min(5, Math.max(0, Math.round((matched.confidence || 0) / 20)));
 }
 
 export function buildPlan(ctx: VisitContext): DetailKey {
@@ -195,10 +224,12 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     const bBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length;
     const aCarryoverBonus =
       carryoverKeys.filter((key) => aKeys.includes(key)).length * 5 +
-      (carryoverProduct && a.product === carryoverProduct ? 3 : 0);
+      (carryoverProduct && a.product === carryoverProduct ? 3 : 0) +
+      externalPatternBonus(a, ctx);
     const bCarryoverBonus =
       carryoverKeys.filter((key) => bKeys.includes(key)).length * 5 +
-      (carryoverProduct && b.product === carryoverProduct ? 3 : 0);
+      (carryoverProduct && b.product === carryoverProduct ? 3 : 0) +
+      externalPatternBonus(b, ctx);
     return (aPenalty - aBonus - aCarryoverBonus) - (bPenalty - bBonus - bCarryoverBonus);
   });
 

@@ -20283,7 +20283,7 @@ var require_layer = __commonJS({
         next(err);
       }
     };
-    Layer.prototype.handleRequest = function handleRequest2(req, res, next) {
+    Layer.prototype.handleRequest = function handleRequest(req, res, next) {
       const fn = this.handle;
       if (fn.length > 3) {
         return next();
@@ -27926,7 +27926,17 @@ var require_multistream = __commonJS({
 // ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
 var require_pino = __commonJS({
   "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports, module) {
-    "use strict";
+    function pinoBundlerAbsolutePath(p) {
+      try {
+        const path = __require("path");
+        const outputDir = "C:\\Users\\tught\\AppData\\Local\\Temp\\sip-vercel-api-1780305159155\\out";
+        return path.resolve(outputDir, p.replace(/^\.\//, ""));
+      } catch (e) {
+        const f = new Function("p", "return new URL(p, import.meta.url).pathname");
+        return f(p);
+      }
+    }
+    globalThis.__bundlerPathsOverrides = { ...globalThis.__bundlerPathsOverrides || {}, "thread-stream-worker": pinoBundlerAbsolutePath("./thread-stream-worker.js"), "pino-worker": pinoBundlerAbsolutePath("./pino-worker.js"), "pino/file": pinoBundlerAbsolutePath("./pino-file.js"), "pino-pretty": pinoBundlerAbsolutePath("./pino-pretty.js") };
     var os = __require("node:os");
     var stdSerializers = require_pino_std_serializers();
     var caller = require_caller();
@@ -37496,7 +37506,7 @@ router2.post("/ai/chat", async (req, res) => {
   const openaiModel = model === "gpt-5.5" ? "gpt-5.5" : "gpt-5.4-mini";
   const bodyStr = JSON.stringify({
     model: openaiModel,
-    max_completion_tokens: max_completion_tokens ?? 8192,
+    max_completion_tokens: max_completion_tokens ?? 1e3,
     messages
   });
   const MAX_RETRIES = 3;
@@ -44522,6 +44532,7 @@ __export(schema_exports, {
   companyManuals: () => companyManuals,
   departmentProfiles: () => departmentProfiles,
   doctors: () => doctors,
+  externalCasePatterns: () => externalCasePatterns,
   goldenSnippets: () => goldenSnippets,
   hospitalProfiles: () => hospitalProfiles,
   visitLogFeedbackEvents: () => visitLogFeedbackEvents,
@@ -44583,6 +44594,18 @@ var aiGenerationPreferences = pgTable("ai_generation_preferences", {
   confidence: integer("confidence").notNull().default(0),
   summary: text("summary").notNull().default(""),
   updatedAt: timestamp("updated_at").notNull().defaultNow()
+});
+var externalCasePatterns = pgTable("external_case_patterns", {
+  id: varchar("id", { length: 100 }).primaryKey(),
+  department: varchar("department", { length: 200 }).notNull().default(""),
+  product: varchar("product", { length: 200 }).notNull().default(""),
+  patientGroup: text("patient_group").notNull().default(""),
+  detailAxis: text("detail_axis").notNull().default(""),
+  reactionPattern: text("reaction_pattern").notNull().default(""),
+  nextAction: text("next_action").notNull().default(""),
+  sourceSummary: text("source_summary").notNull().default(""),
+  confidence: integer("confidence").notNull().default(60),
+  createdAt: timestamp("created_at").notNull().defaultNow()
 });
 var goldenSnippets = pgTable("golden_snippets", {
   id: varchar("id", { length: 100 }).primaryKey(),
@@ -44738,6 +44761,20 @@ function prepPreference(v) {
     updatedAt: toDate(v.updatedAt ?? v.updated_at)
   };
 }
+function prepExternalCasePattern(v) {
+  return {
+    id: v.id,
+    department: v.department ?? "",
+    product: normalizeSnippetProduct(v.product || ""),
+    patientGroup: v.patientGroup ?? v.patient_group ?? "",
+    detailAxis: v.detailAxis ?? v.detail_axis ?? "",
+    reactionPattern: v.reactionPattern ?? v.reaction_pattern ?? "",
+    nextAction: v.nextAction ?? v.next_action ?? "",
+    sourceSummary: v.sourceSummary ?? v.source_summary ?? "",
+    confidence: Math.max(0, Math.min(100, Number(v.confidence ?? 60) || 60)),
+    createdAt: toDate(v.createdAt ?? v.created_at)
+  };
+}
 function prepSnippet(s) {
   return {
     id: s.id,
@@ -44837,11 +44874,6 @@ function snippetDetailSimilarity(a, b) {
   if (normalizeSnippetProduct(a.product) !== normalizeSnippetProduct(b.product)) return 0;
   const aKeys = getSnippetMeaningKeys(a);
   const bKeys = getSnippetMeaningKeys(b);
-  if (aKeys.size > 0 && bKeys.size > 0) {
-    for (const key of aKeys) {
-      if (bKeys.has(key)) return 1;
-    }
-  }
   const aTokens = getSnippetDetailTokens(a);
   const bTokens = getSnippetDetailTokens(b);
   const union2 = /* @__PURE__ */ new Set([...aTokens, ...bTokens]);
@@ -44851,6 +44883,11 @@ function snippetDetailSimilarity(a, b) {
   }
   const tokenScore = union2.size ? intersection / union2.size : 0;
   const textScore = snippetNgramSimilarity(`${a.content} ${a.context}`, `${b.content} ${b.context}`);
+  const sharedKeys = [...aKeys].filter((key) => bKeys.has(key));
+  if (sharedKeys.length >= 2) return 1;
+  if (sharedKeys.length === 1 && Math.max(tokenScore, textScore) >= 0.46) {
+    return Math.max(0.7, tokenScore, textScore);
+  }
   return Math.max(tokenScore, textScore);
 }
 function prepHospital(h) {
@@ -45040,6 +45077,23 @@ router3.post("/ai-generation-preferences", wrap(async (req, res) => {
   });
   res.json({ ok: true });
 }));
+router3.get("/external-case-patterns", wrap(async (_req, res) => {
+  const all = await db.select().from(externalCasePatterns);
+  res.json(all);
+}));
+router3.post("/external-case-patterns", wrap(async (req, res) => {
+  const data = prepExternalCasePattern(req.body);
+  await db.insert(externalCasePatterns).values(data).onConflictDoUpdate({
+    target: externalCasePatterns.id,
+    set: stripId(data)
+  });
+  res.json({ ok: true });
+}));
+router3.delete("/external-case-patterns/:id", wrap(async (req, res) => {
+  const id = getRouteId(req.params.id);
+  await db.delete(externalCasePatterns).where(eq(externalCasePatterns.id, id));
+  res.json({ ok: true });
+}));
 router3.get("/snippets", wrap(async (_req, res) => {
   const all = await db.select().from(goldenSnippets);
   res.json(all);
@@ -45132,11 +45186,12 @@ router3.delete("/manuals/:id", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 router3.post("/export", wrap(async (_req, res) => {
-  const [allDoctors, allVisitLogs, allFeedbackEvents, allPreferences, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
+  const [allDoctors, allVisitLogs, allFeedbackEvents, allPreferences, allExternalCasePatterns, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
     db.select().from(doctors),
     db.select().from(visitLogs),
     db.select().from(visitLogFeedbackEvents),
     db.select().from(aiGenerationPreferences),
+    db.select().from(externalCasePatterns),
     db.select().from(goldenSnippets),
     db.select().from(hospitalProfiles),
     db.select().from(departmentProfiles),
@@ -45147,6 +45202,7 @@ router3.post("/export", wrap(async (_req, res) => {
     visitLogs: allVisitLogs,
     visitLogFeedbackEvents: allFeedbackEvents,
     aiGenerationPreferences: allPreferences,
+    externalCasePatterns: allExternalCasePatterns,
     snippets: allSnippets,
     hospitals: allHospitals,
     departments: allDepartments,
@@ -45194,6 +45250,16 @@ router3.post("/import", wrap(async (req, res) => {
         await db.insert(aiGenerationPreferences).values(row).onConflictDoUpdate({ target: aiGenerationPreferences.id, set: { ...stripId(row), updatedAt: /* @__PURE__ */ new Date() } });
       } catch (e) {
         errors.push(`aiGenerationPreference ${item.id}: ${e.message}`);
+      }
+    }
+  }
+  if (data.externalCasePatterns) {
+    for (const item of data.externalCasePatterns) {
+      try {
+        const row = prepExternalCasePattern(item);
+        await db.insert(externalCasePatterns).values(row).onConflictDoUpdate({ target: externalCasePatterns.id, set: stripId(row) });
+      } catch (e) {
+        errors.push(`externalCasePattern ${item.id}: ${e.message}`);
       }
     }
   }
@@ -45368,6 +45434,20 @@ async function ensureDatabaseSchema() {
     );
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS external_case_patterns (
+      id varchar(100) PRIMARY KEY,
+      department varchar(200) NOT NULL DEFAULT '',
+      product varchar(200) NOT NULL DEFAULT '',
+      patient_group text NOT NULL DEFAULT '',
+      detail_axis text NOT NULL DEFAULT '',
+      reaction_pattern text NOT NULL DEFAULT '',
+      next_action text NOT NULL DEFAULT '',
+      source_summary text NOT NULL DEFAULT '',
+      confidence integer NOT NULL DEFAULT 60,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS golden_snippets (
       id varchar(100) PRIMARY KEY,
       content text NOT NULL,
@@ -45450,17 +45530,16 @@ async function runDataMigrations() {
   }
 }
 
-// ../sales-intelligence/api/[...path].ts
+// C:/Users/tught/AppData/Local/Temp/sip-vercel-api-1780305159155/entry.ts
 var config = { maxDuration: 60 };
 var readyPromise;
-var handleRequest = app_default;
 function ensureReady() {
   readyPromise ??= runDataMigrations();
   return readyPromise;
 }
 async function handler(req, res) {
   await ensureReady();
-  handleRequest(req, res);
+  app_default(req, res);
 }
 export {
   config,

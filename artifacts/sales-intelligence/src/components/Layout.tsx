@@ -13,6 +13,7 @@ import {
   Brain,
   FolderInput,
   ClipboardList,
+  DatabaseZap,
   Package,
   Menu,
   X,
@@ -34,6 +35,7 @@ const navGroups = [
       { href: "/doctors", label: "교수 프로파일", icon: Users },
       { href: "/products", label: "제품 정보 & 특장점", icon: Package },
       { href: "/snippets", label: "핵심 멘트 라이브러리", icon: BookOpen },
+      { href: "/external-cases", label: "외부 사례 학습", icon: DatabaseZap },
     ],
   },
   {

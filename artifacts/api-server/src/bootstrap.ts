@@ -71,6 +71,21 @@ export async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS external_case_patterns (
+      id varchar(100) PRIMARY KEY,
+      department varchar(200) NOT NULL DEFAULT '',
+      product varchar(200) NOT NULL DEFAULT '',
+      patient_group text NOT NULL DEFAULT '',
+      detail_axis text NOT NULL DEFAULT '',
+      reaction_pattern text NOT NULL DEFAULT '',
+      next_action text NOT NULL DEFAULT '',
+      source_summary text NOT NULL DEFAULT '',
+      confidence integer NOT NULL DEFAULT 60,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS golden_snippets (
       id varchar(100) PRIMARY KEY,
       content text NOT NULL,

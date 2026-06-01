@@ -232,6 +232,8 @@ const pipelineSource = await readFile(pipelinePath, 'utf8');
 const aiSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/ai.ts'), 'utf8');
 const storageSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/storage.ts'), 'utf8');
 const dataRouteSource = await readFile(path.join(root, 'artifacts/api-server/src/routes/data.ts'), 'utf8');
+const contextSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/context.ts'), 'utf8');
+const externalCasesPageSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/pages/ExternalCasesPage.tsx'), 'utf8');
 assert(
   plannerSource.includes('hasDailyObFerinject') && plannerSource.includes('산부인과 페린젝트'),
   'planner는 하루 1건 산부인과 페린젝트 보장 규칙을 포함해야 합니다.'
@@ -283,6 +285,36 @@ assert(
     aiSource.includes('전체 후보') &&
     aiSource.includes('강릉아산과 원주세브란스 양쪽 교수들을 모두 자동생성 후보로 같이 고려'),
   '분석과 자동생성은 같은 진료과가 여러 병원에 있으면 양쪽을 모두 후보로 봐야 합니다.'
+);
+assert(
+  aiSource.includes('analyzeExternalCasePatterns') &&
+    aiSource.includes('문장 복사 금지') &&
+    aiSource.includes('햅시딘 상승과 경구용철분제 흡수 저하'),
+  '외부 사례 분석은 원문 복사가 아니라 종양내과/페린젝트 의미 패턴 추출을 포함해야 합니다.'
+);
+assert(
+  contextSource.includes('externalCasePatternStorage.getForGeneration') &&
+    contextSource.includes('manualRawNotes') &&
+    contextSource.includes('externalCasePatterns'),
+  'context 단계는 자동생성에서만 외부 사례 패턴을 읽고 메모편집 원문을 덮어쓰면 안 됩니다.'
+);
+assert(
+  plannerSource.includes('externalCandidates') &&
+    plannerSource.includes('externalPatternBonus') &&
+    plannerSource.includes('confidence'),
+  'planner는 외부 사례 후보와 confidence 보너스를 생성 후보 평가에 반영해야 합니다.'
+);
+assert(
+  storageSource.includes('externalCasePatternStorage') &&
+    storageSource.includes('isSimilarExternalCase') &&
+    dataRouteSource.includes('/external-case-patterns'),
+  '외부 사례 패턴은 storage/API에 저장되고 의미 중복 저장을 막아야 합니다.'
+);
+assert(
+  externalCasesPageSource.includes('외부 사례 학습') &&
+    externalCasesPageSource.includes('분석하기') &&
+    externalCasesPageSource.includes('원문은 저장하지 않고'),
+  '외부 사례 학습 페이지는 붙여넣기 분석과 원문 미저장 안내를 제공해야 합니다.'
 );
 
 console.log('pipeline cases passed');

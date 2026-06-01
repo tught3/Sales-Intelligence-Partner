@@ -5,6 +5,7 @@ import {
   visitLogs,
   visitLogFeedbackEvents,
   aiGenerationPreferences,
+  externalCasePatterns,
   goldenSnippets,
   hospitalProfiles,
   departmentProfiles,
@@ -115,6 +116,21 @@ function prepPreference(v: any) {
     confidence: Number(v.confidence ?? v.confidence ?? 0) || 0,
     summary: v.summary ?? "",
     updatedAt: toDate(v.updatedAt ?? v.updated_at),
+  };
+}
+
+function prepExternalCasePattern(v: any) {
+  return {
+    id: v.id,
+    department: v.department ?? "",
+    product: normalizeSnippetProduct(v.product || ""),
+    patientGroup: v.patientGroup ?? v.patient_group ?? "",
+    detailAxis: v.detailAxis ?? v.detail_axis ?? "",
+    reactionPattern: v.reactionPattern ?? v.reaction_pattern ?? "",
+    nextAction: v.nextAction ?? v.next_action ?? "",
+    sourceSummary: v.sourceSummary ?? v.source_summary ?? "",
+    confidence: Math.max(0, Math.min(100, Number(v.confidence ?? 60) || 60)),
+    createdAt: toDate(v.createdAt ?? v.created_at),
   };
 }
 
@@ -476,6 +492,26 @@ router.post("/ai-generation-preferences", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+router.get("/external-case-patterns", wrap(async (_req, res) => {
+  const all = await db.select().from(externalCasePatterns);
+  res.json(all);
+}));
+
+router.post("/external-case-patterns", wrap(async (req, res) => {
+  const data = prepExternalCasePattern(req.body);
+  await db.insert(externalCasePatterns).values(data).onConflictDoUpdate({
+    target: externalCasePatterns.id,
+    set: stripId(data),
+  });
+  res.json({ ok: true });
+}));
+
+router.delete("/external-case-patterns/:id", wrap(async (req, res) => {
+  const id = getRouteId(req.params.id);
+  await db.delete(externalCasePatterns).where(eq(externalCasePatterns.id, id));
+  res.json({ ok: true });
+}));
+
 router.get("/snippets", wrap(async (_req, res) => {
   const all = await db.select().from(goldenSnippets);
   res.json(all);
@@ -580,11 +616,12 @@ router.delete("/manuals/:id", wrap(async (req, res) => {
 }));
 
 router.post("/export", wrap(async (_req, res) => {
-  const [allDoctors, allVisitLogs, allFeedbackEvents, allPreferences, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
+  const [allDoctors, allVisitLogs, allFeedbackEvents, allPreferences, allExternalCasePatterns, allSnippets, allHospitals, allDepartments, allManuals] = await Promise.all([
     db.select().from(doctors),
     db.select().from(visitLogs),
     db.select().from(visitLogFeedbackEvents),
     db.select().from(aiGenerationPreferences),
+    db.select().from(externalCasePatterns),
     db.select().from(goldenSnippets),
     db.select().from(hospitalProfiles),
     db.select().from(departmentProfiles),
@@ -595,6 +632,7 @@ router.post("/export", wrap(async (_req, res) => {
     visitLogs: allVisitLogs,
     visitLogFeedbackEvents: allFeedbackEvents,
     aiGenerationPreferences: allPreferences,
+    externalCasePatterns: allExternalCasePatterns,
     snippets: allSnippets,
     hospitals: allHospitals,
     departments: allDepartments,
@@ -636,6 +674,14 @@ router.post("/import", wrap(async (req, res) => {
         const row = prepPreference(item);
         await db.insert(aiGenerationPreferences).values(row).onConflictDoUpdate({ target: aiGenerationPreferences.id, set: { ...stripId(row), updatedAt: new Date() } });
       } catch (e: any) { errors.push(`aiGenerationPreference ${item.id}: ${e.message}`); }
+    }
+  }
+  if (data.externalCasePatterns) {
+    for (const item of data.externalCasePatterns) {
+      try {
+        const row = prepExternalCasePattern(item);
+        await db.insert(externalCasePatterns).values(row).onConflictDoUpdate({ target: externalCasePatterns.id, set: stripId(row) });
+      } catch (e: any) { errors.push(`externalCasePattern ${item.id}: ${e.message}`); }
     }
   }
   if (data.snippets) {

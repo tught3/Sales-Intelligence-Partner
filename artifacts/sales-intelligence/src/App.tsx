@@ -13,6 +13,7 @@ const VisitLogPage = lazy(() => import("@/pages/VisitLogPage"));
 const VisitLogHistoryPage = lazy(() => import("@/pages/VisitLogHistoryPage"));
 const ProductsPage = lazy(() => import("@/pages/ProductsPage"));
 const SnippetsPage = lazy(() => import("@/pages/SnippetsPage"));
+const ExternalCasesPage = lazy(() => import("@/pages/ExternalCasesPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const BulkImportPage = lazy(() => import("@/pages/BulkImportPage"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -31,6 +32,7 @@ function Router() {
           <Route path="/visit-log-history" component={VisitLogHistoryPage} />
           <Route path="/products" component={ProductsPage} />
           <Route path="/snippets" component={SnippetsPage} />
+          <Route path="/external-cases" component={ExternalCasesPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/bulk-import" component={BulkImportPage} />
           <Route component={NotFound} />

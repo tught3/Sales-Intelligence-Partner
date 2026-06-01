@@ -60,6 +60,19 @@ export interface AiGenerationPreference {
   updatedAt: string;
 }
 
+export interface ExternalCasePattern {
+  id: string;
+  department: string;
+  product: string;
+  patientGroup: string;
+  detailAxis: string;
+  reactionPattern: string;
+  nextAction: string;
+  sourceSummary: string;
+  confidence: number;
+  createdAt: string;
+}
+
 export interface Doctor {
   id: string;
   name: string;
@@ -125,6 +138,7 @@ const cache: {
   visitLogs: VisitLog[];
   feedbackEvents: VisitLogFeedbackEvent[];
   preferences: AiGenerationPreference[];
+  externalCasePatterns: ExternalCasePattern[];
   snippets: GoldenSnippet[];
   manuals: CompanyManual[];
   loaded: boolean;
@@ -133,6 +147,7 @@ const cache: {
   visitLogs: [],
   feedbackEvents: [],
   preferences: [],
+  externalCasePatterns: [],
   snippets: [],
   manuals: [],
   loaded: false,
@@ -144,6 +159,7 @@ function serializeCache() {
     visitLogs: cache.visitLogs,
     feedbackEvents: cache.feedbackEvents,
     preferences: cache.preferences,
+    externalCasePatterns: cache.externalCasePatterns,
     snippets: cache.snippets,
     manuals: cache.manuals,
     savedAt: new Date().toISOString(),
@@ -167,6 +183,7 @@ function loadLocalCache(): boolean {
     cache.visitLogs = (data.visitLogs || []).map(normalizeVisitLog);
     cache.feedbackEvents = (data.feedbackEvents || data.visitLogFeedbackEvents || []).map(normalizeFeedbackEvent);
     cache.preferences = (data.preferences || data.aiGenerationPreferences || []).map(normalizePreference);
+    cache.externalCasePatterns = (data.externalCasePatterns || data.external_case_patterns || []).map(normalizeExternalCasePattern);
     cache.snippets = (data.snippets || []).map(normalizeSnippet);
     cache.manuals = (data.manuals || []).map(normalizeManual);
     return true;
@@ -397,6 +414,21 @@ function normalizePreference(v: any): AiGenerationPreference {
     confidence: Number(v.confidence ?? 0) || 0,
     summary: v.summary ?? '',
     updatedAt: toISOStr(v.updatedAt ?? v.updated_at),
+  };
+}
+
+function normalizeExternalCasePattern(v: any): ExternalCasePattern {
+  return {
+    id: v.id,
+    department: v.department ?? '',
+    product: normalizeSnippetProduct(v.product ?? ''),
+    patientGroup: v.patientGroup ?? v.patient_group ?? '',
+    detailAxis: v.detailAxis ?? v.detail_axis ?? '',
+    reactionPattern: v.reactionPattern ?? v.reaction_pattern ?? '',
+    nextAction: v.nextAction ?? v.next_action ?? '',
+    sourceSummary: v.sourceSummary ?? v.source_summary ?? '',
+    confidence: Math.max(0, Math.min(100, Number(v.confidence ?? 60) || 60)),
+    createdAt: toISOStr(v.createdAt ?? v.created_at),
   };
 }
 
@@ -635,11 +667,12 @@ async function migrateConversationHistoryToVisitLogs(): Promise<void> {
 export async function initStorage(): Promise<void> {
   const hadLocalCache = hydrateLocalCache();
   try {
-    const [docs, logs, feedback, prefs, snips, mans] = await Promise.all([
+    const [docs, logs, feedback, prefs, externalCases, snips, mans] = await Promise.all([
       api('/doctors'),
       api('/visit-logs'),
       api('/visit-log-feedback-events').catch(() => []),
       api('/ai-generation-preferences').catch(() => []),
+      api('/external-case-patterns').catch(() => []),
       api('/snippets'),
       api('/manuals'),
     ]);
@@ -647,6 +680,7 @@ export async function initStorage(): Promise<void> {
     cache.visitLogs = (logs || []).map(normalizeVisitLog);
     cache.feedbackEvents = (feedback || []).map(normalizeFeedbackEvent);
     cache.preferences = mergePreferences((prefs || []).map(normalizePreference), rebuildPreferencesFromEvents());
+    cache.externalCasePatterns = (externalCases || []).map(normalizeExternalCasePattern);
     cache.snippets = (snips || []).map(normalizeSnippet);
     cache.manuals = (mans || []).map(normalizeManual);
     await migrateConversationHistoryToVisitLogs();
@@ -858,6 +892,69 @@ export const preferenceStorage = {
     persistLocalCache();
     syncPreferencesToServer();
     return this.getAll();
+  },
+};
+
+function normalizeExternalCaseComparable(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/경구\s*철분제|경구용\s*철분제제+|oral\s*iron/gi, '경구용철분제')
+    .replace(/더딘|늦는|불충분|부족한|반응\s*부족/g, '반응부족')
+    .replace(/헤모글로빈|혈색소/gi, 'hb')
+    .replace(/[^\p{L}\p{N}%]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function externalCaseSignature(pattern: Pick<ExternalCasePattern, 'department' | 'product' | 'patientGroup' | 'detailAxis'>): string {
+  return [
+    normalizeExternalCaseComparable(pattern.department),
+    normalizeExternalCaseComparable(pattern.product),
+    normalizeExternalCaseComparable(pattern.patientGroup).slice(0, 28),
+    normalizeExternalCaseComparable(pattern.detailAxis).slice(0, 36),
+  ].join('|');
+}
+
+function isSimilarExternalCase(a: ExternalCasePattern, b: ExternalCasePattern): boolean {
+  if (a.id === b.id) return false;
+  if (normalizeExternalCaseComparable(a.department) !== normalizeExternalCaseComparable(b.department)) return false;
+  if (normalizeExternalCaseComparable(a.product) !== normalizeExternalCaseComparable(b.product)) return false;
+  return externalCaseSignature(a) === externalCaseSignature(b) ||
+    normalizeExternalCaseComparable(`${a.patientGroup} ${a.detailAxis}`) === normalizeExternalCaseComparable(`${b.patientGroup} ${b.detailAxis}`);
+}
+
+export const externalCasePatternStorage = {
+  getAll(): ExternalCasePattern[] {
+    return [...cache.externalCasePatterns].sort((a, b) => b.confidence - a.confidence || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  },
+  getForGeneration(department: string, products: string[] = []): ExternalCasePattern[] {
+    const productSet = new Set(products.filter(Boolean));
+    const dept = normalizeExternalCaseComparable(department);
+    return this.getAll()
+      .filter((pattern) => {
+        const sameDept = normalizeExternalCaseComparable(pattern.department) === dept;
+        const sameProduct = productSet.size === 0 || productSet.has(pattern.product);
+        return sameDept && sameProduct;
+      })
+      .slice(0, 8);
+  },
+  save(pattern: ExternalCasePattern): SaveOutcome {
+    const normalized = normalizeExternalCasePattern(pattern);
+    const idx = cache.externalCasePatterns.findIndex((item) => item.id === normalized.id);
+    const duplicate = cache.externalCasePatterns.find((item) => item.id !== normalized.id && isSimilarExternalCase(normalized, item));
+    if (duplicate) {
+      return { saved: false, duplicate: true, message: '이미 비슷한 외부 사례 패턴이 있습니다.' };
+    }
+    if (idx >= 0) cache.externalCasePatterns[idx] = normalized;
+    else cache.externalCasePatterns.push(normalized);
+    persistLocalCache();
+    api('/external-case-patterns', 'POST', normalized).catch(console.error);
+    return { saved: true };
+  },
+  delete(id: string): void {
+    cache.externalCasePatterns = cache.externalCasePatterns.filter((pattern) => pattern.id !== id);
+    persistLocalCache();
+    api(`/external-case-patterns/${id}`, 'DELETE').catch(console.error);
   },
 };
 
