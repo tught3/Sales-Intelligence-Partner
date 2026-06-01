@@ -5,6 +5,7 @@ import path from 'node:path';
 import ts from 'typescript';
 
 const root = process.cwd();
+const externalCasesPath = path.join(root, 'artifacts/sales-intelligence/src/lib/externalCases.ts');
 const detailKeysPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/detailKeys.ts');
 const normalizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/normalizer.ts');
 const validatorPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/validator.ts');
@@ -103,6 +104,31 @@ try {
   );
 } finally {
   await imported.cleanup();
+}
+
+const externalCases = await importTsModule(externalCasesPath, 'externalCases.mjs');
+try {
+  const { extractExternalCasePatternsFromText, buildExternalCasePromptInput } = externalCases.module;
+  const sample = await readFile(path.join(root, '외부참고사항.txt'), 'utf8');
+  const patterns = extractExternalCasePatternsFromText(sample);
+  assert(patterns.length >= 12, '외부참고사항 샘플에서 의미 있는 외부 사례 패턴을 충분히 추출해야 합니다.');
+  assert(
+    patterns.some((p) => p.department === '종양내과' && p.product === '페린젝트' && /경구용철분제|GI|흡수/.test(`${p.patientGroup} ${p.detailAxis}`)),
+    '종양내과 페린젝트 암환자/경구용철분제 한계 패턴을 추출해야 합니다.'
+  );
+  assert(
+    patterns.some((p) => p.department === '산부인과' && p.product === '페린젝트' && /산후|부인과|철결핍|수술/.test(p.patientGroup)),
+    'HER 캠페인 같은 표현은 산부인과 빈혈 환자 패턴으로 변환되어야 합니다.'
+  );
+  assert(
+    patterns.some((p) => p.product === '위너프에이플러스' && /영양|고단백|아미노산/.test(`${p.patientGroup} ${p.detailAxis}`)),
+    '위너프 계열 참고사항은 위너프에이플러스 영양 디테일 패턴으로 정규화되어야 합니다.'
+  );
+  const promptInput = buildExternalCasePromptInput(sample);
+  assert(!/^\s*1\.\s*1\./m.test(promptInput), '전처리 후보에는 의미 없는 중첩 번호가 남으면 안 됩니다.');
+  assert(!/백만/.test(promptInput), '전처리 후보에는 내정가/금액 노이즈가 남으면 안 됩니다.');
+} finally {
+  await externalCases.cleanup();
 }
 
 const normalizer = await importVisitGenerationCjs('normalizer.js');
@@ -313,7 +339,7 @@ assert(
 assert(
   externalCasesPageSource.includes('외부 사례 학습') &&
     externalCasesPageSource.includes('분석하기') &&
-    externalCasesPageSource.includes('원문은 저장하지 않고'),
+    externalCasesPageSource.includes('원문은 저장하지 않습니다'),
   '외부 사례 학습 페이지는 붙여넣기 분석과 원문 미저장 안내를 제공해야 합니다.'
 );
 

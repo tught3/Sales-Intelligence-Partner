@@ -1,5 +1,13 @@
 ﻿import type { Doctor, VisitLog } from './storage';
 import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, preferenceStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
+import {
+  buildExternalCasePromptInput,
+  extractExternalCasePatternsFromText,
+  mergeExternalCasePatterns,
+  normalizeExternalCaseDepartment,
+  normalizeExternalCaseProduct,
+  type ExternalCasePatternDraft,
+} from './externalCases';
 import { runVisitGenerationPipeline } from './visit-generation/pipeline';
 import { extractReactionKeys as extractVisitReactionKeys } from './visit-generation/detailKeys';
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
@@ -171,83 +179,23 @@ ${rawText}
   return callAI(system, prompt);
 }
 
-export type ExternalCasePatternDraft = {
-  department: string;
-  product: string;
-  patientGroup: string;
-  detailAxis: string;
-  reactionPattern: string;
-  nextAction: string;
-  sourceSummary: string;
-  confidence: number;
-};
-
-function normalizeExternalCaseProduct(product: string): string {
-  const compact = product.replace(/\s+/g, '');
-  if (compact.includes('위너프에이플러스')) return '위너프에이플러스';
-  if (compact.includes('페린젝트')) return '페린젝트';
-  return '';
-}
-
-function normalizeExternalCaseDepartment(department: string): string {
-  const compact = department.replace(/\s+/g, '');
-  if (/혈액종양|종양혈액/.test(compact)) return '혈액종양내과';
-  if (/종양/.test(compact)) return '종양내과';
-  if (/산부인과|산과|부인과/.test(compact)) return '산부인과';
-  if (/소화기/.test(compact)) return '소화기내과';
-  if (/호흡기/.test(compact)) return '호흡기내과';
-  if (/정형/.test(compact)) return '정형외과';
-  if (/흉부/.test(compact)) return '흉부외과';
-  if (/신경외과/.test(compact)) return '신경외과';
-  if (/외과/.test(compact)) return '외과';
-  if (/중환자/.test(compact)) return '중환자의학과';
-  return department.trim();
-}
-
-function fallbackExternalCasePatterns(rawText: string): ExternalCasePatternDraft[] {
-  const text = rawText.replace(/\s+/g, ' ').trim();
-  const drafts: ExternalCasePatternDraft[] = [];
-  const add = (draft: ExternalCasePatternDraft) => {
-    if (!draft.department || !draft.product || !draft.patientGroup || !draft.detailAxis) return;
-    drafts.push(draft);
-  };
-
-  if (/종양|암|항암|햅시딘/i.test(text) && /페린젝트|철분|빈혈/i.test(text)) {
-    add({
-      department: '종양내과',
-      product: '페린젝트',
-      patientGroup: '항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈이 오래 가는 환자',
-      detailAxis: '페린젝트의 1회 투여와 Hb 회복 근거',
-      reactionPattern: '경구용철분제로 회복이 더딘 암환자에서는 참고하겠다는 의견',
-      nextAction: '항암 전후 빈혈에서 급여 기준과 실제 적용 가능 환자 확인',
-      sourceSummary: '종양내과 암환자 빈혈에서 경구용철분제 한계와 페린젝트 활용 포인트 추출',
-      confidence: 86,
-    });
-  }
-  if (/산후|분만|부인과|산부인과|제왕절개/.test(text) && /페린젝트|빈혈|Hb/i.test(text)) {
-    add({
-      department: '산부인과',
-      product: '페린젝트',
-      patientGroup: '산후 빈혈이나 부인과 수술 전후 Hb 회복을 추적 중인 환자',
-      detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
-      reactionPattern: '외래 추적이 부담인 환자에서는 편의성을 인정하신 것으로 보임',
-      nextAction: '산후 외래나 수술 전후 회복기 환자에서 적용 가능 케이스 확인',
-      sourceSummary: '산부인과 빈혈 환자에서 페린젝트 1회 투여와 Hb 회복 포인트 추출',
-      confidence: 80,
-    });
-  }
-  return drafts;
-}
-
 export async function analyzeExternalCasePatterns(rawText: string): Promise<ExternalCasePatternDraft[]> {
+  const ruleDrafts = extractExternalCasePatternsFromText(rawText);
+  const cleanedInput = buildExternalCasePromptInput(rawText);
   const system = `당신은 JW중외제약 MR 방문일지 사례를 구조화하는 분석 AI입니다.
-원문 문장을 베끼지 말고 진료과, 품목, 환자군, 디테일 포인트, 교수 반응, 다음 액션만 추출합니다.`;
-  const prompt = `아래 여러 방문일지 예시에서 구조화 가능한 패턴만 JSON 배열로 추출하세요.
+원문 문장을 베끼지 말고 진료과, 품목, 환자군, 디테일 포인트, 교수 반응, 다음 액션만 추출합니다.
+병원명, 교수명, 번호, 금액, 심포지엄, 학회, 제품설명회, 모객, 참석, 서베이는 저장 대상이 아닙니다.`;
+  const prompt = `아래 방문일지 모음은 다른 병원/다른 교수 사례가 섞인 지저분한 참고 자료입니다.
+그대로 요약하지 말고, 우리 자동생성에 쓸 수 있는 "진료과별 제품 디테일 패턴"만 JSON 배열로 추출하세요.
 
 규칙:
 - 원문 문장 복사 금지. 내용 의미만 짧게 재구성.
-- department가 불명확하면 제외.
+- department가 불명확하거나 제품 디테일이 없는 항목은 제외.
 - product는 위너프에이플러스 또는 페린젝트만 허용.
+- 위너프, 위너프 241, 위너프 1438, 위너프f는 자동생성 재료에서는 위너프에이플러스로 정규화.
+- 페리 제형은 페린젝트가 아니라 말초정맥영양 제형 문맥이므로 페린젝트로 오인하지 말 것.
+- 병원명, 교수명, 금액, 일정, 심포지엄, 학회, 제품설명회, 모객, 참석 여부, 서베이는 버리고 환자군/디테일/반응만 남길 것.
+- HER story/캠페인은 그대로 저장하지 말고 산부인과 철결핍/산후 빈혈/수술 전후 빈혈 패턴으로만 바꿀 것.
 - 각 항목 필드: department, product, patientGroup, detailAxis, reactionPattern, nextAction, sourceSummary, confidence
 - confidence는 0-100 정수.
 - JSON 배열만 출력.
@@ -256,17 +204,17 @@ export async function analyzeExternalCasePatterns(rawText: string): Promise<Exte
 종양내과 암환자는 햅시딘이 높아 경구용철분제 흡수가 잘 안 되고 GI 트러블도 있어 페린젝트를 설명함
 
 예시 출력:
-[{"department":"종양내과","product":"페린젝트","patientGroup":"항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈이 오래 가는 환자","detailAxis":"페린젝트의 1회 투여와 Hb 회복 근거","reactionPattern":"경구용철분제로 회복이 더딘 암환자에서는 참고하겠다는 의견","nextAction":"항암 전후 빈혈에서 급여 기준과 실제 적용 가능 환자 확인","sourceSummary":"종양내과 암환자 빈혈에서 경구용철분제 한계와 페린젝트 활용 포인트 추출","confidence":86}]
+[{"department":"종양내과","product":"페린젝트","patientGroup":"항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈 조절이 어려운 환자","detailAxis":"페린젝트의 1회 투여와 Hb 회복 근거","reactionPattern":"경구용철분제로 회복이 더딘 암환자에서는 참고하겠다는 의견","nextAction":"항암 전후 빈혈에서 급여 기준과 처방 경험 확인","sourceSummary":"종양내과 암환자 빈혈에서 경구용철분제 한계와 페린젝트 활용 포인트 추출","confidence":86}]
 
-원문:
-${rawText}`;
+전처리된 후보 원문:
+${cleanedInput}`;
 
   try {
     const res = await callVisitLogAI(system, prompt);
     const json = res.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
     const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed)) return fallbackExternalCasePatterns(rawText);
-    return parsed
+    if (!Array.isArray(parsed)) return ruleDrafts;
+    const aiDrafts = parsed
       .map((item): ExternalCasePatternDraft => ({
         department: normalizeExternalCaseDepartment(String(item.department ?? '')),
         product: normalizeExternalCaseProduct(String(item.product ?? '')),
@@ -278,8 +226,9 @@ ${rawText}`;
         confidence: Math.max(0, Math.min(100, Number(item.confidence ?? 60) || 60)),
       }))
       .filter((item) => item.department && item.product && item.patientGroup && item.detailAxis);
+    return mergeExternalCasePatterns(aiDrafts, ruleDrafts);
   } catch {
-    return fallbackExternalCasePatterns(rawText);
+    return ruleDrafts;
   }
 }
 

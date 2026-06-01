@@ -101,7 +101,7 @@ export default function ExternalCasesPage() {
       <div className="mb-5 sm:mb-6">
         <h1 className="text-2xl font-bold text-foreground">외부 사례 학습</h1>
         <p className="text-muted-foreground mt-1">
-          다른 사람이 쓴 일지에서 진료과, 품목, 환자군, 디테일 포인트만 추출해 자동생성 재료로 사용합니다
+          번호, 병원명, 교수명, 금액, 학회 얘기는 버리고 진료과, 품목, 환자군, 디테일 포인트만 추출해 자동생성 재료로 사용합니다
         </p>
       </div>
 
@@ -117,12 +117,12 @@ export default function ExternalCasesPage() {
             <Textarea
               value={rawText}
               onChange={(event) => setRawText(event.target.value)}
-              placeholder="다른 사람들이 쓴 방문일지를 여러 줄로 붙여넣으세요. 원문은 저장하지 않고 분석 후 패턴만 저장합니다."
+              placeholder="다른 사람들이 쓴 방문일지를 그대로 붙여넣으세요. 1. 2. 같은 번호, 다른 병원/교수 이름, 내정가, 심포지엄/학회/제품설명회 문구는 자동으로 제외하고 필요한 패턴만 추출합니다. 원문은 저장하지 않습니다."
               className="min-h-[280px] text-base sm:text-sm"
             />
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-muted-foreground">
-                저장 항목: 진료과, 품목, 환자군, 디테일 포인트, 반응, 다음 액션
+                저장 항목: 진료과, 품목, 환자군, 디테일 포인트, 반응, 다음 액션. 원문 문장은 저장하거나 재사용하지 않습니다.
               </p>
               <Button onClick={() => analyzeAndSave(rawText)} disabled={analyzing || !rawText.trim()} className="gap-2">
                 {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
