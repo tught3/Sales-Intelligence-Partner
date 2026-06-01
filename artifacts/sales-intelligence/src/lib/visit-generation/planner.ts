@@ -87,7 +87,7 @@ const FERINJECT_CANDIDATES: PlanCandidate[] = [
     product: '페린젝트',
     patientGroup: '분만 후 피로감과 빈혈 증상이 남아 외래 추적 중인 환자',
     detailAxis: '페린젝트의 1회 투여 편의성과 시험투여 부담이 적은 점',
-    doctorReaction: '분만 후 외래 재방문이 어려운 환자에서는 편의성은 인정하셨음',
+    doctorReaction: '분만 후 외래 재방문이 어려운 환자에서는 편의성을 인정하신 것으로 보임',
     nextAction: '위너프에이플러스 수술 전후 영양 공급 시 혈당 부담 차이 확인',
     narrativeStyle: '지난 방문 확인형',
     allowedDepartments: ['산부인과', '산과', '부인과'],

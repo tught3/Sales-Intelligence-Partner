@@ -21,6 +21,15 @@ const REACTION_REPLACEMENTS = [
   '처방 전환은 케이스별로 보되 Hb 회복 근거는 참고하겠다는 반응',
 ];
 
+function formatDoctorReactionSentence(reaction: string): string {
+  const cleaned = reaction.trim().replace(/[.。!?]+$/g, '');
+  if (/인정하셨음$/.test(cleaned)) {
+    return cleaned.replace(/인정하셨음$/, '인정하신 것으로 보임');
+  }
+  if (/보임$/.test(cleaned)) return cleaned;
+  return `${cleaned} 보임`;
+}
+
 function limit(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max - 3).replace(/[,\s]+$/g, '') + '...';
@@ -61,7 +70,7 @@ function safePlanForDepartment(plan: DetailKey, ctx: VisitContext): DetailKey {
       ...plan,
       patientGroup: '분만 후 빈혈이나 부인과 수술 전후 Hb 회복을 추적 중인 환자',
       detailAxis: '페린젝트의 1회 투여 편의성과 시험투여 부담이 적은 점',
-      doctorReaction: '반복 내원이 어려운 산후 환자나 수술 전후 빈혈 환자에서는 편의성을 인정하셨음',
+      doctorReaction: '반복 내원이 어려운 산후 환자나 수술 전후 빈혈 환자에서는 편의성을 인정하신 것으로 보임',
       nextAction: '위너프에이플러스 부인과 수술 전후 영양 공급 시 혈당 부담 차이 확인',
     };
   }
@@ -97,7 +106,7 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
   const formattedLog = limit(
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${doctorReaction} 보임. 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황과 연결해 디테일 진행함. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. 다음 처방은 진료 흐름에 맞춰 선별해 보겠다는 의견 보임`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);
@@ -110,7 +119,7 @@ export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext):
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
   const formattedLog = limit(
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함. 교수님께서 ${doctorReaction} 보임. 급여와 처방 시점은 차트와 당일 진료 흐름을 보고 판단하겠다는 의견 보임`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. 급여와 처방 시점은 차트와 당일 진료 흐름을 보고 판단하겠다는 의견 보임`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);

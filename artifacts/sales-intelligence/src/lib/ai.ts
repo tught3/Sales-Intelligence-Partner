@@ -1157,6 +1157,9 @@ function getFallbackDetailForProduct(product: string, department: string): strin
     return '철결핍 빈혈에서 1회 투여 편의성과 Hb 회복 근거';
   }
 
+  if (/산부인과|산과|부인과/.test(department)) {
+    return '분만 후 식이 지연이나 수술 전후 회복기에서 단백 보충과 질소균형 유지 차별점';
+  }
   if (/중환자|ICU|호흡기|외과|간담|흉부|신경/.test(department)) {
     return '중증 환자 영양에서 아미노산 25% 증가와 포도당 부담 감소 차별점';
   }
@@ -1175,6 +1178,9 @@ function buildDetailedVisitLog(product: string, department: string): string {
   const detail = getFallbackDetailForProduct(product, department);
   if (product === '페린젝트') {
     return `${product}의 ${detail}을 외래 빈혈 케이스와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 처방 상황을 확인해보겠다는 의견 보임`;
+  }
+  if (/산부인과|산과|부인과/.test(department)) {
+    return `${product}의 ${detail}을 분만 후 식이 지연이나 수술 전후 회복기 환자와 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 같이 볼 수 있다는 점은 공감하셨고, 실제 적용은 회복기 환자부터 살펴보겠다는 의견 보임`;
   }
   return `${product}의 ${detail}을 중환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 병동 처방은 케이스별로 보겠다는 의견 보임`;
 }
@@ -1291,7 +1297,7 @@ function buildDiversifiedVisitLog(
     {
       product: '위너프에이플러스',
       keys: ['protein-nitrogen'],
-      text: '위너프에이플러스의 단백 보충과 질소균형 유지 측면을 중증 환자 영양 관리와 연결해 디테일 진행함. 교수님께서 수술 후 회복기 환자에서 영양 공급 반응을 확인해볼 수 있겠다는 의견 보임',
+      text: '위너프에이플러스의 단백 보충과 질소균형 유지 측면을 분만 후 식이 지연이나 수술 전후 회복기 영양 보충과 연결해 디테일 진행함. 교수님께서 회복기 환자에서 영양 공급 반응을 확인해볼 수 있겠다는 의견 보임',
     },
     {
       product: '위너프에이플러스',
