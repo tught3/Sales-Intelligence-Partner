@@ -148,6 +148,11 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     ...ctx.pastLogs.slice(0, 3).flatMap((log) => [log.formattedLog, log.nextStrategy]),
     ...(ctx.manualRawNotes ? [ctx.manualRawNotes] : []),
   ]);
+  const latestStrategy = ctx.recentStrategies[0]?.trim() ?? '';
+  const carryoverKeys = latestStrategy ? extractKeys(latestStrategy) : [];
+  const carryoverProduct = latestStrategy
+    ? ['위너프에이플러스', '페린젝트'].find((product) => latestStrategy.includes(product))
+    : undefined;
   const batchKeys = new Set(ctx.batchUsedDetailKeys);
   const recentKeySet = new Set(recentKeys);
 
@@ -188,13 +193,22 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4;
     const aBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length;
     const bBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length;
-    return (aPenalty - aBonus) - (bPenalty - bBonus);
+    const aCarryoverBonus =
+      carryoverKeys.filter((key) => aKeys.includes(key)).length * 5 +
+      (carryoverProduct && a.product === carryoverProduct ? 3 : 0);
+    const bCarryoverBonus =
+      carryoverKeys.filter((key) => bKeys.includes(key)).length * 5 +
+      (carryoverProduct && b.product === carryoverProduct ? 3 : 0);
+    return (aPenalty - aBonus - aCarryoverBonus) - (bPenalty - bBonus - bCarryoverBonus);
   });
 
-  const selected = ranked[0] ?? candidatesFor({ ...ctx, availableProducts: ['페린젝트', '위너프에이플러스'] })[0] ?? FERINJECT_CANDIDATES[0];
+  const selected = ranked[0] ?? candidatesFor({ ...ctx, availableProducts: ['위너프에이플러스', '페린젝트'] })[0] ?? FERINJECT_CANDIDATES[0];
+  const carryoverNote = latestStrategy
+    ? `; 최근 다음방문전략(${latestStrategy.slice(0, 60)})과 이어질 수 있는 후보를 우선 반영`
+    : '';
   return {
     ...withUnusedReaction(selected, ctx),
-    selectionReason: `과=${ctx.doctor.department}, 최근키=${recentKeys.join(', ') || '없음'}, 배치키=${ctx.batchUsedDetailKeys.join(', ') || '없음'} 기준으로 중복이 가장 적은 조합 선택`,
+    selectionReason: `과 ${ctx.doctor.department}, 최근 ${recentKeys.join(', ') || '없음'}, 배치 ${ctx.batchUsedDetailKeys.join(', ') || '없음'} 기준으로 중복을 줄여 조합 선택${carryoverNote}`,
   };
 }
 
