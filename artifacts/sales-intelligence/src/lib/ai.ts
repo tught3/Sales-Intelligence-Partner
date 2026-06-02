@@ -2219,11 +2219,14 @@ ${buildVisitLogRules()}
     nextStrategy = `다음방문시에는 ${prod} 추가 디테일 및 처방 여부 확인할예정`;
   }
 
+  // ★ 저장 전 검토 에이전트
+  const agValidated = await validateAndFixVisitLog(buildSystemPrompt(), fullLog, nextStrategy, doctor, activeProducts, agAllowNewDrugReview, batchAvoidTexts);
+
   return {
     visitDate: today,
     products: products.length > 0 ? products : activeProducts,
-    formattedLog: normalizeBatchRepeatedLanguage(fullLog, batchAvoidTexts),
-    nextStrategy: normalizeBatchRepeatedLanguage(nextStrategy, batchAvoidTexts),
+    formattedLog: normalizeBatchRepeatedLanguage(agValidated.formattedLog, batchAvoidTexts),
+    nextStrategy: normalizeBatchRepeatedLanguage(agValidated.nextStrategy, batchAvoidTexts),
   };
 }
 
@@ -2231,24 +2234,6 @@ function logPipelineTrace(result: { trace?: unknown }) {
   if (import.meta.env.DEV && result.trace) {
     console.debug('[PipelineTrace]', result.trace);
   }
-}
-
-async function reviewVisitLogDraft(
-  draft: { formattedLog: string; nextStrategy: string },
-  doctor: Doctor,
-  activeProducts: string[],
-  allowNewDrugReview: boolean,
-  batchAvoidTexts: string[]
-): Promise<{ formattedLog: string; nextStrategy: string }> {
-  return validateAndFixVisitLog(
-    buildSystemPrompt(),
-    draft.formattedLog,
-    draft.nextStrategy,
-    doctor,
-    activeProducts,
-    allowNewDrugReview,
-    batchAvoidTexts
-  );
 }
 
 async function generateBaseFromExistingFlow(
@@ -2292,16 +2277,9 @@ export async function convertToVisitLog(
     { generateBase: generateBaseFromExistingFlow }
   );
   logPipelineTrace(result);
-  const reviewed = await reviewVisitLogDraft(
-    { formattedLog: result.formattedLog, nextStrategy: result.nextStrategy },
-    doctor,
-    selectedProducts.length > 0 ? selectedProducts : result.products,
-    false,
-    []
-  );
   return {
-    formattedLog: reviewed.formattedLog,
-    nextStrategy: reviewed.nextStrategy,
+    formattedLog: result.formattedLog,
+    nextStrategy: result.nextStrategy,
   };
 }
 
@@ -2322,16 +2300,9 @@ export async function autoGenerateVisitLog(
     { generateBase: generateBaseFromExistingFlow }
   );
   logPipelineTrace(result);
-  const reviewed = await reviewVisitLogDraft(
-    { formattedLog: result.formattedLog, nextStrategy: result.nextStrategy },
-    doctor,
-    result.products.length > 0 ? result.products : selectedProducts,
-    false,
-    batchAvoidTexts
-  );
   return {
-    formattedLog: normalizeBatchRepeatedLanguage(reviewed.formattedLog, batchAvoidTexts),
-    nextStrategy: normalizeBatchRepeatedLanguage(reviewed.nextStrategy, batchAvoidTexts),
+    formattedLog: result.formattedLog,
+    nextStrategy: result.nextStrategy,
     visitDate: result.visitDate,
     products: result.products,
   };
@@ -2442,9 +2413,6 @@ ${strategy}
 ㉝ 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합 사용 금지. 환자 상황과 처방 맥락을 구체적으로 바꿔 쓸 것
 ㉞ 소화기내과에는 "분만", "산후", "산부인과", "부인과", "제왕절개" 맥락 금지. 산부인과에는 "IBD", "크론", "궤양성대장염", "위장관 출혈" 맥락 금지. 과와 맞지 않으면 FAIL
 ㉟ "짧게 드렸고", "간단히 드렸고", "가볍게 드렸고"처럼 지난 방문 내용을 숨기는 연결 금지. 지난 방문을 연결할 때는 반드시 "지난 방문에 [구체 디테일]을 설명드렸고, 교수님께서 [반응/결과]라고 하심" 구조로 바꿀 것
-㊱ 오늘 본문과 다음방문전략이 같은 의미를 반복하거나 같은 축으로 겹치면 FAIL. 어색한 중복이면 다음방문전략을 다른 축으로 수정
-㊲ 문장이 실제 교수 상담처럼 자연스럽고, 과/환자군/품목이 현실적으로 맞는지 검토. 말이 안 되는 조합이면 즉시 수정
-㊳ 메타 설명, 보고서체, 분석체가 남아 있으면 수정. 실제로 교수와 대화한 것처럼 읽히는지 최종 점검
 ${batchAvoidNote}
 
 첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.

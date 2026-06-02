@@ -67,41 +67,6 @@ function generateEditDiff(original: string, edited: string): string {
   return parts.join(' / ');
 }
 
-function stripTrailingSentenceMarks(text: string): string {
-  return text.replace(/[.。!?]+\s*$/g, '').trim();
-}
-
-function joinVisitLogText(formattedLog: string, nextStrategy: string): string {
-  const cleanLog = formattedLog.trim();
-  const cleanStrategy = nextStrategy.trim();
-  if (!cleanStrategy) return cleanLog;
-  const normalizedLog = stripTrailingSentenceMarks(cleanLog);
-  return `${normalizedLog}. ${cleanStrategy}`;
-}
-
-function splitVisitLogText(text: string): { formattedLog: string; nextStrategy: string } {
-  const markers = ['다음방문시에는', '다음번에는', '다음에는'];
-  const matches = markers
-    .map((marker) => {
-      const index = text.indexOf(marker);
-      return index >= 0 ? { index, marker } : null;
-    })
-    .filter((item): item is { index: number; marker: string } => item !== null)
-    .sort((a, b) => a.index - b.index);
-
-  if (matches.length === 0) {
-    return { formattedLog: text.trim(), nextStrategy: '' };
-  }
-
-  const splitIdx = matches[0].index;
-  const formattedLog = stripTrailingSentenceMarks(text.slice(0, splitIdx));
-  const nextStrategy = text.slice(splitIdx).trim();
-  return {
-    formattedLog: formattedLog || text.trim(),
-    nextStrategy,
-  };
-}
-
 export default function VisitLogHistoryPage() {
   const { toast } = useToast();
   const search = useSearch();
@@ -123,7 +88,9 @@ export default function VisitLogHistoryPage() {
       const log = visitLogStorage.getAll().find(l => l.id === editId);
       if (log) {
         setEditingId(editId);
-        const combined = joinVisitLogText(log.formattedLog, log.nextStrategy);
+        const combined = log.nextStrategy
+          ? `${log.formattedLog}\n${log.nextStrategy}`
+          : log.formattedLog;
         setEditText(combined);
       }
     }
@@ -216,7 +183,9 @@ export default function VisitLogHistoryPage() {
   function startEdit(log: VisitLog) {
     setEditingId(log.id);
     // formattedLog + nextStrategy 합쳐서 편집창에 표시 (한 문단으로 복사 가능)
-    const combined = joinVisitLogText(log.formattedLog, log.nextStrategy);
+    const combined = log.nextStrategy
+      ? `${log.formattedLog}\n${log.nextStrategy}`
+      : log.formattedLog;
     setEditText(combined);
   }
 
@@ -228,8 +197,18 @@ export default function VisitLogHistoryPage() {
   function saveEdit(log: VisitLog) {
     const editedText = editText.trim();
 
-    const { formattedLog: newFormattedLog, nextStrategy: newNextStrategy } = splitVisitLogText(editedText);
-    const originalText = joinVisitLogText(log.formattedLog, log.nextStrategy);
+    // 다음방문 문장 분리 (다음방문시에는 / 다음번에는 / 다음에는 으로 시작하는 줄)
+    const lines = editedText.split('\n');
+    const nextMarkers = ['다음방문시에는', '다음번에는', '다음에는'];
+    const splitIdx = lines.findIndex(l => nextMarkers.some(m => l.trim().startsWith(m)));
+    const newFormattedLog = splitIdx > 0
+      ? lines.slice(0, splitIdx).join('\n').trim()
+      : editedText;
+    const newNextStrategy = splitIdx > 0
+      ? lines.slice(splitIdx).join('\n').trim()
+      : '';
+
+    const originalText = log.formattedLog + (log.nextStrategy ? '\n' + log.nextStrategy : '');
     const hint = originalText.trim() !== editedText.trim()
       ? generateEditDiff(originalText, editedText)
       : log.aiEditHint;
@@ -411,7 +390,7 @@ export default function VisitLogHistoryPage() {
                   ) : (
                     <>
                       <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                        {joinVisitLogText(log.formattedLog, log.nextStrategy)}
+                        {log.formattedLog}{log.nextStrategy ? `\n${log.nextStrategy}` : ''}
                       </p>
                     </>
                   )}
