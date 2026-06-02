@@ -1,5 +1,6 @@
 import type { VisitContext } from './context';
-import { collectKeys, extractKeys, extractReactionKeys } from './detailKeys';
+import { collectKeys, extractKeys, extractReactionKeys, similarityRatio } from './detailKeys';
+import type { ExternalCasePattern } from '../storage';
 import type { DetailKey } from './types';
 
 type PlanCandidate = Omit<DetailKey, 'selectionReason'>;
@@ -12,7 +13,131 @@ const REACTION_FALLBACKS = [
   '외래 경과와 차트를 보고 적용 가능 케이스를 다시 보겠다는 반응',
   '수혈 부담을 줄일 수 있는 케이스에서는 검토 여지가 있다는 반응',
   '실제 처방은 환자 추이를 보고 다시 판단하겠다는 의견',
+  '외래 추적이 촘촘한 환자에서는 편의성은 이해하셨다는 반응',
+  '짧은 간격 재방문이 부담되는 환자에서는 고려 가능하다는 의견',
+  '기준이 맞는 환자부터 차트로 보겠다는 반응',
 ];
+
+function hashSeed(...parts: string[]): number {
+  const joined = parts.filter(Boolean).join('|');
+  let hash = 0;
+  for (let i = 0; i < joined.length; i++) {
+    hash = (hash * 31 + joined.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function pickBySeed<T>(values: T[], ...parts: string[]): T {
+  if (values.length === 0) throw new Error('pickBySeed requires values');
+  const seed = hashSeed(...parts);
+  return values[seed % values.length];
+}
+
+function uniqueByText<T extends PlanCandidate>(candidates: T[]): T[] {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = planText(candidate);
+    const compact = key.replace(/\s+/g, ' ').trim().toLowerCase();
+    if (seen.has(compact)) return false;
+    seen.add(compact);
+    return true;
+  });
+}
+
+function inferNarrativeStyle(pattern: ExternalCasePattern, department: string): DetailKey['narrativeStyle'] {
+  const text = `${pattern.sourceSummary} ${pattern.patientGroup} ${pattern.detailAxis} ${pattern.reactionPattern} ${pattern.nextAction} ${department}`;
+  if (/질문|문의|\?/.test(text)) return '교수 질문 답변형';
+  if (/급여|보험|청구/.test(text)) return '급여 기준 재확인형';
+  if (/지난|이전|확인|재확인/.test(text)) return '지난 방문 확인형';
+  if (/처방|사용|경험|적용/.test(text)) return '처방 경험 확인형';
+  return '환자 케이스 연결형';
+}
+
+function externalDetailVariants(pattern: ExternalCasePattern): string[] {
+  if (pattern.product === '페린젝트') {
+    return [
+      pattern.detailAxis || '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+      '페린젝트의 급여 기준과 외래 적용 가능성',
+      '페린젝트의 외래 재방문 부담 감소와 빠른 Hb 회복',
+      '페린젝트의 수혈 부담 감소와 1회 투여 장점',
+      '페린젝트의 경구용철분제 반응 부족 환자에서 적용 근거',
+      '페린젝트의 시험투여 부담이 적은 점과 1회 투여 편의성',
+    ];
+  }
+  if (pattern.product === '위너프에이플러스') {
+    return [
+      pattern.detailAxis || '위너프에이플러스의 아미노산 보충과 단백 공급 이점',
+      '위너프에이플러스의 포도당 부담 감소와 혈당 흐름',
+      '위너프에이플러스의 오메가3 조성과 균형 영양',
+      '위너프에이플러스의 질소균형 유지와 회복기 영양',
+      '위너프에이플러스의 수술 후 식이 지연 환자에서 영양 공급',
+      '위너프에이플러스의 단백 보충과 회복기 식사 진행',
+    ];
+  }
+  return [pattern.detailAxis || `${pattern.product}의 핵심 디테일`];
+}
+
+function externalReactionVariants(pattern: ExternalCasePattern): string[] {
+  return [
+    pattern.reactionPattern || '환자군이 맞으면 차트로 보겠다는 의견',
+    '맞는 케이스에서는 참고해보겠다는 의견',
+    '급여 기준을 보고 처방 가능성을 보겠다는 의견',
+    '실제 적용은 환자 상태를 보고 판단하겠다는 반응',
+    '차트상 조건이 맞으면 검토하겠다는 의견',
+    '환자 추이를 보고 다시 판단하겠다는 반응',
+  ];
+}
+
+function externalNextActionVariants(pattern: ExternalCasePattern): string[] {
+  return [
+    pattern.nextAction || `${pattern.product} 관련 적용 가능 케이스 확인`,
+    `${pattern.product} 사용 경험과 실제 반응 확인`,
+    `${pattern.product} 급여 기준과 처방 가능성 확인`,
+    `${pattern.product} 환자군과 차트상 조건 확인`,
+    `${pattern.product} 다음 방문에서 적용 가능 상황 재확인`,
+  ];
+}
+
+function buildExternalCandidateVariants(pattern: ExternalCasePattern, ctx: VisitContext): PlanCandidate[] {
+  const seed = hashSeed(
+    pattern.id,
+    ctx.doctor.id,
+    ctx.doctor.department || '',
+    String(ctx.batchUsedDetailKeys.length),
+    String(ctx.batchUsedReactionKeys.length)
+  );
+  const detailVariants = externalDetailVariants(pattern);
+  const reactionVariants = externalReactionVariants(pattern);
+  const nextActionVariants = externalNextActionVariants(pattern);
+  const styles: DetailKey['narrativeStyle'][] = [
+    inferNarrativeStyle(pattern, ctx.doctor.department || ''),
+    '환자 케이스 연결형',
+    '처방 경험 확인형',
+    '교수 질문 답변형',
+    '급여 기준 재확인형',
+    '지난 방문 확인형',
+  ];
+
+  const candidateCount = Math.min(3, Math.max(1, detailVariants.length > 1 ? 2 : 1));
+  const variants: PlanCandidate[] = [];
+  for (let i = 0; i < candidateCount; i++) {
+    const offset = seed + i * 17;
+    const detailAxis = detailVariants[offset % detailVariants.length];
+    const reactionPattern = reactionVariants[(offset + 5) % reactionVariants.length];
+    const nextAction = nextActionVariants[(offset + 11) % nextActionVariants.length];
+    const narrativeStyle = styles[(offset + 7) % styles.length];
+    variants.push({
+      product: pattern.product,
+      patientGroup: pattern.patientGroup,
+      detailAxis,
+      doctorReaction: reactionPattern,
+      nextAction,
+      narrativeStyle,
+      allowedDepartments: [pattern.department],
+    });
+  }
+  return uniqueByText(variants);
+}
 
 const WINUF_CANDIDATES: PlanCandidate[] = [
   {
@@ -184,15 +309,7 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
 }
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
-  const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.map((pattern) => ({
-    product: pattern.product,
-    patientGroup: pattern.patientGroup,
-    detailAxis: pattern.detailAxis,
-    doctorReaction: pattern.reactionPattern || '환자군이 맞으면 차트로 보겠다는 의견',
-    nextAction: pattern.nextAction || `${pattern.product} 관련 적용 가능 케이스 확인`,
-    narrativeStyle: '환자 케이스 연결형',
-    allowedDepartments: [pattern.department],
-  }));
+  const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.flatMap((pattern) => buildExternalCandidateVariants(pattern, ctx));
   const all = [...externalCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const manualProducts = ctx.manualRawNotes
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
@@ -225,6 +342,18 @@ function externalPatternBonus(candidate: PlanCandidate, ctx: VisitContext): numb
   );
   if (!matched) return 0;
   return 4 + Math.min(5, Math.max(0, Math.round((matched.confidence || 0) / 20)));
+}
+
+function batchSimilarityPenalty(candidate: PlanCandidate, texts: string[]): number {
+  if (texts.length === 0) return 0;
+  const candidateText = planText(candidate);
+  return texts.reduce((penalty, text) => {
+    const ratio = similarityRatio(candidateText, text);
+    if (ratio >= 0.75) return penalty + 120;
+    if (ratio >= 0.6) return penalty + 60;
+    if (ratio >= 0.45) return penalty + 20;
+    return penalty;
+  }, 0);
 }
 
 export function buildPlan(ctx: VisitContext): DetailKey {
@@ -268,13 +397,15 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       aReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       aKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(a.product) ? 1 : 0) +
-      ctx.learnedForbiddenPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length * 4;
+      ctx.learnedForbiddenPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length * 4 +
+      batchSimilarityPenalty(a, ctx.batchAvoidTexts);
     const bPenalty =
       bKeys.filter((key) => batchKeys.has(key)).length * 10 +
       bReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       bKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(b.product) ? 1 : 0) +
-      ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4;
+      ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4 +
+      batchSimilarityPenalty(b, ctx.batchAvoidTexts);
     const aBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length;
     const bBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length;
     const aCarryoverBonus =

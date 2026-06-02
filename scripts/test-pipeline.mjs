@@ -121,6 +121,10 @@ try {
     '종양 관련 위너프 사례는 종양내과 위너프에이플러스로 짧게 분류되어야 합니다.'
   );
   assert(
+    patterns.some((p) => / - /.test(p.sourceSummary) && /빈혈|영양|Hb|철분|아미노산|포도당|수술/.test(p.sourceSummary)),
+    '외부 사례 sourceSummary는 단순 과/품목 문구가 아니라 의미 키가 드러나야 합니다.'
+  );
+  assert(
     patterns.some((p) => p.department === '산부인과' && p.product === '페린젝트' && /산후|부인과|철결핍|수술/.test(p.patientGroup)),
     'HER 캠페인 같은 표현은 산부인과 빈혈 환자 패턴으로 변환되어야 합니다.'
   );

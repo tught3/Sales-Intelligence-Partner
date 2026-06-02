@@ -205,7 +205,6 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
-  const followUp = selectFollowUpClause(safePlan, ctx);
   const leadIns = [
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}와 연결해 디테일 진행함`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 흐름에 맞춰 설명드림`,
@@ -213,7 +212,7 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle) % leadIns.length];
   const formattedLog = limit(
-    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. ${followUp}`,
+    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);
@@ -225,7 +224,6 @@ export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext):
   if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
-  const followUp = selectFollowUpClause(safePlan, ctx);
   const leadIns = [
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 기준으로 안내함`,
@@ -233,7 +231,7 @@ export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext):
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle, 'validation') % leadIns.length];
   const formattedLog = limit(
-    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. ${followUp}`,
+    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);

@@ -138,6 +138,19 @@ function patientGroupFrom(text: string, department: string, product: string): st
   return '영양 공급량과 단백 보충을 함께 조정해야 하는 환자';
 }
 
+function extractCompactKeywords(text: string): string[] {
+  const tokens = compact(text)
+    .replace(/[()【】\[\]<>]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .filter((token) => !NOISE_RE.test(token))
+    .filter((token) => !/^\d+$/.test(token))
+    .filter((token) => !/(병원|교수|선생님|좌장|연자|학회|심포지엄|설명회|컨퍼런스|내정가|백만|원)$/i.test(token));
+  const preferred = tokens.filter((token) => USEFUL_DETAIL_RE.test(token));
+  return [...new Set((preferred.length > 0 ? preferred : tokens).slice(0, 4))];
+}
+
 function detailAxisFrom(text: string, product: string): string {
   if (product === '페린젝트') {
     if (/gi|트러블|흡수|경구/i.test(text)) return '페린젝트의 1회 투여와 경구용철분제 대비 Hb 회복 근거';
@@ -184,8 +197,10 @@ function nextActionFrom(text: string, department: string, product: string, detai
   return '영양 보충이 필요한 환자에서 처방 상황과 반응 확인';
 }
 
-function sourceSummaryFrom(department: string, product: string, patientGroup: string, detailAxis: string): string {
-  return `${department} ${product} 패턴 요약`;
+function sourceSummaryFrom(department: string, product: string, patientGroup: string, detailAxis: string, chunk: string): string {
+  const keywords = extractCompactKeywords(chunk);
+  const summaryTail = keywords.length > 0 ? ` - ${keywords.join(' / ')}` : '';
+  return `${department} ${product} 패턴 요약${summaryTail}`.trim();
 }
 
 function normalizeComparable(value: string): string {
@@ -237,7 +252,7 @@ export function extractExternalCasePatternsFromText(rawText: string): ExternalCa
       detailAxis,
       reactionPattern: reactionFrom(chunk, department, product),
       nextAction: nextActionFrom(chunk, department, product, detailAxis),
-      sourceSummary: sourceSummaryFrom(department, product, patientGroup, detailAxis),
+      sourceSummary: sourceSummaryFrom(department, product, patientGroup, detailAxis, chunk),
       confidence: NOISE_RE.test(chunk) ? 68 : 78,
     };
   });
