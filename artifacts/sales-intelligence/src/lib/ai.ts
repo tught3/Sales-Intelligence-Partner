@@ -871,7 +871,7 @@ function stripEmbeddedNextVisitPlan(text: string, department = ''): string {
     const idx = markerPositions[0];
     const prefix = cleaned.slice(0, idx).trim();
     const suffix = cleaned.slice(idx).trim();
-    if (/^다음(방문|번)?/.test(suffix)) {
+    if (/^다음(?:\s*방문(?:시)?에는|\s*번에는|\s*에는|방문(?:시)?에는|번에는|에는)/.test(suffix)) {
       cleaned = prefix;
     }
   }
@@ -2429,9 +2429,6 @@ ${themeConstraint}
   return cleaned;
 }
 
-/**
- * 저장 전 검토 에이전트: 모든 규칙 위반 체크 후 수정 → PASS 또는 최대 2라운드
- */
 export async function validateAndFixVisitLog(
   systemPrompt: string,
   formattedLog: string,
@@ -2441,94 +2438,10 @@ export async function validateAndFixVisitLog(
   allowNewDrugReview = false,
   avoidTexts: string[] = []
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
-  const MAX_ROUNDS = 1;
-  let log = formattedLog;
-  let strategy = nextStrategy;
-  const allowedProducts = getAllowedProductsForDepartment(doctor.department);
-  const disallowedProducts = ['위너프', '플라주', '이부프로펜프리믹스', '포스페넴', '프리페넴', '제이세덱스']
-    .filter((product) => {
-      const normalized = product === '플라주' ? '플라주OP' : product;
-      return !allowedProducts.includes(normalized);
-    });
-  const batchAvoidNote = buildBatchAvoidanceNote(avoidTexts);
-  const avoidedDetailKeys = detailKeysFromTexts(avoidTexts);
-
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    const reviewPrompt = `아래 영업일지를 검토하고, 문제가 있으면 즉시 수정한 버전을 출력하세요.
-
-[영업일지 본문] (${log.length}자)
-${log}
-
-[다음방문전략] (${strategy.length}자)
-${strategy}
-
-━━━ 검토 체크리스트 (하나라도 위반이면 FAIL) ━━━
-① 금지 어미: ~겠습니다, ~했습니다, ~합니다, ~입니다, ~드립니다 (어떤 형태든)
-② 금지 기호: ·  •  ↑  ↓  →  ←
-③ 따옴표: "  '
-④ 금지 표현: 짚음, 언급함, 설명함 → "디테일 진행함"으로
-⑤ 페린젝트 "단회투여" / "단회 투여" → 반드시 "1회 투여"로
-⑥ 보고서체 / 분석문: "분석하면", "정리하면", "전반적으로", "~겠습니다" 류
-⑦ 교수 성향·처방 경향 직접 서술: "보수적 성향", "처방에 소극적" 등 텍스트 직접 표현
-⑧ 본문 100자 미만 또는 230자 초과 (현재 ${log.length}자). 너무 성의 없는 단문이면 제품명, 실제 디테일, 교수 반응, 후속 확인을 넣어 100자 이상으로 보강
-⑨ 다음방문전략 120자 초과 (현재 ${strategy.length}자)
-⑩ 다음방문전략이 "다음방문시에는" 으로 시작 안 함
-⑪ 다음방문전략이 "~할예정" 으로 끝나지 않음
-⑫ 과(${doctor.department})에 맞지 않는 품목 언급 금지. 허용 품목: ${allowedProducts.join(', ')}. 금지 품목: ${disallowedProducts.join(', ') || '없음'}
-⑬ 영업일지 본문에 "다음 방문에는" / "다음방문시에는" / "다음번에는" / "다음에는" 으로 시작하는 다음 방문 계획 문장이 들어감
-⑭ 미도입 제품에 대해 "증량", "증액", "처방 늘려달라", "지속 처방 부탁" 같은 표현 사용 금지. "신약여부검토 요청"은 이번 허용 여부가 허용일 때만 사용
-⑮ 과(${doctor.department})와 맞지 않는 특장점 테마 사용 금지. 제품 정보에 있더라도 다른 과 전용 질환명은 넣지 말 것
-⑯ 신약여부검토 요청 허용 여부: ${allowNewDrugReview ? '허용. 단, 미도입 품목 문맥에만 1회 가능' : '불허. 미도입 품목이어도 이번에는 특장점 디테일만 진행'}
-⑰ "포인트"라는 단어를 사용함. 해당 단어는 쓰지 말고 "내용", "디테일", "근거", "차별점"으로 수정
-⑱ "지난번에", "지난 방문에"로 시작한 뒤 과거 내용의 확인 결과/교수 반응 없이 바로 새 제품 디테일로 넘어감
-⑲ 지난번에 특정 제품을 사용 중이라고 해놓고 오늘 같은 제품을 다시 "중심으로" 진행한다고 반복함. 이 경우 사용 반응/재방문량/처방을 고려할 상황 확인으로 이어갈 것
-⑳ 이번 일괄 생성에서 이미 사용한 오브젝션/답변/디테일 흐름과 거의 같은 문장을 반복함
-㉑ 같은 문장에 비슷한 특장점 테마를 두 개 이상 라벨처럼 이어 붙임. 예: "산부인과 수술 전후 빈혈 산후 빈혈 케이스" 같은 형태 금지
-㉒ 오브젝션 문장이 "교수님께서"로 시작하지 않음. "교수는", "교수님은" 같은 시작 금지
-㉓ 위너프에이플러스를 디테일하는데 같은 위너프에이플러스 자체를 기존 비교 대상으로 삼음. 이 경우 비교 대상은 위너프 또는 기존 3챔버 TPN이어야 함
-㉔ 제품 특장점 문장에 제품명이 빠짐. 예: "아미노산 25% 증가와 포도당 감소"만 쓰면 FAIL, "위너프에이플러스의 아미노산 25% 증가와 포도당 감소"로 수정
-㉕ "제품 내용", "특장점 반응 확인", "반응 확인 요청", "특장점 반응 확인 요청", "요청 드림" 사용 금지
-㉖ 교수 반응은 실제 의견/반응으로만 작성. "확인 요청"이 아니라 "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임"처럼 구체 반응이어야 함
-㉗ 경구 복용 철분제를 뜻하는 표현은 모두 "경구용철분제"로 통일. "경구 철분", "경구 철분제", "경구용 철분제", "경구용철분제제제", "먹는 철분제", "oral iron", "PO iron"이면 FAIL
-㉘ "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 디테일했는지 빠진 문장은 FAIL. 반드시 제품명 + 실제 특장점/근거/환자군을 써야 함
-㉙ "교수님께서 메모하신다고 하심", "교수님께서 적어두신다고 하심" 같은 비현실적 메타 반응 금지. 반응은 처방/환자군/급여/사용경험에 대한 의견이어야 함
-㉚ 본문에서 이미 디테일한 핵심을 다음방문전략에서 그대로 반복 금지. 예: 본문에서 페린젝트 1회 투여 편의성을 디테일했으면 다음방문전략은 급여 기준, 사용 반응, 처방을 고려할 상황 확인 등 다른 후속 액션이어야 함
-㉛ 지난 방문, 오늘 본문, 다음방문전략, 이번 일괄 생성 내 다른 교수의 디테일 축은 모두 달라야 함. "더딘 케이스"와 "늦는 케이스"처럼 말만 바꾼 중복도 FAIL
-㉜ 이번 일괄 생성에서 다른 교수에게 이미 쓴 본문과 제품/환자군/교수 반응/다음 액션이 거의 같으면 FAIL. 교수별 병원, 과, 지난 기록에 맞게 다르게 작성. 반복 내원 어려움, 재방문 부담, 외래 재방문 불편, 편의성 인정처럼 같은 의미의 교수 반응도 batch 안에서는 1회만 허용
-㉝ 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합 사용 금지. 환자 상황과 처방 맥락을 구체적으로 바꿔 쓸 것
-㉞ 소화기내과에는 "분만", "산후", "산부인과", "부인과", "제왕절개" 맥락 금지. 산부인과에는 "IBD", "크론", "궤양성대장염", "위장관 출혈" 맥락 금지. 과와 맞지 않으면 FAIL
-㉟ "짧게 드렸고", "간단히 드렸고", "가볍게 드렸고"처럼 지난 방문 내용을 숨기는 연결 금지. 지난 방문을 연결할 때는 반드시 "지난 방문에 [구체 디테일]을 설명드렸고, 교수님께서 [반응/결과]라고 하심" 구조로 바꿀 것
-${batchAvoidNote}
-
-첫 줄에 반드시 PASS 또는 FAIL 한 단어만 출력.
-FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
-
-===수정 영업일지===
-(PASS이면 원본 그대로, FAIL이면 수정본)
-
-===수정 다음방문전략===
-(PASS이면 원본 그대로, FAIL이면 수정본)`;
-
-    const result = await callVisitLogAI(systemPrompt, reviewPrompt);
-    const firstLine = result.trim().split('\n')[0].trim().toUpperCase();
-    const passed = firstLine.startsWith('PASS');
-
-    const newLog = extractSection(result, ['===수정 영업일지===', '===수정 다음방문전략===']);
-    const newStrategy = extractSection(result, ['===수정 다음방문전략===']);
-
-    if (newLog.trim()) {
-      log = normalizeGeneratedMemoText(newLog.replace(/['"]/g, '').trim(), doctor.department);
-      log = normalizeObjectionLanguage(log, activeProducts);
-      log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
-    }
-    if (newStrategy.trim()) strategy = normalizeNextStrategy(newStrategy.replace(/['"]/g, '').trim(), doctor.department);
-    strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
-
-    if (passed) break;
-  }
-
-  // 최종 하드 보정 (어떤 경우도 절대 초과 없음)
   const finalAllowedProducts = getAllowedProductsForDepartment(doctor.department);
+  let log = stripEmbeddedNextVisitPlan(formattedLog, doctor.department);
+  let strategy = normalizeNextStrategy(nextStrategy, doctor.department);
+
   log = normalizeGeneratedMemoText(log, doctor.department);
   log = normalizeObjectionLanguage(log, activeProducts);
   log = removeEmptyReactionRequests(log);
@@ -2536,29 +2449,34 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   log = ensureProductFeatureOwnership(log);
   log = removeDisallowedDepartmentThemeSentences(log, doctor.department);
   log = removeNextVisitPlanFromLog(log, doctor.department);
+  log = stripEmbeddedNextVisitPlan(log, doctor.department);
   log = normalizeIntroProductLanguage(log, activeProducts, allowNewDrugReview);
   log = removeEmptyReactionRequests(log);
   log = removeUnrealisticProfessorMetaSentences(log);
   log = ensureProductFeatureOwnership(log);
   log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
-  log = removeDisallowedProductSentences(log, doctor.department) ||
-    buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department, log);
-  log = removeEmptyReactionRequests(log);
-  log = removeUnrealisticProfessorMetaSentences(log);
-  log = ensureProductFeatureOwnership(log);
-  log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
+  log = removeDisallowedProductSentences(log, doctor.department) || log;
+  log = stripEmbeddedNextVisitPlan(log, doctor.department);
+
   if (!log || log.length < 12 || hasVacuousDetailLanguage(log)) {
     log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department, log);
+    log = stripEmbeddedNextVisitPlan(log, doctor.department);
   }
+
   if (hasBatchConflict(log, avoidTexts)) {
     log = buildDiversifiedVisitLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department, avoidTexts);
+    log = stripEmbeddedNextVisitPlan(log, doctor.department);
   }
+
   log = expandVisitLogIfTooBrief(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
+  log = stripEmbeddedNextVisitPlan(log, doctor.department);
+
   strategy = removeDisallowedDepartmentThemeSentences(strategy, doctor.department);
-  strategy = normalizeNextStrategy(strategy, doctor.department);
   strategy = normalizeIntroProductLanguage(strategy, activeProducts, allowNewDrugReview);
   strategy = removeEmptyReactionRequests(strategy);
   strategy = removeDisallowedProductSentences(strategy, doctor.department) || '';
+
+  const avoidedDetailKeys = detailKeysFromTexts(avoidTexts);
   if (hasRepeatedDetailBetweenLogAndStrategy(log, strategy, avoidedDetailKeys) || hasBatchConflict(strategy, avoidTexts)) {
     strategy = buildFollowUpStrategyWithoutRepeatingDetail(
       log,
@@ -2567,13 +2485,18 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
       avoidedDetailKeys
     );
   }
-  if (log.length > MAX_VISIT_LOG_LENGTH) log = compressTextToLimit(log, MAX_VISIT_LOG_LENGTH);
+
+  strategy = normalizeNextStrategy(strategy, doctor.department);
   if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
   if (!strategy || strategy.trim().length < 5) {
     const themeRule = getDeptFeatureRule(doctor.department);
     const theme = themeRule?.allowedThemes[0] || '환자군';
     strategy = `다음방문시에는 ${finalAllowedProducts[0] || '위너프에이플러스'} ${theme} 처방 상황 확인할예정`;
   }
+
+  log = stripEmbeddedNextVisitPlan(log, doctor.department);
+  if (log.length > MAX_VISIT_LOG_LENGTH) log = compressTextToLimit(log, MAX_VISIT_LOG_LENGTH);
+  if (strategy.length > 120) strategy = compressTextToLimit(strategy, 120);
 
   return { formattedLog: log, nextStrategy: strategy };
 }

@@ -89,7 +89,7 @@ export default function VisitLogHistoryPage() {
       if (log) {
         setEditingId(editId);
         const combined = log.nextStrategy
-          ? `${log.formattedLog}\n${log.nextStrategy}`
+          ? `${log.formattedLog} ${log.nextStrategy}`
           : log.formattedLog;
         setEditText(combined);
       }
@@ -182,9 +182,9 @@ export default function VisitLogHistoryPage() {
 
   function startEdit(log: VisitLog) {
     setEditingId(log.id);
-    // formattedLog + nextStrategy 합쳐서 편집창에 표시 (한 문단으로 복사 가능)
+    // formattedLog + nextStrategy를 한 문단으로 편집창에 표시
     const combined = log.nextStrategy
-      ? `${log.formattedLog}\n${log.nextStrategy}`
+      ? `${log.formattedLog} ${log.nextStrategy}`
       : log.formattedLog;
     setEditText(combined);
   }
@@ -197,15 +197,14 @@ export default function VisitLogHistoryPage() {
   function saveEdit(log: VisitLog) {
     const editedText = editText.trim();
 
-    // 다음방문 문장 분리 (다음방문시에는 / 다음번에는 / 다음에는 으로 시작하는 줄)
-    const lines = editedText.split('\n');
-    const nextMarkers = ['다음방문시에는', '다음번에는', '다음에는'];
-    const splitIdx = lines.findIndex(l => nextMarkers.some(m => l.trim().startsWith(m)));
-    const newFormattedLog = splitIdx > 0
-      ? lines.slice(0, splitIdx).join('\n').trim()
+    // 다음방문 문장 분리 (문단이든 한 줄이든 "다음..."이 시작되는 지점 기준)
+    const nextMarkerMatch = editedText.match(/다음(?:\s*방문(?:시)?에는|방문(?:시)?에는|\s*번에는|번에는|\s*에는|에는)/);
+    const splitIdx = nextMarkerMatch?.index ?? -1;
+    const newFormattedLog = splitIdx >= 0
+      ? editedText.slice(0, splitIdx).trim()
       : editedText;
-    const newNextStrategy = splitIdx > 0
-      ? lines.slice(splitIdx).join('\n').trim()
+    const newNextStrategy = splitIdx >= 0
+      ? editedText.slice(splitIdx).trim()
       : '';
 
     const originalText = log.formattedLog + (log.nextStrategy ? '\n' + log.nextStrategy : '');
@@ -390,7 +389,7 @@ export default function VisitLogHistoryPage() {
                   ) : (
                     <>
                       <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                        {log.formattedLog}{log.nextStrategy ? `\n${log.nextStrategy}` : ''}
+                        {log.formattedLog}{log.nextStrategy ? ` ${log.nextStrategy}` : ''}
                       </p>
                     </>
                   )}
