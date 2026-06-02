@@ -204,7 +204,7 @@ export async function analyzeExternalCasePatterns(rawText: string): Promise<Exte
 종양내과 암환자는 햅시딘이 높아 경구용철분제 흡수가 잘 안 되고 GI 트러블도 있어 페린젝트를 설명함
 
 예시 출력:
-[{"department":"종양내과","product":"페린젝트","patientGroup":"항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈 조절이 어려운 환자","detailAxis":"페린젝트의 1회 투여와 Hb 회복 근거","reactionPattern":"경구용철분제로 회복이 더딘 암환자에서는 참고하겠다는 의견","nextAction":"항암 전후 빈혈에서 급여 기준과 처방 경험 확인","sourceSummary":"종양내과 암환자 빈혈에서 경구용철분제 한계와 페린젝트 활용 포인트 추출","confidence":86}]
+[{"department":"종양내과","product":"페린젝트","patientGroup":"항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈 조절이 어려운 환자","detailAxis":"페린젝트의 1회 투여와 Hb 회복 근거","reactionPattern":"경구용철분제로 회복이 더딘 암환자에서는 차트로 보겠다는 의견","nextAction":"항암 전후 빈혈에서 급여 기준과 처방 경험 확인","sourceSummary":"종양내과 암환자 빈혈에서 경구용철분제 한계와 페린젝트 활용 포인트 추출","confidence":86}]
 
 전처리된 후보 원문:
 ${cleanedInput}`;
@@ -940,11 +940,23 @@ function normalizeNextStrategy(text: string, department = ''): string {
     .replace(/^(다음\s*방문에는|다음번에는|다음에는)\s*/g, '다음방문시에는 ')
     .replace(/^다음방문시\s*에는\s*/g, '다음방문시에는 ')
     .replace(/하겠다/gi, '할예정')
+    .replace(/\n+/g, ' ')
     .trim();
   const themed = department ? normalizeDepartmentThemeStacks(normalized, department) : normalized;
-  return themed.startsWith('다음방문시에는')
-    ? themed
-    : `다음방문시에는 ${themed}`.trim();
+  const markerRegex = /다음방문시에는|다음방문시|다음방문에는|다음번에는|다음에는/g;
+  const matches = [...themed.matchAll(markerRegex)];
+  let clipped = themed;
+  if (matches.length > 1 && matches[1].index !== undefined) {
+    clipped = themed.slice(0, matches[1].index).trim();
+  }
+  clipped = clipped
+    .replace(/(?:다음방문시에는\s*){2,}/g, '다음방문시에는 ')
+    .replace(/(?:다음방문시에는\s*)+$/g, '다음방문시에는')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return clipped.startsWith('다음방문시에는')
+    ? clipped
+    : `다음방문시에는 ${clipped}`.trim();
 }
 
 function hasIntroProducts(products: string[]): boolean {
@@ -1233,23 +1245,58 @@ function getFallbackDetailForProduct(product: string, department: string): strin
   return '고아미노산 저포도당 조성으로 중증 환자 영양 부담을 줄이는 차별점';
 }
 
-function buildFallbackVisitLog(product: string, department: string): string {
-  const detail = getFallbackDetailForProduct(product, department);
-  return `${product}의 ${detail} 중심으로 디테일 진행함`;
+function hashSeed(...parts: string[]): number {
+  const joined = parts.filter(Boolean).join('|');
+  let hash = 0;
+  for (let i = 0; i < joined.length; i++) {
+    hash = (hash * 31 + joined.charCodeAt(i)) >>> 0;
+  }
+  return hash;
 }
 
-function buildDetailedVisitLog(product: string, department: string): string {
+function pickVariant<T>(variants: T[], seed: string): T {
+  return variants[Math.abs(hashSeed(seed)) % variants.length];
+}
+
+function buildFallbackVisitLog(product: string, department: string, seed = ''): string {
   const detail = getFallbackDetailForProduct(product, department);
+  const variants = [
+    `${product}의 ${detail} 중심으로 디테일 진행함`,
+    `${product}의 ${detail}을 우선 설명드림`,
+    `${product}의 ${detail}을 실제 처방 맥락에 맞춰 정리함`,
+  ];
+  return pickVariant(variants, `${product}|${department}|${detail}|${seed}`);
+}
+
+function buildDetailedVisitLog(product: string, department: string, seed = ''): string {
+  const detail = getFallbackDetailForProduct(product, department);
+  const variantSeed = `${product}|${department}|${detail}|${seed}`;
   if (product === '페린젝트') {
     if (/종양내과|혈액종양내과|종양혈액내과|혈액내과/.test(department)) {
-      return `${product}의 ${detail}을 항암치료 중 경구용철분제 흡수가 더딘 빈혈 환자와 연결해 디테일 진행함. 교수님께서 경구용철분제로는 회복이 늦을 수 있어 빠르게 보려는 케이스에서 참고하겠다는 의견 보임`;
+      return pickVariant([
+        `${product}의 ${detail}을 항암치료 중 경구용철분제 흡수가 더딘 빈혈 환자와 연결해 디테일 진행함. 교수님께서 경구용철분제로는 회복이 늦을 수 있어 빠르게 보려는 케이스는 차트로 보겠다는 의견 보임`,
+        `${product}의 ${detail}을 항암치료 중 빈혈 관리와 연결해 설명드림. 교수님께서 경구용철분제로는 회복이 늦는 환자부터 보겠다는 의견 보임`,
+        `${product}의 ${detail}을 항암치료 중 Hb 회복이 더딘 환자와 연결해 디테일 진행함. 교수님께서 빠른 철 보충이 필요한 케이스는 차트로 보겠다는 의견 보임`,
+      ], variantSeed);
     }
-    return `${product}의 ${detail}을 외래 빈혈 케이스와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 처방 상황을 확인해보겠다는 의견 보임`;
+    return pickVariant([
+      `${product}의 ${detail}을 외래 빈혈 케이스와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 처방 상황을 확인해보겠다는 의견 보임`,
+      `${product}의 ${detail}을 반복 내원이 부담되는 환자 중심으로 설명드림. 교수님께서 급여 기준에 맞는 환자부터 살펴보겠다는 의견 보임`,
+      `${product}의 ${detail}을 Hb 회복이 늦는 외래 환자와 연결해 디테일 진행함. 교수님께서 실제 사용은 차트상 환자부터 보겠다는 의견 보임`,
+    ], variantSeed);
   }
   if (/산부인과|산과|부인과/.test(department)) {
-    return `${product}의 ${detail}을 분만 후 식이 지연이나 수술 전후 회복기 환자와 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 같이 볼 수 있다는 점은 공감하셨고, 실제 적용은 회복기 환자부터 살펴보겠다는 의견 보임`;
+    return pickVariant([
+      `${product}의 ${detail}을 분만 후 식이 지연이나 수술 전후 회복기 환자와 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 같이 볼 수 있다는 점은 공감하셨고, 실제 적용은 회복기 환자부터 살펴보겠다는 의견 보임`,
+      `${product}의 ${detail}을 산후 회복기 영양 관리와 연결해 설명드림. 교수님께서 식사 진행이 늦는 환자에서는 살펴볼 수 있겠다는 의견 보임`,
+      `${product}의 ${detail}을 수술 전후 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담 차이는 차트로 보겠다는 의견 보임`,
+    ], variantSeed);
   }
-  return `${product}의 ${detail}을 중환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 병동 처방은 케이스별로 보겠다는 의견 보임`;
+  return pickVariant([
+    `${product}의 ${detail}을 중환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 병동 처방은 케이스별로 보겠다는 의견 보임`,
+    `${product}의 ${detail}을 회복기 환자 영양 보충과 연결해 설명드림. 교수님께서 실제 적용은 외래나 병동 상황을 같이 보겠다는 의견 보임`,
+    `${product}의 ${detail}을 수술 후 영양 관리 관점에서 디테일 진행함. 교수님께서 회복 흐름을 보며 판단하겠다는 의견 보임`,
+  ], variantSeed);
 }
 
 function pickProductForLog(log: string, activeProducts: string[], department: string): string {
@@ -1266,7 +1313,7 @@ function expandVisitLogIfTooBrief(text: string, activeProducts: string[], depart
   const normalized = text.replace(/\s{2,}/g, ' ').trim();
   if (normalized.length >= MIN_VISIT_LOG_LENGTH) return normalized;
   const product = pickProductForLog(normalized, activeProducts, department);
-  const detailed = buildDetailedVisitLog(product, department);
+  const detailed = buildDetailedVisitLog(product, department, normalized);
   return detailed.length > MAX_VISIT_LOG_LENGTH ? compressTextToLimit(detailed, MAX_VISIT_LOG_LENGTH) : detailed;
 }
 
@@ -1440,18 +1487,24 @@ function buildFollowUpStrategyWithoutRepeatingDetail(
   const otherProduct = allowedProducts.find((allowedProduct) => allowedProduct !== product);
 
   const candidates = [
-    otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 전후 영양 공급 반응과 처방 상황 확인할예정' : '',
-    otherProduct === '페린젝트' ? '다음방문시에는 페린젝트 수술 전후 빈혈 케이스와 수혈 부담 감소 근거 확인할예정' : '',
+    otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 후 회복기 영양 반응과 처방 흐름 확인할예정' : '',
+    otherProduct === '페린젝트' ? '다음방문시에는 페린젝트 외래 빈혈 환자의 1회 투여 반응과 급여 기준 확인할예정' : '',
     '다음방문시에는 페린젝트 급여 기준에 맞는 외래 빈혈 케이스 확인할예정',
-    '다음방문시에는 페린젝트 투여 후 Hb 회복 반응과 실제 사용 케이스 확인할예정',
-    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형을 수술 후 영양 흐름에서 확인할예정',
-    '다음방문시에는 위너프에이플러스 오메가3 조성을 중환자 영양 부담과 연결해 확인할예정',
+    '다음방문시에는 페린젝트 투여 후 Hb 회복 속도와 실제 적용 케이스 확인할예정',
+    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형을 수술 후 회복 흐름에서 확인할예정',
+    '다음방문시에는 위너프에이플러스 오메가3 조성을 영양 부담과 연결해 다시 볼예정',
+    '다음방문시에는 위너프에이플러스 포도당 부담 차이와 회복기 환자 반응 확인할예정',
+    '다음방문시에는 페린젝트 외래 재방문 부담과 Hb 회복 경과를 다시 볼예정',
   ].filter(Boolean);
 
-  const selected = candidates.find((candidate) =>
-    getDetailKeyOverlap(log, candidate).length === 0 &&
-    !hasAnyDetailKeyOverlap(candidate, usedKeys)
-  );
+  const selected = candidates
+    .map((candidate) => ({ candidate, score: Math.abs(hashSeed(log, candidate, product, department)) }))
+    .sort((a, b) => a.score - b.score)
+    .map(({ candidate }) => candidate)
+    .find((candidate) =>
+      getDetailKeyOverlap(log, candidate).length === 0 &&
+      !hasAnyDetailKeyOverlap(candidate, usedKeys)
+    );
   if (selected) return selected;
 
   const themeRule = getDeptFeatureRule(department);
@@ -2457,13 +2510,13 @@ FAIL이면 바로 아래에 어떤 항목이 문제인지 한 줄 명시.
   log = ensureProductFeatureOwnership(log);
   log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   log = removeDisallowedProductSentences(log, doctor.department) ||
-    buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
+    buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department, log);
   log = removeEmptyReactionRequests(log);
   log = removeUnrealisticProfessorMetaSentences(log);
   log = ensureProductFeatureOwnership(log);
   log = ensureProductNameInLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department);
   if (!log || log.length < 12 || hasVacuousDetailLanguage(log)) {
-    log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department);
+    log = buildFallbackVisitLog(finalAllowedProducts[0] || '위너프에이플러스', doctor.department, log);
   }
   if (hasBatchConflict(log, avoidTexts)) {
     log = buildDiversifiedVisitLog(log, activeProducts.length > 0 ? activeProducts : finalAllowedProducts, doctor.department, avoidTexts);
