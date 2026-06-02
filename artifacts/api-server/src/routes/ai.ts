@@ -86,10 +86,6 @@ function isAllowedOrigin(origin: string): boolean {
     return true;
   }
 
-  if (originHost.endsWith(".railway.app") || originHost.endsWith(".up.railway.app")) {
-    return true;
-  }
-
   if (originHost.endsWith(".vercel.app")) {
     return true;
   }

@@ -37454,9 +37454,6 @@ function isAllowedOrigin(origin) {
   if (originHost.endsWith(".replit.app") || originHost.endsWith(".replit.dev")) {
     return true;
   }
-  if (originHost.endsWith(".railway.app") || originHost.endsWith(".up.railway.app")) {
-    return true;
-  }
   if (originHost.endsWith(".vercel.app")) {
     return true;
   }
