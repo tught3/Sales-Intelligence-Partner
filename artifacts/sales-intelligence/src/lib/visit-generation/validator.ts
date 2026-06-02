@@ -6,7 +6,7 @@ const MIN_VISIT_LOG_LENGTH = 100;
 const MAX_VISIT_LOG_LENGTH = 230;
 
 function hasReaction(text: string): boolean {
-  return /공감|관심|의견|반응|고려|확인|긍정|제한적|선별/.test(text);
+  return /공감|관심|의견|반응|고려|확인|긍정|제한적|선별|보임|인정|하심|말씀|답변/.test(text);
 }
 
 function hasForbiddenPhrase(text: string): boolean {
