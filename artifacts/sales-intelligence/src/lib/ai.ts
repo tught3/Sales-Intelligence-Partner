@@ -950,10 +950,18 @@ function normalizeNextStrategy(text: string, department = ''): string {
     clipped = themed.slice(0, matches[1].index).trim();
   }
   clipped = clipped
+    .replace(/(볼예정|확인예정|살펴볼예정|확인할예정|진행할예정|안내할예정)(?:\s*\1)+/g, '$1')
+    .replace(/(?:할예정){2,}/g, '할예정')
+    .replace(/(?:볼예정){2,}/g, '볼예정')
     .replace(/(?:다음방문시에는\s*){2,}/g, '다음방문시에는 ')
     .replace(/(?:다음방문시에는\s*)+$/g, '다음방문시에는')
     .replace(/\s{2,}/g, ' ')
     .trim();
+  if (/예정$/.test(clipped)) {
+    return clipped.startsWith('다음방문시에는')
+      ? clipped
+      : `다음방문시에는 ${clipped}`.trim();
+  }
   return clipped.startsWith('다음방문시에는')
     ? clipped
     : `다음방문시에는 ${clipped}`.trim();
