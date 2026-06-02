@@ -859,6 +859,26 @@ function removeNextVisitPlanFromLog(text: string, department = ''): string {
   return department ? normalizeDepartmentThemeStacks(cleaned, department) : cleaned;
 }
 
+function stripEmbeddedNextVisitPlan(text: string, department = ''): string {
+  let cleaned = removeNextVisitPlanFromLog(text, department);
+  const markers = ['다음방문시에는', '다음방문에는', '다음번에는', '다음에는'];
+  const markerPositions = markers
+    .map((marker) => cleaned.indexOf(marker))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b);
+
+  if (markerPositions.length > 0) {
+    const idx = markerPositions[0];
+    const prefix = cleaned.slice(0, idx).trim();
+    const suffix = cleaned.slice(idx).trim();
+    if (/^다음(방문|번)?/.test(suffix)) {
+      cleaned = prefix;
+    }
+  }
+
+  return department ? normalizeDepartmentThemeStacks(cleaned, department) : cleaned;
+}
+
 function getThemeVariants(theme: string): string[] {
   const base = theme.trim();
   if (!base) return [];
@@ -2103,10 +2123,12 @@ ${buildVisitLogRules()}
 
   // ★ 저장 전 검토 에이전트
   const validated = await validateAndFixVisitLog(systemPrompt, cleaned, nextStrategy, doctor, activeProducts, cvAllowNewDrugReview);
+  const finalLog = stripEmbeddedNextVisitPlan(validated.formattedLog, doctor.department);
+  const finalStrategy = normalizeNextStrategy(validated.nextStrategy, doctor.department);
 
   return {
-    formattedLog: validated.formattedLog,
-    nextStrategy: validated.nextStrategy,
+    formattedLog: finalLog,
+    nextStrategy: finalStrategy,
   };
 }
 
@@ -2282,12 +2304,14 @@ ${buildVisitLogRules()}
 
   // ★ 저장 전 검토 에이전트
   const agValidated = await validateAndFixVisitLog(buildSystemPrompt(), fullLog, nextStrategy, doctor, activeProducts, agAllowNewDrugReview, batchAvoidTexts);
+  const finalLog = stripEmbeddedNextVisitPlan(agValidated.formattedLog, doctor.department);
+  const finalStrategy = normalizeNextStrategy(agValidated.nextStrategy, doctor.department);
 
   return {
     visitDate: today,
     products: products.length > 0 ? products : activeProducts,
-    formattedLog: normalizeBatchRepeatedLanguage(agValidated.formattedLog, batchAvoidTexts),
-    nextStrategy: normalizeBatchRepeatedLanguage(agValidated.nextStrategy, batchAvoidTexts),
+    formattedLog: normalizeBatchRepeatedLanguage(finalLog, batchAvoidTexts),
+    nextStrategy: normalizeBatchRepeatedLanguage(finalStrategy, batchAvoidTexts),
   };
 }
 
