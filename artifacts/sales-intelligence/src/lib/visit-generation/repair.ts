@@ -4,6 +4,8 @@ import { extractReactionKeys } from './detailKeys';
 
 export const MAX_REPAIR_ATTEMPTS = 2;
 
+type ExternalCasePattern = VisitContext['externalCasePatterns'][number];
+
 export type RepairOutput = {
   formattedLog: string;
   nextStrategy: string;
@@ -53,7 +55,12 @@ function hashSeed(...parts: string[]): number {
 
 function hasUsedReaction(reaction: string, ctx: VisitContext): boolean {
   const keys = extractReactionKeys(reaction);
-  return keys.length > 0 && keys.some((key) => ctx.batchUsedReactionKeys.includes(key));
+  if (keys.length === 0) return false;
+  const pastReactionKeys = (ctx.pastLogs ?? []).flatMap((log) =>
+    extractReactionKeys(`${log.formattedLog} ${log.nextStrategy ?? ''}`)
+  );
+  const usedReactionKeys = new Set([...ctx.batchUsedReactionKeys, ...pastReactionKeys]);
+  return keys.some((key) => usedReactionKeys.has(key));
 }
 
 function selectNonDuplicateReaction(plan: DetailKey, ctx: VisitContext): string {
@@ -63,6 +70,39 @@ function selectNonDuplicateReaction(plan: DetailKey, ctx: VisitContext): string 
     Math.abs(hashSeed(seed.toString(), a)) - Math.abs(hashSeed(seed.toString(), b))
   );
   return candidates.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? '차트상 빈혈 추이와 증상을 함께 보고 다시 판단하겠다는 의견';
+}
+
+function pickExternalPattern(plan: DetailKey, ctx: VisitContext): ExternalCasePattern | undefined {
+  const patterns = (ctx.externalCasePatterns ?? []).filter((pattern) => pattern.product === plan.product);
+  if (patterns.length === 0) return undefined;
+  const seed = hashSeed(plan.product, plan.patientGroup, plan.detailAxis, plan.narrativeStyle, ctx.doctor.department, ctx.doctor.id);
+  return [...patterns].sort((a, b) =>
+    Math.abs(hashSeed(seed.toString(), a.id)) - Math.abs(hashSeed(seed.toString(), b.id))
+  )[0];
+}
+
+function buildSupportSentence(plan: DetailKey, ctx: VisitContext, pattern?: ExternalCasePattern): string {
+  const department = ctx.doctor.department || '';
+  const patternHint = pattern ? ` ${pattern.patientGroup} 흐름과 ${pattern.detailAxis}을 같이 묶어봄` : '';
+  if (/소화기/.test(department) && plan.product === '페린젝트') {
+    return `추가로 위장관 출혈 뒤 Hb 추이와 경구용철분제 반응을 함께 보겠다고 정리함${patternHint}`;
+  }
+  if (/산부인과|산과|부인과/.test(department) && plan.product === '페린젝트') {
+    return `추가로 산후 외래 추이와 수술 전후 빈혈 케이스를 함께 보겠다고 정리함${patternHint}`;
+  }
+  if (/종양|혈액종양|혈액내과/.test(department) && plan.product === '페린젝트') {
+    return `추가로 항암치료 중 Hb 추이와 경구용철분제 반응을 함께 보겠다고 정리함${patternHint}`;
+  }
+  if (/소화기/.test(department) && plan.product === '위너프에이플러스') {
+    return `추가로 식사량 저하와 영양 보충 흐름을 함께 보겠다고 정리함${patternHint}`;
+  }
+  if (/산부인과|산과|부인과/.test(department) && plan.product === '위너프에이플러스') {
+    return `추가로 분만 후 회복기와 수술 전후 영양 공급 흐름을 함께 보겠다고 정리함${patternHint}`;
+  }
+  if (plan.product === '페린젝트') {
+    return `추가로 외래 빈혈 환자의 Hb 회복 경과와 급여 기준을 함께 보겠다고 정리함${patternHint}`;
+  }
+  return `추가로 회복기 환자의 영양 공급 흐름과 반응을 함께 보겠다고 정리함${patternHint}`;
 }
 
 function selectFollowUpClause(plan: DetailKey, ctx: VisitContext): string {
@@ -142,31 +182,41 @@ function selectFollowUpClause(plan: DetailKey, ctx: VisitContext): string {
 
 function safePlanForDepartment(plan: DetailKey, ctx: VisitContext): DetailKey {
   const department = ctx.doctor.department || '';
+  const pattern = pickExternalPattern(plan, ctx);
   if (/소화기/.test(department) && plan.product === '페린젝트') {
     return {
       ...plan,
-      patientGroup: '위장관 출혈 이후 경구용철분제로 Hb 회복이 더딘 소화기내과 외래 빈혈 환자',
-      detailAxis: '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
-      doctorReaction: '재방문 부담이 있는 환자에서는 편의성은 이해하셨고 급여 기준에 맞는지는 차트로 확인해보겠다는 반응',
-      nextAction: '위너프에이플러스 IBD 악화나 식사량 저하 환자의 영양 보충 필요성 확인',
+      patientGroup: pattern?.patientGroup ?? '위장관 출혈 이후 경구용철분제로 Hb 회복이 더딘 소화기내과 외래 빈혈 환자',
+      detailAxis: pattern?.detailAxis ?? '페린젝트의 1회 투여 편의성과 Hb 회복 근거',
+      doctorReaction: pattern?.reactionPattern ?? '재방문 부담이 있는 환자에서는 편의성은 이해하셨고 급여 기준에 맞는지는 차트로 확인해보겠다는 반응',
+      nextAction: pattern?.nextAction ?? '위너프에이플러스 IBD 악화나 식사량 저하 환자의 영양 보충 필요성 확인',
     };
   }
   if (/소화기/.test(department) && plan.product === '위너프에이플러스') {
     return {
       ...plan,
-      patientGroup: 'IBD 악화나 식사량 저하로 영양 보충을 같이 보는 소화기내과 환자',
-      detailAxis: '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소',
-      doctorReaction: '식사량이 떨어지는 환자에서는 영양 보충 필요성은 공감하셨고 혈당 부담은 처방 전 같이 보겠다는 의견',
-      nextAction: '페린젝트 위장관 출혈 후 Hb 회복이 더딘 외래 빈혈 케이스 사용 경험 확인',
+      patientGroup: pattern?.patientGroup ?? 'IBD 악화나 식사량 저하로 영양 보충을 같이 보는 소화기내과 환자',
+      detailAxis: pattern?.detailAxis ?? '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소',
+      doctorReaction: pattern?.reactionPattern ?? '식사량이 떨어지는 환자에서는 영양 보충 필요성은 공감하셨고 혈당 부담은 처방 전 같이 보겠다는 의견',
+      nextAction: pattern?.nextAction ?? '페린젝트 위장관 출혈 후 Hb 회복이 더딘 외래 빈혈 케이스 사용 경험 확인',
     };
   }
   if (/산부인과|산과|부인과/.test(department) && plan.product === '페린젝트') {
     return {
       ...plan,
-      patientGroup: '분만 후 빈혈이나 부인과 수술 전후 Hb 회복을 추적 중인 환자',
-      detailAxis: '페린젝트의 1회 투여 편의성과 시험투여 부담이 적은 점',
-      doctorReaction: '반복 내원이 어려운 산후 환자나 수술 전후 빈혈 환자에서는 편의성을 인정하신 것으로 보임',
-      nextAction: '위너프에이플러스 부인과 수술 전후 영양 공급 시 혈당 부담 차이 확인',
+      patientGroup: pattern?.patientGroup ?? '분만 후 빈혈이나 부인과 수술 전후 Hb 회복을 추적 중인 환자',
+      detailAxis: pattern?.detailAxis ?? '페린젝트의 1회 투여 편의성과 시험투여 부담이 적은 점',
+      doctorReaction: pattern?.reactionPattern ?? '반복 내원이 어려운 산후 환자나 수술 전후 빈혈 환자에서는 편의성을 인정하신 것으로 보임',
+      nextAction: pattern?.nextAction ?? '위너프에이플러스 부인과 수술 전후 영양 공급 시 혈당 부담 차이 확인',
+    };
+  }
+  if (pattern) {
+    return {
+      ...plan,
+      patientGroup: pattern.patientGroup,
+      detailAxis: pattern.detailAxis,
+      doctorReaction: pattern.reactionPattern,
+      nextAction: pattern.nextAction,
     };
   }
   return plan;
@@ -205,14 +255,16 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
+  const supportSentence = buildSupportSentence(safePlan, ctx, pickExternalPattern(plan, ctx));
   const leadIns = [
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}와 연결해 디테일 진행함`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 흐름에 맞춰 설명드림`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 맥락에서 정리함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 안내함`,
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle) % leadIns.length];
   const formattedLog = limit(
-    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}`,
+    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. ${supportSentence}`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);
@@ -224,14 +276,16 @@ export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext):
   if (manual) return manual;
   const safePlan = safePlanForDepartment(plan, ctx);
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
+  const supportSentence = buildSupportSentence(safePlan, ctx, pickExternalPattern(plan, ctx));
   const leadIns = [
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 기준으로 안내함`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}에서 실제로 볼 수 있는 흐름으로 설명함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 환자 흐름으로 정리함`,
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle, 'validation') % leadIns.length];
   const formattedLog = limit(
-    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}`,
+    `${opener}. 교수님께서 ${formatDoctorReactionSentence(doctorReaction)}. ${supportSentence}`,
     230
   );
   const nextStrategy = limit(`다음방문시에는 ${safePlan.nextAction}할예정`, 120);
