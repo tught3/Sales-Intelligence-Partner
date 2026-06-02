@@ -19,6 +19,10 @@ function validateChatBody(body: unknown): body is {
   model: string;
   messages: { role: string; content: ContentBlock | ContentBlock[] }[];
   max_completion_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
 } {
   if (!body || typeof body !== "object") return false;
   const b = body as Record<string, unknown>;
@@ -38,6 +42,9 @@ function validateChatBody(body: unknown): body is {
       b.max_completion_tokens <= 0 ||
       b.max_completion_tokens > 16384
     ) return false;
+  }
+  for (const key of ["temperature", "top_p", "frequency_penalty", "presence_penalty"] as const) {
+    if (b[key] !== undefined && typeof b[key] !== "number") return false;
   }
   return true;
 }
@@ -145,7 +152,7 @@ router.post("/ai/chat", async (req, res) => {
     return;
   }
 
-  const { model, messages, max_completion_tokens } = req.body;
+  const { model, messages, max_completion_tokens, temperature, top_p, frequency_penalty, presence_penalty } = req.body;
   const openaiModel =
     model === "gpt-5.5"
       ? "gpt-5.5"
@@ -154,6 +161,10 @@ router.post("/ai/chat", async (req, res) => {
   const bodyStr = JSON.stringify({
     model: openaiModel,
     max_completion_tokens: max_completion_tokens ?? 1000,
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(top_p !== undefined ? { top_p } : {}),
+    ...(frequency_penalty !== undefined ? { frequency_penalty } : {}),
+    ...(presence_penalty !== undefined ? { presence_penalty } : {}),
     messages,
   });
 

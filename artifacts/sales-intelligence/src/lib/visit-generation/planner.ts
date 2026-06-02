@@ -356,6 +356,15 @@ function batchSimilarityPenalty(candidate: PlanCandidate, texts: string[]): numb
   }, 0);
 }
 
+function extractBatchProducts(texts: string[]): string[] {
+  const products = new Set<string>();
+  for (const text of texts) {
+    if (/위너프에이플러스|위너프A\+|winuf\s*a\+|winufaplus|winufa/i.test(text)) products.add('위너프에이플러스');
+    if (/페린젝트|ferinject/i.test(text)) products.add('페린젝트');
+  }
+  return [...products];
+}
+
 export function buildPlan(ctx: VisitContext): DetailKey {
   const recentKeys = collectKeys([
     ...ctx.pastLogs.slice(0, 3).flatMap((log) => [log.formattedLog, log.nextStrategy]),
@@ -368,6 +377,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     : undefined;
   const batchKeys = new Set(ctx.batchUsedDetailKeys);
   const recentKeySet = new Set(recentKeys);
+  const batchProducts = extractBatchProducts(ctx.batchAvoidTexts);
 
   const baseCandidates = candidatesFor(ctx);
   const reactionSafeCandidates = baseCandidates.filter((candidate) => !hasUsedReaction(candidate, ctx));
@@ -397,6 +407,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       aReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       aKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(a.product) ? 1 : 0) +
+      (batchProducts.includes(a.product) ? 12 : 0) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length * 4 +
       batchSimilarityPenalty(a, ctx.batchAvoidTexts);
     const bPenalty =
@@ -404,6 +415,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       bReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       bKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(b.product) ? 1 : 0) +
+      (batchProducts.includes(b.product) ? 12 : 0) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4 +
       batchSimilarityPenalty(b, ctx.batchAvoidTexts);
     const aBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length;

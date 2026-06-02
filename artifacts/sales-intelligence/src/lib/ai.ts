@@ -1,5 +1,5 @@
 ﻿import type { Doctor, VisitLog } from './storage';
-import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, preferenceStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
+import { manualStorage, snippetStorage, doctorStorage, visitLogStorage, preferenceStorage, externalCasePatternStorage, API_BASE, getConversationHistoryVisitCount, getDoctorVisitCount } from './storage';
 import {
   buildExternalCasePromptInput,
   extractExternalCasePatternsFromText,
@@ -21,26 +21,54 @@ const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 const MIN_VISIT_LOG_LENGTH = 100;
 const MAX_VISIT_LOG_LENGTH = 230;
 
+type AIRequestOptions = {
+  temperature?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+};
+
+function buildVisitGenerationOptions(seedParts: string[]): AIRequestOptions {
+  const seed = hashSeed(...seedParts);
+  const temperature = 0.95 + (seed % 6) * 0.03;
+  const topP = 0.93 + ((seed >> 3) % 3) * 0.02;
+  const frequencyPenalty = 0.45 + ((seed >> 5) % 4) * 0.05;
+  const presencePenalty = 0.35 + ((seed >> 7) % 4) * 0.05;
+  return {
+    temperature: Number(temperature.toFixed(2)),
+    topP: Number(topP.toFixed(2)),
+    frequencyPenalty: Number(frequencyPenalty.toFixed(2)),
+    presencePenalty: Number(presencePenalty.toFixed(2)),
+  };
+}
+
 async function callAI(
   systemPrompt: string,
   userPrompt: string,
   model = OPENAI_DEFAULT_MODEL,
-  maxCompletionTokens?: number
+  maxCompletionTokens?: number,
+  options: AIRequestOptions = {}
 ): Promise<string> {
   const completionTokens = maxCompletionTokens ?? DEFAULT_MAX_COMPLETION_TOKENS;
 
   async function request(requestModel: string): Promise<string> {
+    const body: Record<string, unknown> = {
+      model: requestModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_completion_tokens: completionTokens,
+    };
+    if (typeof options.temperature === 'number') body.temperature = options.temperature;
+    if (typeof options.topP === 'number') body.top_p = options.topP;
+    if (typeof options.frequencyPenalty === 'number') body.frequency_penalty = options.frequencyPenalty;
+    if (typeof options.presencePenalty === 'number') body.presence_penalty = options.presencePenalty;
+
     const res = await fetch(`${API_BASE}/api/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: requestModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_completion_tokens: completionTokens,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -57,8 +85,12 @@ async function callAI(
   }
 }
 
-async function callVisitLogAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  return callAI(systemPrompt, userPrompt, VISIT_LOG_MODEL, VISIT_LOG_MAX_COMPLETION_TOKENS);
+async function callVisitLogAI(
+  systemPrompt: string,
+  userPrompt: string,
+  options: AIRequestOptions = {}
+): Promise<string> {
+  return callAI(systemPrompt, userPrompt, VISIT_LOG_MODEL, VISIT_LOG_MAX_COMPLETION_TOKENS, options);
 }
 
 async function callAIWithImage(systemPrompt: string, textPrompt: string, imageBase64: string, mimeType: string): Promise<string> {
@@ -253,7 +285,7 @@ function buildSystemPrompt(): string {
 - JW중외제약 제품 강점은 자연스럽게 녹여낼 것
 - ★ 큰따옴표(")와 작은따옴표(') 절대 금지. 강조는 따옴표 없이
 - 페린젝트: 반드시 1회 투여로 표기 (단회투여 금지)
-- 위너프와 위너프에이플러스는 구분해서 표기. 고단백/아미노산 25% 증가/포도당 감소/4세대/중증환자는 위너프에이플러스, 오메가3·오메가6 지질 조성/시장 1위/기존 3챔버 TPN은 위너프
+- 위너프와 위너프에이플러스는 구분해서 표기. 같은 제품이라도 디테일 축과 환자군을 섞지 말고, 제품별 특장점은 서로 다른 각도로 쓰기
 - 방문일지 본문 230자 이내, 다음 방문 전략은 실무적으로`;
 
   let prompt = base;
@@ -374,8 +406,8 @@ function buildPreviousStrategyCarryoverNote(
 - 단, 본문에 "다음방문시에는", "다음 방문에는" 같은 계획 문구를 그대로 넣지 말고, 이번 방문에서 실행한 내용으로 바꿔 쓰세요.
 - 권장 흐름: 지난 방문에 어떤 디테일을 설명드렸는지 -> 교수님께서 어떻게 반응하셨는지/실제로 써보셨는지 -> 오늘은 그 결과를 확인하거나 다른 디테일로 이어가기.
 - 절대 금지: "짧게 드렸고", "간단히 드렸고", "가볍게 드렸고"처럼 내용을 숨기는 표현. 지난 방문 연결은 반드시 구체 내용과 교수님 반응이 함께 나와야 합니다.
-- 올바른 형식 예: "지난 방문에 페린젝트 급여조건과 1회 투여 편의성을 설명드렸고, 교수님께서 외래에서 써보신 뒤 반복 내원이 어려운 환자에서 괜찮았다고 하심. 오늘은 Hb 회복 근거와 적용 케이스를 다시 확인함"
-- 올바른 형식 예: "지난 방문에 산후 빈혈 케이스를 설명드렸고, 교수님께서 산부인과 외래에서 실제로는 급여 기준을 더 봐야 한다고 하심. 오늘은 분만 후 빈혈 환자에서 적용 가능 케이스를 다시 확인함"
+- 올바른 형식 예: "지난 방문에 제품의 핵심 근거를 설명드렸고, 교수님께서 실제 적용은 환자 흐름을 보고 보겠다고 하심. 오늘은 그 결과를 확인하며 다른 환자군으로 이어감"
+- 올바른 형식 예: "지난 방문에 산부인과 환자군의 다른 케이스를 설명드렸고, 교수님께서 급여 기준은 더 보겠다고 하심. 오늘은 회복기 환자에서 다른 디테일을 확인함"
 - 부정적 반응을 만들 때는 이유까지 같이 쓰세요. 예: "교수님께서 비용 부담으로 외래 적용은 제한적이라고 하심. 급여 기준에 맞는 철결핍 빈혈 케이스부터 보시면 된다고 안내함"
 - 처방을 직접 늘려달라는 표현 대신, "적용 가능 케이스 확인", "해당 환자군에서 검토"처럼 자연스럽게 마무리하세요.
 - 모순되거나 과와 맞지 않으면 억지로 이어 쓰지 말고 오늘 과에 맞는 디테일로 전환하세요.\n`;
@@ -495,13 +527,13 @@ function buildVisitLogRules(): string {
 과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것. 같은 문장에 비슷한 테마를 두 개 이상 라벨처럼 이어 붙이지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
 철분제 표현: 경구 철분, 경구 철분제, 경구용 철분제, 경구용철분제제, 경구용철분제제제, 먹는 철분제, oral iron, PO iron 등 경구 복용 철분제를 뜻하는 표현은 반드시 "경구용철분제"로 통일
-제품명: 제품 특장점 문장에는 반드시 제품명을 함께 쓸 것. 예: "아미노산 25% 증가" 금지, "위너프에이플러스의 아미노산 25% 증가"로 작성
-디테일 내용: "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 말했는지 없는 문장 금지. 반드시 "페린젝트의 1회 투여와 Hb 회복 근거", "위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소"처럼 실제 내용 작성
+제품명: 제품 특장점 문장에는 반드시 제품명을 함께 쓸 것. 예: "제품명 없이 성분만 쓰는 문장" 금지, "위너프에이플러스의 실제 강점"처럼 제품명을 앞에 두어 작성
+디테일 내용: "특장점 디테일 진행함", "제품 디테일 안내함"처럼 무엇을 말했는지 없는 문장 금지. 반드시 "페린젝트의 1회 투여와 Hb 회복 근거", "위너프에이플러스의 회복기 영양 보충과 혈당 부담 차이"처럼 실제 내용 작성
 교수 반응: 반응을 쓸 때는 교수님께서 보인 실제 의견 형태로만 작성. 예: "교수님께서 그 점은 공감하시지만 케이스가 많지 않다는 의견 보임". "특장점 반응 확인 요청"처럼 반응 확인을 교수에게 요청하는 문장 금지
 교수 성향/처방 경향: 텍스트 직접 서술 금지, 어조에만 반영
 형식: 보고서체, 설명문, 교육자료체 금지. 현장에서 적은 메모처럼
 글자수: 본문 100자 이상 230자 이내 / 다음방문전략 120자 이내
-다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "위너프에이플러스 아미노산 조성 디테일 진행할예정", "처방 여부 확인 후 급여 조건 안내할예정")
+다음방문전략: 다음 방문에서 할 액션을 쓰고, 마지막은 "~할예정"으로 자연스럽게 끝낼 것 (예: "제품의 다른 근거와 환자군 확인할예정", "처방 여부 확인 후 급여 조건 안내할예정")
 본문 종결: 영업일지 본문에는 다음 방문 계획을 넣지 말 것. "다음 방문에는", "다음번에는", "다음방문시에는" 문장은 다음방문전략에만 작성
 미도입 제품: 대부분은 실제 제품 근거/환자군 디테일만 쓰고, 10% 정도만 본문 중 "신약여부검토 요청"을 1회 넣을 것. 증량/증액/처방 늘려달라/지속 처방 부탁 표현 금지
 따옴표: 큰따옴표("), 작은따옴표(') 절대 금지`;
@@ -513,9 +545,9 @@ function buildVisitLogFlow(): string {
    ★★ 반드시 지켜야 할 흐름 규칙:
      "지난번에 ~했는데" 또는 "지난번에 ~드렸는데"로 시작했으면,
      바로 이어서 반드시 그것에 대한 확인 결과/교수 반응을 끝까지 쓸 것.
-     예: "지난번에 페린젝트 급여조건 디테일 드렸는데, 처방 케이스 있는지 확인했으나 교수님께서 아직 없다고 하심. 이후 외래 투여 편의성 디테일 진행함"
-     절대 안 되는 예: "지난번에 페린젝트 급여조건 드렸는데, 위너프에이플러스 질소균형 디테일 진행함" — 과거 내용의 결과 없이 새 주제로 점프 금지.
-     절대 안 되는 예: "지난번 위너프에이플러스 사용 중이시라 오늘은 위너프에이플러스 중심으로..." — 이미 사용 중인 같은 제품을 다시 중심이라고 반복 금지. 사용 반응/재방문량/처방을 고려할 상황 확인으로 이어갈 것.
+     예: "지난번에 제품의 핵심 근거를 설명드렸는데, 교수님께서 실제 적용은 환자 흐름을 보고 보겠다고 하심. 오늘은 그 확인 결과를 바탕으로 다른 환자군 디테일을 이어감"
+     절대 안 되는 예: "지난번에 제품 하나를 설명드렸는데, 갑자기 다른 제품 디테일로 점프함" — 과거 내용의 결과 없이 새 주제로 점프 금지.
+     절대 안 되는 예: "지난번 사용 중이시라 오늘도 같은 제품 중심으로..." — 이미 사용 중인 같은 제품을 다시 중심이라고 반복 금지. 사용 반응/재방문량/처방을 고려할 상황 확인으로 이어갈 것.
 ② [오늘 핵심] 어떤 제품의 어떤 특장점을 전달했는지 구체적으로. 제공된 제품 특장점 화법 자연스럽게 녹여낼 것 (원문 복붙 금지).
    ★ 주제가 여러 개면 문맥에 맞게 자연스럽게 이어서 작성. 각 주제가 뚝 끊기지 않도록.
 ③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님께서 하신 질문/반대 의견과 그에 대한 답변을 함께 작성. 형태: "교수님께서 ~라고 하심. ~라고 안내함. 어느 정도 공감하심".
@@ -1000,8 +1032,8 @@ function normalizeIntroProductLanguage(
   const finalAllowNewDrugReview = allowNewDrugReview && activeIntroProducts.length > 0;
   const mainProduct = activeProducts[0] || '위너프에이플러스';
   const concreteDetail = mainProduct === '페린젝트'
-    ? '페린젝트의 1회 투여와 Hb 회복 근거 디테일 진행'
-    : '위너프에이플러스의 아미노산 25% 증가와 포도당 부담 감소 디테일 진행';
+    ? '페린젝트의 1회 투여와 Hb 회복 근거 디테일'
+    : '위너프에이플러스의 회복기 영양 보충과 혈당 부담 차이 디테일';
   const replacement = finalAllowNewDrugReview ? '신약여부검토 요청' : concreteDetail;
   const activeIntroducedProducts = activeProducts.filter((product) => !INTRO_PRODUCTS.has(product));
 
@@ -1042,7 +1074,7 @@ function buildContextSection(doctor: Doctor, pastLogs: VisitLog[]): string {
     .join('\n');
 
   const pastContext = pastLogs
-    .slice(0, 5)
+    .slice(0, 8)
     .map((log, i) => {
       let entry = `  [${i + 1}회 전 방문 - ${log.visitDate}]\n  ${log.formattedLog.slice(0, 500)}`;
       if (log.nextStrategy) entry += `\n  다음전략: ${log.nextStrategy.slice(0, 200)}`;
@@ -1076,7 +1108,7 @@ function buildContextSection(doctor: Doctor, pastLogs: VisitLog[]): string {
   const convHistory = doctor.conversationHistory ?? [];
   if (convHistory.length > 0) {
     const convSummary = convHistory
-      .slice(0, 3)
+      .slice(0, 5)
       .map((record, index) => {
         const traitText = record.detectedTraits.join(', ') || '없음';
         const analysisText = record.aiAnalysis.slice(0, 220);
@@ -1170,6 +1202,18 @@ ${recentHints}${patternBlock}
     context += `\n${snippetContext}`;
   }
 
+  const externalPatterns = externalCasePatternStorage.getForGeneration(doctor.department, [...VISIT_GENERATION_PRODUCTS]);
+  if (externalPatterns.length > 0) {
+    const externalContext = externalPatterns
+      .slice(0, 6)
+      .map((pattern, index) => {
+        const summary = pattern.sourceSummary?.trim() || `${pattern.department} ${pattern.product}`;
+        return `  ${index + 1}. [${pattern.department}/${pattern.product}] ${pattern.patientGroup} / ${pattern.detailAxis} / ${pattern.reactionPattern} / ${pattern.nextAction} / ${summary}`;
+      })
+      .join('\n');
+    context += `\n\n외부 사례 참고 패턴:\n${externalContext}`;
+  }
+
   // 스타일 기준을 컨텍스트 맨 앞에 배치 (editHints 바로 다음)
   const styleSection = buildUserMemoStyleSection();
   if (styleSection) {
@@ -1247,30 +1291,36 @@ function getActiveProductsForGeneration(selectedProducts: string[], department: 
   return allowed.slice(0, Math.min(2, allowed.length));
 }
 
-function getFallbackDetailForProduct(product: string, department: string): string {
+function getFallbackDetailForProduct(product: string, department: string, seed = ''): string {
   if (product === '페린젝트') {
-    if (/정형외과|산부인과|산과|부인과|외과/.test(department)) {
-      return '수술 전후 빈혈에서 1회 투여로 Hb 회복과 수혈 부담 감소 근거';
-    }
-    if (/종양내과|혈액종양내과|종양혈액내과|혈액내과/.test(department)) {
-      return '항암치료 중 햅시딘 상승과 경구용철분제 흡수 저하로 빈혈이 오래 가는 환자에서 1회 투여와 Hb 회복 근거';
-    }
-    if (/소화기|IBD|위장관/.test(department)) {
-      return '위장관 출혈과 IBD 빈혈에서 1회 투여 후 Hb 회복 근거';
-    }
-    return '철결핍 빈혈에서 1회 투여 편의성과 Hb 회복 근거';
+    const variants = [
+      /정형외과|산부인과|산과|부인과|외과/.test(department)
+        ? '수술 전후 빈혈에서 1회 투여로 Hb 회복과 수혈 부담을 함께 보는 근거'
+        : '외래 빈혈에서 1회 투여 편의성과 빠른 Hb 회복을 함께 보는 근거',
+      /종양내과|혈액종양내과|종양혈액내과|혈액내과/.test(department)
+        ? '항암치료 중 경구용철분제 반응이 부족한 환자에서 철 보충을 빠르게 보는 근거'
+        : '경구용철분제 반응이 부족한 환자에서 철 보충을 빠르게 보는 근거',
+      /소화기|IBD|위장관/.test(department)
+        ? '위장관 출혈이나 IBD 빈혈에서 외래 추적과 Hb 회복을 같이 보는 근거'
+        : '외래 추적이 필요한 빈혈 환자에서 Hb 회복을 같이 보는 근거',
+      '철결핍 빈혈에서 1회 투여 편의성과 급여 기준을 함께 보는 근거',
+    ];
+    return pickVariant(variants, `${product}|${department}|${seed}`);
   }
 
-  if (/산부인과|산과|부인과/.test(department)) {
-    return '분만 후 식이 지연이나 수술 전후 회복기에서 단백 보충과 질소균형 유지 차별점';
-  }
-  if (/중환자|ICU|호흡기|외과|간담|흉부|신경/.test(department)) {
-    return '중증 환자 영양에서 아미노산 25% 증가와 포도당 부담 감소 차별점';
-  }
-  if (/소화기|IBD|위장관/.test(department)) {
-    return '장관 영양 부담 환자에서 고아미노산 저포도당 조성 차별점';
-  }
-  return '고아미노산 저포도당 조성으로 중증 환자 영양 부담을 줄이는 차별점';
+  const variants = [
+    /산부인과|산과|부인과/.test(department)
+      ? '분만 후 식이 진행이 늦은 환자에서 단백 보충과 회복기 영양을 같이 보는 차이'
+      : '회복기 식사 진행이 늦은 환자에서 단백 보충과 영양 흐름을 같이 보는 차이',
+    /중환자|ICU|호흡기|외과|간담|흉부|신경/.test(department)
+      ? '중증 환자 영양에서 회복 부담을 줄이면서 단백과 열량을 같이 보는 차이'
+      : '회복기 영양에서 단백 보충과 열량 부담을 같이 보는 차이',
+    /소화기|IBD|위장관/.test(department)
+      ? '장관 영양 부담이 큰 환자에서 영양 공급과 혈당 부담을 같이 보는 차이'
+      : '영양 공급과 혈당 부담을 같이 보는 차이',
+    '회복기 환자에서 단백 보충과 질소균형을 같이 보는 차이',
+  ];
+  return pickVariant(variants, `${product}|${department}|${seed}`);
 }
 
 function hashSeed(...parts: string[]): number {
@@ -1287,43 +1337,43 @@ function pickVariant<T>(variants: T[], seed: string): T {
 }
 
 function buildFallbackVisitLog(product: string, department: string, seed = ''): string {
-  const detail = getFallbackDetailForProduct(product, department);
+  const detail = getFallbackDetailForProduct(product, department, seed);
   const variants = [
     `${product}의 ${detail} 중심으로 디테일 진행함`,
-    `${product}의 ${detail}을 우선 설명드림`,
+    `${product}의 ${detail}을 환자 상황과 연결해 설명드림`,
     `${product}의 ${detail}을 실제 처방 맥락에 맞춰 정리함`,
   ];
   return pickVariant(variants, `${product}|${department}|${detail}|${seed}`);
 }
 
 function buildDetailedVisitLog(product: string, department: string, seed = ''): string {
-  const detail = getFallbackDetailForProduct(product, department);
+  const detail = getFallbackDetailForProduct(product, department, seed);
   const variantSeed = `${product}|${department}|${detail}|${seed}`;
   if (product === '페린젝트') {
     if (/종양내과|혈액종양내과|종양혈액내과|혈액내과/.test(department)) {
       return pickVariant([
-        `${product}의 ${detail}을 항암치료 중 경구용철분제 흡수가 더딘 빈혈 환자와 연결해 디테일 진행함. 교수님께서 경구용철분제로는 회복이 늦을 수 있어 빠르게 보려는 케이스는 차트로 보겠다는 의견 보임`,
-        `${product}의 ${detail}을 항암치료 중 빈혈 관리와 연결해 설명드림. 교수님께서 경구용철분제로는 회복이 늦는 환자부터 보겠다는 의견 보임`,
-        `${product}의 ${detail}을 항암치료 중 Hb 회복이 더딘 환자와 연결해 디테일 진행함. 교수님께서 빠른 철 보충이 필요한 케이스는 차트로 보겠다는 의견 보임`,
+        `${product}의 ${detail}을 항암치료 중 경구용철분제 반응이 부족한 환자와 연결해 디테일 진행함. 교수님께서 빠르게 보려는 케이스는 차트로 확인하겠다는 의견 보임`,
+        `${product}의 ${detail}을 항암치료 중 Hb 회복이 늦는 환자와 연결해 설명드림. 교수님께서 외래에서 우선 볼 환자부터 보겠다는 의견 보임`,
+        `${product}의 ${detail}을 항암치료 중 철 보충이 필요한 환자와 연결해 디테일 진행함. 교수님께서 차트상 조건을 보며 판단하겠다는 의견 보임`,
       ], variantSeed);
     }
     return pickVariant([
-      `${product}의 ${detail}을 외래 빈혈 케이스와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성과 Hb 회복 근거는 공감하셨고, 급여 기준에 맞는 처방 상황을 확인해보겠다는 의견 보임`,
-      `${product}의 ${detail}을 반복 내원이 부담되는 환자 중심으로 설명드림. 교수님께서 급여 기준에 맞는 환자부터 살펴보겠다는 의견 보임`,
+      `${product}의 ${detail}을 외래 빈혈 환자와 연결해 디테일 진행함. 교수님께서 1회 투여 편의성은 공감하셨고 급여 기준을 같이 보겠다는 의견 보임`,
+      `${product}의 ${detail}을 반복 내원이 부담되는 환자와 연결해 설명드림. 교수님께서 적용 가능 케이스부터 보겠다는 의견 보임`,
       `${product}의 ${detail}을 Hb 회복이 늦는 외래 환자와 연결해 디테일 진행함. 교수님께서 실제 사용은 차트상 환자부터 보겠다는 의견 보임`,
     ], variantSeed);
   }
   if (/산부인과|산과|부인과/.test(department)) {
     return pickVariant([
-      `${product}의 ${detail}을 분만 후 식이 지연이나 수술 전후 회복기 환자와 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 같이 볼 수 있다는 점은 공감하셨고, 실제 적용은 회복기 환자부터 살펴보겠다는 의견 보임`,
-      `${product}의 ${detail}을 산후 회복기 영양 관리와 연결해 설명드림. 교수님께서 식사 진행이 늦는 환자에서는 살펴볼 수 있겠다는 의견 보임`,
-      `${product}의 ${detail}을 수술 전후 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담 차이는 차트로 보겠다는 의견 보임`,
+      `${product}의 ${detail}을 분만 후 식이 진행이 늦은 환자와 연결해 디테일 진행함. 교수님께서 회복기 환자에서는 살펴볼 수 있겠다는 의견 보임`,
+      `${product}의 ${detail}을 산후 회복기 영양 관리와 연결해 설명드림. 교수님께서 실제 적용은 회복기 환자부터 보겠다는 의견 보임`,
+      `${product}의 ${detail}을 수술 전후 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 차트상 환자부터 보겠다는 의견 보임`,
     ], variantSeed);
   }
   return pickVariant([
-    `${product}의 ${detail}을 중환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 혈당 부담을 줄이면서 단백 보충을 강화할 수 있다는 점은 공감하셨고, 병동 처방은 케이스별로 보겠다는 의견 보임`,
-    `${product}의 ${detail}을 회복기 환자 영양 보충과 연결해 설명드림. 교수님께서 실제 적용은 외래나 병동 상황을 같이 보겠다는 의견 보임`,
-    `${product}의 ${detail}을 수술 후 영양 관리 관점에서 디테일 진행함. 교수님께서 회복 흐름을 보며 판단하겠다는 의견 보임`,
+    `${product}의 ${detail}을 회복기 환자 영양 보충과 연결해 디테일 진행함. 교수님께서 실제 적용은 환자 흐름을 같이 보겠다는 의견 보임`,
+    `${product}의 ${detail}을 수술 후 영양 관리 관점에서 설명드림. 교수님께서 회복 흐름을 보며 판단하겠다는 의견 보임`,
+    `${product}의 ${detail}을 일반 회복기 환자와 연결해 디테일 진행함. 교수님께서 처방 가능 상황을 차트로 보겠다는 의견 보임`,
   ], variantSeed);
 }
 
@@ -1419,7 +1469,7 @@ function hasBatchConflict(text: string, avoidTexts: string[]): boolean {
   return avoidTexts.some((avoidText) =>
     getDetailKeyOverlap(text, avoidText).length > 0 ||
     getReactionKeyOverlap(text, avoidText).length > 0 ||
-    getTextSimilarity(text, avoidText) >= 0.52
+    getTextSimilarity(text, avoidText) >= 0.4
   );
 }
 
@@ -1439,17 +1489,17 @@ function buildDiversifiedVisitLog(
     {
       product: '위너프에이플러스',
       keys: ['protein-nitrogen'],
-      text: '위너프에이플러스의 단백 보충과 질소균형 유지 측면을 분만 후 식이 지연이나 수술 전후 회복기 영양 보충과 연결해 디테일 진행함. 교수님께서 회복기 환자에서 영양 공급 반응을 확인해볼 수 있겠다는 의견 보임',
+      text: '위너프에이플러스의 단백 보충과 질소균형 유지 측면을 회복기 식사 진행이 늦는 환자와 연결해 디테일 진행함. 교수님께서 회복기 환자에서 영양 공급 반응을 확인해보겠다는 의견 보임',
     },
     {
       product: '위너프에이플러스',
       keys: ['omega3-composition'],
-      text: '위너프에이플러스의 오메가3 조성과 염증 부담 완화 근거를 장기 입원 환자 영양 공급 흐름과 연결해 디테일 진행함. 교수님께서 감염 회복기 영양 반응을 보겠다는 의견 보임',
+      text: '위너프에이플러스의 오메가3 조성과 영양 흐름 차이를 회복기 환자와 연결해 디테일 진행함. 교수님께서 실제 적용은 차트상 환자부터 보겠다는 의견 보임',
     },
     {
       product: '페린젝트',
       keys: ['transfusion-burden'],
-      text: '페린젝트의 수술 전후 철결핍 빈혈에서 수혈 부담을 줄일 수 있는 근거 중심으로 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스에서 처방 가능성을 확인해보겠다는 의견 보임',
+      text: '페린젝트의 수술 전후 철결핍 빈혈에서 수혈 부담을 줄일 수 있는 근거 중심으로 디테일 진행함. 교수님께서 수혈을 피하고 싶은 케이스부터 확인해보겠다는 의견 보임',
     },
     {
       product: '페린젝트',
@@ -1517,11 +1567,11 @@ function buildFollowUpStrategyWithoutRepeatingDetail(
   const candidates = [
     otherProduct === '위너프에이플러스' ? '다음방문시에는 위너프에이플러스 수술 후 회복기 영양 반응과 처방 흐름 확인할예정' : '',
     otherProduct === '페린젝트' ? '다음방문시에는 페린젝트 외래 빈혈 환자의 1회 투여 반응과 급여 기준 확인할예정' : '',
-    '다음방문시에는 페린젝트 급여 기준에 맞는 외래 빈혈 케이스 확인할예정',
-    '다음방문시에는 페린젝트 투여 후 Hb 회복 속도와 실제 적용 케이스 확인할예정',
-    '다음방문시에는 위너프에이플러스 단백 보충과 질소균형을 수술 후 회복 흐름에서 확인할예정',
-    '다음방문시에는 위너프에이플러스 오메가3 조성을 영양 부담과 연결해 다시 볼예정',
-    '다음방문시에는 위너프에이플러스 포도당 부담 차이와 회복기 환자 반응 확인할예정',
+    '다음방문시에는 페린젝트 급여 기준에 맞는 적용 가능한 케이스 확인할예정',
+    '다음방문시에는 페린젝트 투여 후 Hb 회복 경과와 실제 적용 반응 확인할예정',
+    '다음방문시에는 위너프에이플러스 단백 보충 반응과 회복기 식사 흐름 확인할예정',
+    '다음방문시에는 위너프에이플러스 영양 부담 차이와 환자 반응을 다시 볼예정',
+    '다음방문시에는 위너프에이플러스 회복기 환자에서 적용 가능 케이스 확인할예정',
     '다음방문시에는 페린젝트 외래 재방문 부담과 Hb 회복 경과를 다시 볼예정',
   ].filter(Boolean);
 
@@ -2001,7 +2051,7 @@ async function convertToVisitLogBase(
 단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
     : '';
 
-  const cvSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 8, doctor.department);
+  const cvSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 10, doctor.department);
   const cvFocus = selectedProducts.length > 0
     ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
     : (() => {
@@ -2065,7 +2115,11 @@ ${buildVisitLogRules()}
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
-  const response = await callVisitLogAI(systemPrompt, prompt.replace('{{RAW_MEMO}}', rawNotes));
+  const response = await callVisitLogAI(
+    systemPrompt,
+    prompt.replace('{{RAW_MEMO}}', rawNotes),
+    buildVisitGenerationOptions([doctor.id, doctor.department, 'convert', String(pastLogs.length), String(selectedProducts.length)])
+  );
   let cleaned = extractSection(response, ['===영업일지===', '===다음방문전략===']);
   let nextStrategy = extractSection(response, ['===다음방문전략===']);
 
@@ -2162,7 +2216,7 @@ async function autoGenerateVisitLogBase(
 단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
     : '';
 
-  const agSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 8, doctor.department);
+  const agSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 10, doctor.department);
   const agFocus = selectedProducts.length > 0
     ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
     : (() => {
@@ -2226,7 +2280,11 @@ ${buildVisitLogRules()}
 ===다음방문전략===
 (120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
 
-  const response = await callVisitLogAI(systemPrompt, prompt);
+  const response = await callVisitLogAI(
+    systemPrompt,
+    prompt,
+    buildVisitGenerationOptions([doctor.id, doctor.department, 'auto', String(pastLogs.length), batchAvoidTexts.join('|').slice(0, 120)])
+  );
 
   const productMatch = response.match(/===제품===\s*([\s\S]*?)(?:===(?:영업일지|전문영업일지)===|$)/);
   const logMatch = response.match(/===(?:영업일지|전문영업일지)===\s*([\s\S]*?)(?:===다음방문전략===|$)/);
@@ -2415,9 +2473,13 @@ ${themeConstraint}
 - 120자 이내
 - 본문 메모만 출력 (라벨, 설명 없이)
 
-예시: "다음방문시에는 페린젝트 급여 적용 후 처방 현황 확인하고 위너프에이플러스 아미노산 조성 디테일할예정"`;
+예시: "다음방문시에는 제품의 다른 근거와 적용 가능한 케이스를 확인할예정"`;
 
-  const result = await callVisitLogAI(systemPrompt, prompt);
+  const result = await callVisitLogAI(
+    systemPrompt,
+    prompt,
+    buildVisitGenerationOptions([doctor.id, doctor.department, 'nextStrategy', String(pastLogs.length)])
+  );
   let cleaned = result.replace(/['"]/g, '').trim();
   cleaned = normalizeNextStrategy(cleaned, doctor.department);
   cleaned = normalizeIntroProductLanguage(cleaned, getAllowedProductsForDepartment(doctor.department), false);

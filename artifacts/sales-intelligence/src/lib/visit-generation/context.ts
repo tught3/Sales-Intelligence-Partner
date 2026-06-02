@@ -61,9 +61,10 @@ export function buildContext(
     : [];
   const productScope = selected.length > 0 ? selected : detectedManualProducts;
   const preferences = preferenceStorage.getForGeneration(doctor, productScope);
-  const externalCasePatterns = manualRawNotes
-    ? []
-    : externalCasePatternStorage.getForGeneration(doctor.department, productScope.length > 0 ? productScope : VISIT_PRODUCTS);
+  const externalCasePatterns = externalCasePatternStorage.getForGeneration(
+    doctor.department,
+    productScope.length > 0 ? productScope : VISIT_PRODUCTS
+  );
 
   const todayDate = new Date().toISOString().split('T')[0];
   const todayReactionTexts = manualRawNotes
