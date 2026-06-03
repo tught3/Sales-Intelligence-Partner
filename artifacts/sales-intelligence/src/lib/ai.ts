@@ -1239,7 +1239,7 @@ type DeptProductRule = {
 // 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
 const DEPT_PRODUCT_MAP: DeptProductRule[] = [
   { keywords: ['정형외과'], weightedProducts: [{ name: '페린젝트', weight: 100 }], weighted: true },
-  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 100 }], weighted: true },
+  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 90 }, { name: '위너프에이플러스', weight: 10 }], weighted: true },
   { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
   { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 30 }], weighted: true },
   { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
