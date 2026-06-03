@@ -306,6 +306,8 @@ export default function VisitLogPage() {
     setBulkFailures([]);
     const generated: Array<{ doctor: Doctor; log: VisitLog }> = [];
     const failures: BulkFailure[] = [];
+    const batchUsedTemplateIds: string[] = [];
+    const batchUsedProducts: string[] = [];
     try {
       for (let i = 0; i < targets.length; i++) {
         const doctor = targets[i];
@@ -313,7 +315,14 @@ export default function VisitLogPage() {
         const docPastLogs = visitLogStorage.getByDoctorId(doctor.id);
         try {
           const batchAvoidTexts = generated.map(({ log }) => `${log.formattedLog} ${log.nextStrategy ?? ""}`);
-          const res = await autoGenerateVisitLog(doctor, docPastLogs, [], batchAvoidTexts);
+          const res = await autoGenerateVisitLog(
+            doctor,
+            docPastLogs,
+            [],
+            batchAvoidTexts,
+            batchUsedTemplateIds,
+            batchUsedProducts
+          );
           if (!res.formattedLog || res.formattedLog.trim().length < 10) {
             failures.push({ doctorName: doctor.name, reason: "결과 없음" });
             continue;
@@ -338,6 +347,8 @@ export default function VisitLogPage() {
             continue;
           }
           generated.push({ doctor, log });
+          if (res.templateId) batchUsedTemplateIds.push(res.templateId);
+          batchUsedProducts.push(...(res.products ?? []));
           setBulkResults([...generated]);
         } catch (e) {
           failures.push({ doctorName: doctor.name, reason: classifyGenerationFailure(e) });
@@ -717,7 +728,7 @@ export default function VisitLogPage() {
                       className="w-full min-h-12 gap-2 sm:min-h-9"
                     >
                       {isAutoGenerating ? (
-                        <><Loader2 className="w-4 h-4 animate-spin" />일괄 메모를 다듬는 중...</>
+                        <><Loader2 className="w-4 h-4 animate-spin" />일괄 메모를 다듬는 중... (약 5-10초)</>
                       ) : (
                         <><Wand2 className="w-4 h-4" />{Math.min(bulkCount, autoTargetCount || bulkCount)}건 자동 생성</>
                       )}

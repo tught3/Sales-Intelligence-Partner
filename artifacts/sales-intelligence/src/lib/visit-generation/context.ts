@@ -17,6 +17,8 @@ export type VisitContext = {
   pastLogs: VisitLog[];
   recentStrategies: string[];
   usedProductsRecently: string[];
+  batchUsedProducts: string[];
+  batchUsedTemplateIds: string[];
   availableProducts: string[];
   batchAvoidTexts: string[];
   batchUsedDetailKeys: string[];
@@ -51,6 +53,8 @@ export function buildContext(
   pastLogs: VisitLog[],
   selectedProducts: string[],
   batchAvoidTexts: string[],
+  batchUsedTemplateIds: string[] = [],
+  batchUsedProducts: string[] = [],
   manualRawNotes?: string
 ): VisitContext {
   const sortedLogs = [...pastLogs].sort((a, b) => (b.visitDate || '').localeCompare(a.visitDate || ''));
@@ -80,6 +84,8 @@ export function buildContext(
     pastLogs: sortedLogs,
     recentStrategies: sortedLogs.slice(0, 3).map((log) => log.nextStrategy).filter(Boolean),
     usedProductsRecently: [...new Set(sortedLogs.slice(0, 5).flatMap((log) => log.products || []))],
+    batchUsedProducts,
+    batchUsedTemplateIds,
     availableProducts: selected.length > 0 ? selected : VISIT_PRODUCTS,
     batchAvoidTexts,
     batchUsedDetailKeys: collectKeys(batchAvoidTexts),

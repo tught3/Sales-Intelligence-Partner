@@ -2,6 +2,7 @@ import type { VisitContext } from './context';
 import { collectKeys, extractKeys, extractReactionKeys, similarityRatio } from './detailKeys';
 import type { ExternalCasePattern } from '../storage';
 import type { DetailKey } from './types';
+import { getVisitTemplates } from './templates';
 
 type PlanCandidate = Omit<DetailKey, 'selectionReason'>;
 
@@ -127,6 +128,7 @@ function buildExternalCandidateVariants(pattern: ExternalCasePattern, ctx: Visit
     const nextAction = nextActionVariants[(offset + 11) % nextActionVariants.length];
     const narrativeStyle = styles[(offset + 7) % styles.length];
     variants.push({
+      templateId: `external-${pattern.id}-${i}`,
       product: pattern.product,
       patientGroup: pattern.patientGroup,
       detailAxis,
@@ -137,6 +139,20 @@ function buildExternalCandidateVariants(pattern: ExternalCasePattern, ctx: Visit
     });
   }
   return uniqueByText(variants);
+}
+
+function buildTemplateCandidates(ctx: VisitContext): PlanCandidate[] {
+  const productScope = ctx.availableProducts.length > 0 ? ctx.availableProducts : ['위너프에이플러스', '페린젝트'];
+  return getVisitTemplates(ctx.doctor.department || '', productScope).map((template) => ({
+    templateId: template.templateId,
+    product: template.product,
+    patientGroup: template.patientGroup,
+    detailAxis: template.detailAxis,
+    doctorReaction: template.doctorReaction,
+    nextAction: template.nextAxis,
+    narrativeStyle: template.narrativeStyle,
+    allowedDepartments: [template.department],
+  }));
 }
 
 const WINUF_CANDIDATES: PlanCandidate[] = [
@@ -309,8 +325,9 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
 }
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
+  const templateCandidates = buildTemplateCandidates(ctx);
   const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.flatMap((pattern) => buildExternalCandidateVariants(pattern, ctx));
-  const all = [...externalCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
+  const all = [...templateCandidates, ...externalCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const manualProducts = ctx.manualRawNotes
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
     : [];
@@ -326,12 +343,22 @@ function hasUsedReaction(candidate: PlanCandidate, ctx: VisitContext): boolean {
   return reactionKeys.some((key) => ctx.batchUsedReactionKeys.includes(key));
 }
 
+function hasUsedTemplate(candidate: PlanCandidate, ctx: VisitContext): boolean {
+  return Boolean(candidate.templateId && ctx.batchUsedTemplateIds.includes(candidate.templateId));
+}
+
 function withUnusedReaction<T extends PlanCandidate>(candidate: T, ctx: VisitContext): T {
   if (!hasUsedReaction(candidate, ctx)) return candidate;
   const replacement = REACTION_FALLBACKS.find((reaction) =>
     extractReactionKeys(reaction).every((key) => !ctx.batchUsedReactionKeys.includes(key))
   );
   return replacement ? { ...candidate, doctorReaction: replacement } : candidate;
+}
+
+function withUnusedTemplate<T extends PlanCandidate>(candidate: T, ctx: VisitContext): T {
+  if (!hasUsedTemplate(candidate, ctx)) return candidate;
+  const alternative = candidatesFor(ctx).find((item) => item.templateId && !ctx.batchUsedTemplateIds.includes(item.templateId));
+  return (alternative ?? candidate) as T;
 }
 
 function externalPatternBonus(candidate: PlanCandidate, ctx: VisitContext): number {
@@ -342,6 +369,12 @@ function externalPatternBonus(candidate: PlanCandidate, ctx: VisitContext): numb
   );
   if (!matched) return 0;
   return 4 + Math.min(5, Math.max(0, Math.round((matched.confidence || 0) / 20)));
+}
+
+function templateFreshnessBonus(candidate: PlanCandidate, ctx: VisitContext): number {
+  if (!candidate.templateId) return 0;
+  if (ctx.batchUsedTemplateIds.includes(candidate.templateId)) return -120;
+  return 6;
 }
 
 function batchSimilarityPenalty(candidate: PlanCandidate, texts: string[]): number {
@@ -381,7 +414,9 @@ export function buildPlan(ctx: VisitContext): DetailKey {
 
   const baseCandidates = candidatesFor(ctx);
   const reactionSafeCandidates = baseCandidates.filter((candidate) => !hasUsedReaction(candidate, ctx));
-  const selectableCandidates = reactionSafeCandidates.length > 0 ? reactionSafeCandidates : baseCandidates.map((candidate) => withUnusedReaction(candidate, ctx));
+  const selectableCandidates = reactionSafeCandidates.length > 0
+    ? reactionSafeCandidates
+    : baseCandidates.map((candidate) => withUnusedReaction(candidate, ctx));
   if (ctx.isObDoctor && !ctx.hasDailyObFerinject && ctx.availableProducts.includes('페린젝트')) {
     const forcedCandidates = baseCandidates.filter((candidate) => candidate.product === '페린젝트');
     const reactionSafeForced = forcedCandidates.filter((candidate) => !hasUsedReaction(candidate, ctx));
@@ -395,7 +430,9 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     };
   }
 
-  const ranked = selectableCandidates.sort((a, b) => {
+  const ranked = selectableCandidates
+    .map((candidate) => withUnusedTemplate(candidate, ctx))
+    .sort((a, b) => {
     const aKeys = extractKeys(planText(a));
     const bKeys = extractKeys(planText(b));
     const aReactionKeys = extractReactionKeys(a.doctorReaction);
@@ -407,7 +444,9 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       aReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       aKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(a.product) ? 1 : 0) +
+      (ctx.batchUsedProducts.includes(a.product) ? 10 : 0) +
       (batchProducts.includes(a.product) ? 12 : 0) +
+      (hasUsedTemplate(a, ctx) ? 50 : 0) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length * 4 +
       batchSimilarityPenalty(a, ctx.batchAvoidTexts);
     const bPenalty =
@@ -415,7 +454,9 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       bReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
       bKeys.filter((key) => recentKeySet.has(key)).length * 3 +
       (ctx.usedProductsRecently.includes(b.product) ? 1 : 0) +
+      (ctx.batchUsedProducts.includes(b.product) ? 10 : 0) +
       (batchProducts.includes(b.product) ? 12 : 0) +
+      (hasUsedTemplate(b, ctx) ? 50 : 0) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4 +
       batchSimilarityPenalty(b, ctx.batchAvoidTexts);
     const aBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length;
@@ -423,11 +464,13 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     const aCarryoverBonus =
       carryoverKeys.filter((key) => aKeys.includes(key)).length * 5 +
       (carryoverProduct && a.product === carryoverProduct ? 3 : 0) +
-      externalPatternBonus(a, ctx);
+      externalPatternBonus(a, ctx) +
+      templateFreshnessBonus(a, ctx);
     const bCarryoverBonus =
       carryoverKeys.filter((key) => bKeys.includes(key)).length * 5 +
       (carryoverProduct && b.product === carryoverProduct ? 3 : 0) +
-      externalPatternBonus(b, ctx);
+      externalPatternBonus(b, ctx) +
+      templateFreshnessBonus(b, ctx);
     return (aPenalty - aBonus - aCarryoverBonus) - (bPenalty - bBonus - bCarryoverBonus);
   });
 
@@ -446,12 +489,13 @@ export function preCheckUniqueness(plan: DetailKey, ctx: VisitContext): DetailKe
   const planReactionKeys = extractReactionKeys(plan.doctorReaction);
   const used = new Set([...ctx.batchUsedDetailKeys, ...collectKeys(ctx.recentStrategies)]);
   const usedReaction = new Set(ctx.batchUsedReactionKeys);
-  if (!planKeys.some((key) => used.has(key)) && !planReactionKeys.some((key) => usedReaction.has(key))) return plan;
+  const templateUsed = plan.templateId ? ctx.batchUsedTemplateIds.includes(plan.templateId) : false;
+  if (!planKeys.some((key) => used.has(key)) && !planReactionKeys.some((key) => usedReaction.has(key)) && !templateUsed) return plan;
 
   const alternative = candidatesFor(ctx).find((candidate) => {
     const keys = extractKeys(planText(candidate));
     const reactionKeys = extractReactionKeys(candidate.doctorReaction);
-    return keys.every((key) => !used.has(key)) && reactionKeys.every((key) => !usedReaction.has(key));
+    return keys.every((key) => !used.has(key)) && reactionKeys.every((key) => !usedReaction.has(key)) && (!candidate.templateId || !ctx.batchUsedTemplateIds.includes(candidate.templateId));
   });
 
   if (!alternative) return withUnusedReaction(plan, ctx);

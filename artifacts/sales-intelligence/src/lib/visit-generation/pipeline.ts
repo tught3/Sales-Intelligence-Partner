@@ -17,6 +17,8 @@ export async function runVisitGenerationPipeline(
     input.pastLogs,
     input.selectedProducts,
     input.batchAvoidTexts,
+    input.batchUsedTemplateIds ?? [],
+    input.batchUsedProducts ?? [],
     input.manualRawNotes
   );
   trace.add('context', {
@@ -57,6 +59,7 @@ export async function runVisitGenerationPipeline(
           nextStrategy: current.nextStrategy,
           visitDate: raw.visitDate ?? ctx.todayDate,
           products: raw.products?.length ? raw.products : [plan.product],
+          templateId: plan.templateId,
           usedFallback,
           trace: final,
         };
@@ -108,6 +111,7 @@ export async function runVisitGenerationPipeline(
           nextStrategy: current.nextStrategy,
           visitDate: raw.visitDate ?? ctx.todayDate,
           products: raw.products?.length ? raw.products : [plan.product],
+          templateId: plan.templateId,
           usedFallback: true,
           trace: final,
         };
@@ -123,6 +127,7 @@ export async function runVisitGenerationPipeline(
       nextStrategy: current.nextStrategy,
       visitDate: raw.visitDate ?? ctx.todayDate,
       products: raw.products?.length ? raw.products : [plan.product],
+      templateId: plan.templateId,
       usedFallback: true,
       trace: final,
     };
