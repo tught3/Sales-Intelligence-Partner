@@ -1242,8 +1242,8 @@ const DEPT_PRODUCT_MAP: DeptProductRule[] = [
   { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 100 }], weighted: true },
   { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
   { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 30 }], weighted: true },
-  { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '페린젝트', weight: 60 }, { name: '위너프에이플러스', weight: 40 }], weighted: true },
-  { keywords: ['응급의학과', '응급'], weightedProducts: [{ name: '페린젝트', weight: 60 }, { name: '위너프에이플러스', weight: 40 }], weighted: true },
+  { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
+  { keywords: ['응급의학과', '응급의학'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
   { keywords: ['외과', '일반외과', '복부외과', '대장항문외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 55 }, { name: '페린젝트', weight: 45 }], weighted: true },
   { keywords: ['흉부외과', '심혈관외과', '심장외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
   { keywords: ['간담췌외과', '간담'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
@@ -1767,13 +1767,23 @@ function getDeptFeatureRule(department: string): DeptFeatureRule | undefined {
 
 function buildDepartmentFeatureConstraint(department: string): string {
   const rule = getDeptFeatureRule(department);
-  if (!rule) return '';
+
+  // 응급의학과/마취과 전용 추가 제약
+  const isEr = /응급의학과|응급의학/.test(department);
+  const isAnes = /마취과|마취통증|통증의학/.test(department);
+  const noOutpatientNote = (isEr || isAnes)
+    ? '\n- ★ 이 과는 외래 진료를 하지 않음. "외래", "외래 환자", "외래 추적", "외래 재방문" 표현 절대 금지.'
+    : '';
+  const erNote = isEr
+    ? '\n- 응급의학과 방문은 플라주OP 신규사입(병원 코딩 등재) 목적. 프로토콜 도입/검토 방향으로 작성.'
+    : '';
+
+  if (!rule) return noOutpatientNote + erNote ? `\n★★★ 과별 제한:${noOutpatientNote}${erNote}\n` : '';
 
   return `\n★★★ 과별 특장점 제한:
 - 이 과(${department})에서는 다음 테마만 중심적으로 사용: ${rule.allowedThemes.join(', ')}
-- 이 과(${department})에 맞지 않는 테마는 제품 정보에 있어도 쓰지 말 것: ${rule.disallowedThemes.join(', ') || '없음'}
-- 허용 테마는 참고용이며, 한 문장에 테마는 하나만 사용. 비슷한 테마를 라벨처럼 연달아 붙이지 말 것.
-- 과 전용 질환명이나 타 과 환자군 표현은 금지. 과와 직접 연결되는 환자군/상황만 디테일할 것.\n`;
+- 이 과(${department})에 맞지 않는 테마는 쓰지 말 것: ${rule.disallowedThemes.join(', ') || '없음'}
+- 허용 테마는 참고용이며, 한 문장에 테마는 하나만 사용.${noOutpatientNote}${erNote}\n`;
 }
 
 function removeDisallowedProductSentences(text: string, department: string): string {
@@ -2032,6 +2042,15 @@ function buildIntroNote(focusProducts: string[], includeNewDrugReview = false): 
 → 도입 의향은 직접 묻지 말고 특장점만 자연스럽게 전달`;
 }
 
+// 응급의학과 신규사입(병원 코딩) 멘트 — 10% 확률로 삽입
+function buildErNewDrugCodeNote(department: string): string {
+  if (!/응급의학과|응급의학/.test(department)) return '';
+  if (Math.random() >= 0.1) return '';
+  return `\n★ 이번 방문에 플라주OP 신규사입(병원 코딩 등재) 검토 부탁 멘트를 자연스럽게 1회 포함할 것.
+예: "플라주OP 신규사입 검토 부탁드렸더니 검토해보겠다 하심", "병원 코딩 건 여쭤봤더니 담당자와 확인해보겠다 하심"
+→ 강요하거나 반복하지 말고 자연스럽게 1번만.\n`;
+}
+
 function buildLearningPreferenceNote(doctor: Doctor, products: string[], mode: 'auto' | 'manual'): string {
   const preferences = preferenceStorage.getForGeneration(doctor, products).filter((pref) => pref.confidence > 0);
   if (preferences.length === 0) return '';
@@ -2104,6 +2123,7 @@ async function convertToVisitLogBase(
   // 미도입 제품 여부 판단
   const cvAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
   const cvIntroNote = buildIntroNote(activeProducts, cvAllowNewDrugReview);
+  const cvErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
   const cvThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
   const cvRecentDetailMemory = buildRecentDetailMemory(pastLogs);
   const cvLearningNote = buildLearningPreferenceNote(doctor, activeProducts, 'manual');
@@ -2125,7 +2145,7 @@ ${pipelinePlan.exampleMemo
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvLearningNote}${cvPipelinePlanNote}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${objectionInstruction}
+${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvLearningNote}${cvPipelinePlanNote}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${cvErNewDrugNote}${objectionInstruction}
 아래 [원본 메모]를 변환합니다.
 
 ★★ 변환 원칙 (반드시 준수):
@@ -2272,6 +2292,7 @@ async function autoGenerateVisitLogBase(
   // 미도입 제품 여부 판단
   const agAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
   const agIntroNote = buildIntroNote(activeProducts, agAllowNewDrugReview);
+  const agErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
   const agThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
   const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
   const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
@@ -2309,7 +2330,7 @@ ${pipelinePlan.exampleMemo
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agLearningNote}${agPipelinePlanNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${objectionInstruction}
+${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agLearningNote}${agPipelinePlanNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${agErNewDrugNote}${objectionInstruction}
 오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
 (전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원명과 과명에 맞게.)
 아래 제품 디테일 후보 중 최근 방문에서 덜 쓴 내용 1개 이상을 반드시 반영하고, 최근 방문과 같은 수치/근거/환자군 조합으로 대체하지 마세요.
