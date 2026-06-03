@@ -37,6 +37,11 @@ function clean(text: string): string {
     .replace(/처방\s*포인트/g, '처방 내용')
     .replace(/핵심\s*포인트/g, '핵심')
     .replace(/\s*포인트/g, '')
+    // 교수 성향 직접 서술 패턴 제거 ("~과답게 ~하시는 편이라", "~편이라")
+    .replace(/[가-힣]+(?:과|부|실|원|과)답게\s*[가-힣\s]+(?:이시는|하시는|하는)\s*편이라\s*/g, '')
+    .replace(/[가-힣\s]+(?:이시는|하시는|하는)\s*편이라\s*/g, '')
+    // "짧게" 제거 — nextStrategy에서 어색한 표현
+    .replace(/짧게\s*/g, '')
     // "말씀드렸더니." 끊긴 문장 정리
     .replace(/말씀드렸더니\.\s*/g, '말씀드렸더니 ')
     .replace(/\s+\./g, '.')
@@ -100,7 +105,15 @@ export function normalize(
   }
 
   if (nextStrategy && !nextStrategy.endsWith('할예정')) {
-    nextStrategy = `${nextStrategy.replace(/[.。]$/, '')}할예정`;
+    // 이중 어미 방지: 드림/드릴로 끝나면 "예정"만 붙임
+    nextStrategy = nextStrategy.replace(/[.。]$/, '');
+    if (/드림$/.test(nextStrategy)) {
+      nextStrategy = nextStrategy.replace(/드림$/, '드릴예정');
+    } else if (/드릴$/.test(nextStrategy)) {
+      nextStrategy = `${nextStrategy}예정`;
+    } else if (!nextStrategy.endsWith('예정')) {
+      nextStrategy = `${nextStrategy}할예정`;
+    }
   }
   nextStrategy = normalizeRepeatedProductPrefix(nextStrategy, plan.product);
 

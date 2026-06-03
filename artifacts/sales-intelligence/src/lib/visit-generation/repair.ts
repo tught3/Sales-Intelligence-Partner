@@ -12,23 +12,42 @@ export type RepairOutput = {
   usedFallback: boolean;
 };
 
-const REACTION_REPLACEMENTS = [
-  '급여 기준에 맞는 케이스부터 차트로 확인해보겠다는 의견',
+// 페린젝트 전용 — Hb·빈혈·수혈·경구용철분제 맥락
+const REACTION_REPLACEMENTS_FERINJECT = [
   'Hb 수치와 증상을 같이 보고 필요 시 선별하겠다는 반응',
   '경구용철분제 반응이 부족한 경우부터 고려 가능하다는 의견',
   '수혈 부담을 줄일 수 있는 케이스에서는 검토 여지가 있다는 반응',
-  '처방 경험이 많지는 않아도 기준에 맞으면 확인해보겠다는 의견',
-  '영양 보충 필요성은 공감하지만 처방 시점은 환자 상태를 보고 판단하겠다는 반응',
   '차트상 빈혈 추이와 외래 일정이 맞는 환자부터 확인해보겠다는 의견',
   '처방 전환은 케이스별로 보되 Hb 회복 근거는 차트로 보겠다는 반응',
+  '반복 내원이 어려운 환자는 편의성은 이해하셨고 급여 기준을 보겠다는 의견',
+  '재방문 부담이 큰 환자에서 우선 확인해보겠다는 의견',
+];
+
+// 위너프에이플러스 전용 — 영양·단백·혈당 맥락
+const REACTION_REPLACEMENTS_WINUF = [
+  '영양 보충 필요성은 공감하지만 처방 시점은 환자 상태를 보고 판단하겠다는 반응',
+  '단백 보충이 필요한 케이스에서는 적용 여지를 보겠다는 의견',
+  '수술 후 회복기 환자에서 처방 가능성을 살펴보겠다는 반응',
+  '기존 TPN 대비 혈당 부담 차이를 확인해보겠다는 의견',
+  '식사량 저하나 회복이 더딘 환자에서 검토해보겠다는 반응',
+];
+
+// 공통 — 제품 무관하게 쓸 수 있는 반응
+const REACTION_REPLACEMENTS_COMMON = [
+  '급여 기준에 맞는 케이스부터 차트로 확인해보겠다는 의견',
+  '처방 경험이 많지는 않아도 기준에 맞으면 확인해보겠다는 의견',
   '외래 경과와 차트를 보고 적용 가능 케이스를 다시 보겠다는 의견',
   '실제 처방은 환자 추이를 보고 다시 판단하겠다는 반응',
-  '반복 내원이 어려운 환자는 편의성은 이해하셨고 급여 기준을 보겠다는 의견',
   '급여 조건과 환자 상태가 맞는지 차트로 보겠다는 반응',
   '환자군이 맞으면 처방 가능성을 살펴보겠다는 의견',
   '실제 사용은 외래 추적 케이스부터 보겠다는 반응',
-  '재방문 부담이 큰 환자에서 우선 확인해보겠다는 의견',
 ];
+
+function getReactionPool(product: string): string[] {
+  if (product === '페린젝트') return [...REACTION_REPLACEMENTS_FERINJECT, ...REACTION_REPLACEMENTS_COMMON];
+  if (product === '위너프에이플러스') return [...REACTION_REPLACEMENTS_WINUF, ...REACTION_REPLACEMENTS_COMMON];
+  return REACTION_REPLACEMENTS_COMMON;
+}
 
 function formatDoctorReactionSentence(reaction: string): string {
   const cleaned = reaction.trim().replace(/[.。!?]+$/g, '');
@@ -64,13 +83,14 @@ function hasUsedReaction(reaction: string, ctx: VisitContext): boolean {
 }
 
 function selectNonDuplicateReaction(plan: DetailKey, ctx: VisitContext): string {
-  // 빈 문자열이나 너무 짧은 반응(외부사례 reactionPattern 미입력)은 REACTION_REPLACEMENTS로
+  // 빈 문자열이나 너무 짧은 반응(외부사례 reactionPattern 미입력)은 풀에서 선택
   if (plan.doctorReaction && plan.doctorReaction.trim().length >= 10 && !hasUsedReaction(plan.doctorReaction, ctx)) return plan.doctorReaction;
   const seed = hashSeed(plan.product, plan.patientGroup, plan.detailAxis, plan.narrativeStyle, ctx.doctor.department);
-  const candidates = [...REACTION_REPLACEMENTS].sort((a, b) =>
+  const pool = getReactionPool(plan.product);
+  const candidates = [...pool].sort((a, b) =>
     Math.abs(hashSeed(seed.toString(), a)) - Math.abs(hashSeed(seed.toString(), b))
   );
-  return candidates.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? '차트상 빈혈 추이와 증상을 함께 보고 다시 판단하겠다는 의견';
+  return candidates.find((reaction) => !hasUsedReaction(reaction, ctx)) ?? '차트상 환자 상태를 보고 다시 판단하겠다는 의견';
 }
 
 function pickExternalPattern(plan: DetailKey, ctx: VisitContext): ExternalCasePattern | undefined {
