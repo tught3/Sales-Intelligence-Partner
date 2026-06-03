@@ -13,10 +13,8 @@ function clean(text: string): string {
     .replace(/~~/g, '')
     // 비자연스러운 정리 표현 → 자연스러운 표현으로
     .replace(/흐름으로\s*정리함/g, '말씀드렸더니')
-    .replace(/[가-힣\s]+와\s*연결해\s*디테일\s*진행함/g, '디테일했더니')
     .replace(/[가-힣\s]+중심으로\s*정리함/g, '말씀드렸더니')
     .replace(/환자\s*흐름으로/g, '환자에서')
-    .replace(/흐름과\s*연결해/g, '관련해')
     // 기존 정규화
     .replace(/근거을/g, '근거를')
     .replace(/반응하셨고/g, '반응 보였고')
