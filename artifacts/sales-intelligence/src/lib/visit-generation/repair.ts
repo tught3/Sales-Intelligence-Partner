@@ -257,10 +257,10 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
   const supportSentence = buildSupportSentence(safePlan, ctx, pickExternalPattern(plan, ctx));
   const leadIns = [
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}와 연결해 디테일 진행함`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명드렸더니`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 맥락에서 말씀드렸더니`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 안내함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 디테일 진행함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 설명드림`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 디테일함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 안내함`,
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle) % leadIns.length];
   const formattedLog = limit(
@@ -278,10 +278,10 @@ export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext):
   const doctorReaction = selectNonDuplicateReaction(safePlan, ctx);
   const supportSentence = buildSupportSentence(safePlan, ctx, pickExternalPattern(plan, ctx));
   const leadIns = [
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 기준으로 안내함`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}에서 실제로 볼 수 있는 케이스로 설명함`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 환자 상황으로 설명드렸더니`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 설명드림`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 안내함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 디테일함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 디테일 진행함`,
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle, 'validation') % leadIns.length];
   const formattedLog = limit(
