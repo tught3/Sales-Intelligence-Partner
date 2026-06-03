@@ -1266,12 +1266,17 @@ function getDeptFocusProducts(department: string): { primary: string[]; secondar
 
 function getAllowedProductsForDepartment(department: string): string[] {
   const rule = getDeptProductRule(department);
-  const products = [
-    ...rule.weightedProducts.map((product) => product.name),
-    ...(rule.extraProducts ?? []),
-    ...VISIT_GENERATION_PRODUCTS,
-  ].filter((product) => VISIT_GENERATION_PRODUCT_SET.has(product));
-  return [...new Set(products.length > 0 ? products : VISIT_GENERATION_PRODUCTS)];
+  // 진료과별 명시 라우팅이 있으면 그것만 사용 — VISIT_GENERATION_PRODUCTS 전체를 추가하지 않음
+  // 기존 코드의 ...VISIT_GENERATION_PRODUCTS 때문에 응급의학과도 페린젝트가 허용되던 버그 수정
+  if (rule.weightedProducts.length > 0) {
+    const products = [
+      ...rule.weightedProducts.map((product) => product.name),
+      ...(rule.extraProducts ?? []),
+    ].filter((product) => VISIT_GENERATION_PRODUCT_SET.has(product));
+    return [...new Set(products)];
+  }
+  // 명시 라우팅 없으면 전체 허용
+  return [...VISIT_GENERATION_PRODUCTS];
 }
 
 function pickWeightedProductForDepartment(department: string): string {
@@ -1901,6 +1906,30 @@ function buildExampleMemoFromExternalCase(pattern: { product: string; detailAxis
   return parts.join('. ') + '.';
 }
 
+// 배치 내 이미 사용한 특장점 표현 추출 — 반복 방지용
+function buildBatchDiversityNote(avoidTexts: string[], product: string): string {
+  if (!avoidTexts.length) return '';
+  const fullText = avoidTexts.join(' ');
+  const used: string[] = [];
+
+  if (product === '위너프에이플러스') {
+    if (/아미노산\s*25%/.test(fullText)) used.push('아미노산 25% 증가');
+    if (/포도당\s*부담\s*감소/.test(fullText)) used.push('포도당 부담 감소');
+    if (/단백\s*보충/.test(fullText)) used.push('단백 보충');
+    if (/혈당\s*추이/.test(fullText)) used.push('혈당 추이');
+    if (/고단백/.test(fullText)) used.push('고단백 조성');
+  }
+  if (product === '페린젝트') {
+    if (/1회\s*투여/.test(fullText)) used.push('1회 투여');
+    if (/Hb\s*회복/.test(fullText)) used.push('Hb 회복');
+    if (/급여\s*기준/.test(fullText)) used.push('급여 기준');
+    if (/재방문\s*부담/.test(fullText)) used.push('재방문 부담');
+    if (/GI\s*트러블/.test(fullText)) used.push('GI 트러블');
+  }
+  if (!used.length) return '';
+  return `\n★★ 이번 배치에서 이미 사용한 특장점 — 단어를 바꿔도 절대 반복 금지: ${used.join(', ')}. 완전히 다른 특장점이나 디테일로 작성할 것.\n`;
+}
+
 // 다른 제품의 고유 표현이 섞이지 않도록 batchAvoidTexts 필터링
 function filterBatchAvoidTextsForProduct(avoidTexts: string[], product: string): string[] {
   if (product === '위너프에이플러스') {
@@ -2329,7 +2358,7 @@ ${referenceMemo ? `\n★★ 참고 메모 — 이 스타일과 길이로 작성:
 ${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
 교수 반응 방향: ${pipelinePlan.patientGroup}은 교수님이 언급하는 것으로 (MR이 먼저 꺼내지 말 것)
 다음 방향: ${pipelinePlan.nextAction}` : ''}
-${agBatchAvoidNote}${agPreviousStrategyNote}${agErNewDrugNote}${objectionInstruction}
+${agBatchAvoidNote}${buildBatchDiversityNote(filteredBatchAvoidTexts, activeProducts[0])}${agPreviousStrategyNote}${agErNewDrugNote}${objectionInstruction}
 ${agForbiddenPatterns.length > 0 ? `사용 금지 표현: ${agForbiddenPatterns.join(' / ')}\n` : ''}
 위 참고 메모와 똑같은 문체·길이·구조로 작성하세요. 오늘 제품·주제·반응만 바꾸면 됩니다.
 반드시 75자 이상 230자 이하 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
