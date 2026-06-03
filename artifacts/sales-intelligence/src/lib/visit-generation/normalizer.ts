@@ -15,6 +15,10 @@ function clean(text: string): string {
     .replace(/할예정할예정/g, '할예정')
     .replace(/예정할예정/g, '할예정')
     .replace(/예정\s+할예정/g, '할예정')
+    // "함할예정", "봄할예정" 이중 어미 수정
+    .replace(/함할예정/g, '할예정')
+    .replace(/봄할예정/g, '볼예정')
+    .replace(/임할예정/g, '할예정')
     // 조사 오류 자동 수정 ("결과을" → "결과를" 등 받침 없는 글자 뒤 "을" → "를")
     .replace(/([가-힣])을(\s|$)/g, (m, p1, p2) => {
       const code = p1.charCodeAt(0);
