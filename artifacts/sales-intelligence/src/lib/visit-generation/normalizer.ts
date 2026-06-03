@@ -41,6 +41,12 @@ function clean(text: string): string {
     .replace(/[가-힣\s]+(?:이시는|하시는|하는)\s*편이라\s*/g, '')
     // "짧게" 제거 — nextStrategy에서 어색한 표현
     .replace(/짧게\s*/g, '')
+    // "MR이" 주어 제거 — 업무 메모는 주어 없이 서술어로만
+    .replace(/\bMR이\s+/g, '')
+    // "짚어" 금지 → "확인" 으로
+    .replace(/짚어드릴/g, '확인드릴')
+    .replace(/짚어볼/g, '확인할')
+    .replace(/짚어/g, '확인')
     // "말씀드렸더니." 끊긴 문장 정리
     .replace(/말씀드렸더니\.\s*/g, '말씀드렸더니 ')
     .replace(/\s+\./g, '.')
