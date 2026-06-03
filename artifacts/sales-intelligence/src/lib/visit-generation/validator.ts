@@ -5,9 +5,9 @@ import type { DetailKey, RepairTarget, ValidationFailType, ValidationResult } fr
 const MIN_VISIT_LOG_LENGTH = 75;
 const MAX_VISIT_LOG_LENGTH = 230;
 
-// 참고 메모 재작성 방식에서 자연스럽게 나오는 업무노트 표현까지 포함
+// 교수님의 반응·의견·행동을 나타내는 표현만 포함 (MR 액션 표현 제외)
 function hasReaction(text: string): boolean {
-  return /공감|관심|의견|반응|고려|확인|긍정|제한적|선별|보임|인정|하심|말씀|답변|질문|물으심|여쭤|하겠다|보겠다|드렸|드렸더니|드렸음|알겠다|설명|안내|전달|소개함|언급|꺼내심|가능하다|없다|없음|됨|하셨|처방함|처방하심|결정하심/.test(text);
+  return /공감|관심|의견|반응|고려|보임|인정|하심|말씀|답변|질문|물으심|여쭤|하겠다|보겠다|드렸더니|알겠다|언급|꺼내심|하셨|처방하심|결정하심/.test(text);
 }
 
 function hasForbiddenPhrase(text: string): boolean {
