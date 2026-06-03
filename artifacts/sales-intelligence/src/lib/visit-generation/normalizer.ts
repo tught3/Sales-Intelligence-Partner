@@ -11,9 +11,19 @@ function clean(text: string): string {
     // 취소선 마크다운(~~) 제거
     .replace(/~~([^~]*)~~/g, '$1')
     .replace(/~~/g, '')
+    // 조사 오류 자동 수정 ("결과을" → "결과를" 등 받침 없는 글자 뒤 "을" → "를")
+    .replace(/([가-힣])을(\s|$)/g, (m, p1, p2) => {
+      const code = p1.charCodeAt(0);
+      const jongseong = (code - 0xAC00) % 28;
+      return jongseong === 0 ? p1 + '를' + p2 : m;
+    })
+    // "추가로" 문서체 제거
+    .replace(/\.\s*추가로\s+/g, '. ')
+    .replace(/,\s*추가로\s+/g, ', ')
+    .replace(/^추가로\s+/g, '')
     // 비자연스러운 정리 표현 → 자연스러운 표현으로
     .replace(/흐름으로\s*정리함/g, '말씀드렸더니')
-    .replace(/[가-힣\s]+중심으로\s*정리함/g, '말씀드렸더니')
+    .replace(/[^\s]+\s*중심으로\s*정리함/g, '말씀드렸더니')
     .replace(/환자\s*흐름으로/g, '환자에서')
     // 기존 정규화
     .replace(/근거을/g, '근거를')

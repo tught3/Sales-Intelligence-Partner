@@ -133,6 +133,7 @@ function buildTemplateCandidates(ctx: VisitContext): PlanCandidate[] {
     nextAction: template.nextAxis,
     narrativeStyle: template.narrativeStyle,
     allowedDepartments: [template.department],
+    exampleMemo: template.exampleMemo,   // few-shot 예시 — AI 스타일 가이드
   }));
 }
 

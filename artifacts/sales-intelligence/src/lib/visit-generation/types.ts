@@ -13,6 +13,7 @@ export type DetailKey = {
   allowedDepartments?: string[];
   blockedDepartments?: string[];
   professorQuestion?: string;
+  exampleMemo?: string;   // templates.ts의 few-shot 예시 메모 — AI 스타일 가이드용
   selectionReason: string;
 };
 

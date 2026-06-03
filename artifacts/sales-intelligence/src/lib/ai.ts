@@ -524,9 +524,11 @@ function buildVisitLogRules(): string {
 금지 어미: ~겠습니다, ~했습니다, ~합니다, ~입니다, ~드립니다 (어떤 형태든 금지)
 금지 기호: 중간점(·), 불릿(•), 화살표(↑↓→←), 물결표 2개 연속(~~) 모두 금지. 증감은 "증가", "감소"로, 문장 구분은 콤마(,)만
 금지 표현: 짚음, 언급함, 설명함 → 대신 "디테일함", "말씀드렸더니" 사용
-금지 표현: ~흐름으로 정리함, ~흐름이어서, ~흐름으로, ~흐름과 연결해, 다시 봄, 다시 말씀드림 → 절대 금지. 대신 "말씀드렸더니", "디테일했더니" 사용
+금지 표현: ~흐름으로 정리함, ~흐름이어서, ~흐름으로, 정리함, 다시 봄, 다시 말씀드림 → 절대 금지. 대신 "말씀드렸더니", "디테일했더니" 사용
 금지 표현: 제품 내용, 특장점 반응 확인, 반응 확인 요청, 특장점 반응 확인 요청, 요청 드림, 특장점 디테일 진행, 교수님께서 메모
 금지 표현: "~중심으로 정리함", "~환자 흐름으로 정리함", "~흐름으로 정리함" — 금지. 대신 "~말씀드렸더니", "~디테일했더니" 사용
+금지 표현: "추가로" — 문서체이므로 절대 금지. 이어서 자연스럽게 쓸 것
+금지 표현: "교수님께서 보임" 단독 문장 — 불완전 문장 금지. 반드시 "교수님께서 [구체적 반응] 보임" 형태로 완성
 과별 특장점: 해당 과와 직접 연결되는 환자군/상황만 사용. 다른 과 전용 질환명은 절대 쓰지 말 것. 같은 문장에 비슷한 테마를 두 개 이상 라벨처럼 이어 붙이지 말 것
 페린젝트: 반드시 "1회 투여"로만 표기 (단회투여, 단회 투여 모두 금지)
 철분제 표현: 경구 철분, 경구 철분제, 경구용 철분제, 경구용철분제제, 경구용철분제제제, 먹는 철분제, oral iron, PO iron 등 경구 복용 철분제를 뜻하는 표현은 반드시 "경구용철분제"로 통일
@@ -1877,6 +1879,15 @@ ${text}`;
   return compressTextToLimit(trimmed, limit);
 }
 
+// 외부 사례 패턴을 자연스러운 예시 메모 문장으로 변환 (few-shot 추가 예시용)
+function buildExampleMemoFromExternalCase(pattern: { product: string; detailAxis: string; reactionPattern?: string; nextAction?: string }): string {
+  const parts: string[] = [];
+  parts.push(`${pattern.product} ${pattern.detailAxis} 말씀드렸더니`);
+  if (pattern.reactionPattern) parts.push(`교수님 ${pattern.reactionPattern}`);
+  if (pattern.nextAction) parts.push(`다음엔 ${pattern.nextAction}`);
+  return parts.join('. ') + '.';
+}
+
 function buildBatchAvoidanceNote(avoidTexts: string[]): string {
   const compact = avoidTexts
     .map((text) => reducePointWordUsage(text).replace(/\s+/g, ' ').trim())
@@ -2098,12 +2109,17 @@ async function convertToVisitLogBase(
   const cvLearningNote = buildLearningPreferenceNote(doctor, activeProducts, 'manual');
   const cvPipelinePlanNote = pipelinePlan
     ? `\n★ 파이프라인 생성 계획:
-- 원본 메모의 사실은 최우선으로 유지
-- MR이 설명한 제품 특장점: ${pipelinePlan.detailAxis}
-  → MR(나)은 쉬운 말로. 수술명·병명 직접 말하지 않고 "빠른 회복", "1회로 끝남" 수준으로.
-- 교수님 환자 맥락 (교수가 언급하도록): ${pipelinePlan.patientGroup}
+${pipelinePlan.exampleMemo
+  ? `★★ 출력 스타일 예시 — 이 형식과 문체로 작성 (원본 메모 사실 최우선 유지):
+"${pipelinePlan.exampleMemo}"
+
+`
+  : ''}- 원본 메모의 사실은 최우선으로 유지
+- MR이 설명한 제품 특장점: ${pipelinePlan.detailAxis} (쉬운 말로)
+- 교수님 환자 맥락 (교수가 언급): ${pipelinePlan.patientGroup}
 - 전개 방식: "${pipelinePlan.narrativeStyle}"
-- ${pipelinePlan.professorQuestion ? `교수님 질문: "${pipelinePlan.professorQuestion}" 흐름 반영` : '교수님 질문은 억지로 넣지 말고 자연스러운 반응 중심'}
+- ${pipelinePlan.professorQuestion ? `교수님 질문: "${pipelinePlan.professorQuestion}"` : '교수님 질문은 억지로 넣지 말 것'}
+- 교수 반응: 완전한 문장 필수. "교수님께서 보임" 단독 금지.
 - 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향
 - 과(${doctor.department})와 맞지 않는 환자군 금지\n`
     : '';
@@ -2261,18 +2277,34 @@ async function autoGenerateVisitLogBase(
   const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
   const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
   const agLearningNote = buildLearningPreferenceNote(doctor, activeProducts, 'auto');
+
+  // 외부 사례에서 추가 스타일 예시 1개 추출
+  const agExternalExample = (() => {
+    const patterns = externalCasePatternStorage.getForGeneration(doctor.department, activeProducts);
+    const match = patterns.find((p: { product: string; reactionPattern?: string }) =>
+      activeProducts.includes(p.product) && p.reactionPattern
+    );
+    return match ? buildExampleMemoFromExternalCase(match) : '';
+  })();
+
   const agPipelinePlanNote = pipelinePlan
     ? `\n★ 파이프라인 생성 계획 (반드시 준수):
-- 오늘 제품: ${pipelinePlan.product}
-- MR이 설명할 제품 특장점 핵심: ${pipelinePlan.detailAxis}
-  → MR(나)은 이 특장점을 쉬운 말로 설명. 수술명·병명을 직접 말하지 않고 "빠른 회복", "1회로 끝남", "혈당 부담 적음" 수준으로.
-- 교수님이 반응할 환자 맥락 (교수 언어): ${pipelinePlan.patientGroup}
-  → 이 환자군은 교수님께서 언급하는 것으로 자연스럽게 처리. MR이 먼저 꺼내지 않음.
+${pipelinePlan.exampleMemo
+  ? `★★ 출력 스타일 예시 — 이 형식과 문체로 작성할 것 (내용만 오늘 상황에 맞게 변경):
+"${pipelinePlan.exampleMemo}"${agExternalExample ? `\n"${agExternalExample}"` : ''}
+
+`
+  : ''}- 오늘 제품: ${pipelinePlan.product}
+- MR이 설명할 제품 특장점: ${pipelinePlan.detailAxis}
+  → 위 예시처럼 쉬운 말로. 수술명·병명 직접 언급 금지.
+- 교수님이 언급할 환자 맥락: ${pipelinePlan.patientGroup}
+  → 교수님께서 반응할 때 환자군 언급. MR이 먼저 꺼내지 않음.
 - 전개 방식: ${pipelinePlan.narrativeStyle}
-- ${pipelinePlan.professorQuestion ? `교수님 질문/답변 후보: ${pipelinePlan.professorQuestion}` : '교수님 질문은 억지로 넣지 말고 자연스러운 반응만 작성'}
+- ${pipelinePlan.professorQuestion ? `교수님 질문: ${pipelinePlan.professorQuestion}` : '교수님 질문은 억지로 넣지 말고 자연스러운 반응만'}
+- 교수 반응: 반드시 완전한 문장. "교수님께서 보임" 단독 금지 → "교수님께서 [구체 반응] 보임" 형태 필수.
 - 다음방문전략 방향: ${pipelinePlan.nextAction}
-지난 방문 기록에서 이어갈 만한 내용이 있으면 자연스럽게 연결하되, 오늘 디테일과 다음방문전략은 지난 방문 및 오늘 본문과 같은 디테일을 반복하지 말 것.
-이번 일괄 생성에서 이미 사용한 교수 반응과 같은 의미의 반응은 다시 쓰지 말 것.
+오늘 디테일과 다음방문전략은 같은 주제 반복 금지. 지난 방문과도 같은 디테일 반복 금지.
+이번 배치에서 이미 사용한 교수 반응과 같은 의미 반응 금지.
 과(${doctor.department})와 맞지 않는 환자군 금지.\n`
     : '';
 
