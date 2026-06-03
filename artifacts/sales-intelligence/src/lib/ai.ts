@@ -2073,6 +2073,40 @@ function buildLearningPreferenceNote(doctor: Doctor, products: string[], mode: '
 `;
 }
 
+// ──────────────────────────────────────────────────────────────────
+// 참고 메모 선택 — 우선순위: 이 교수 저장 로그 → 외부 사례 → 템플릿 exampleMemo
+// ──────────────────────────────────────────────────────────────────
+function findBestReferenceMemo(
+  doctor: Doctor,
+  product: string,
+  pastLogs: VisitLog[],
+  templateExampleMemo?: string
+): string {
+  // 1순위: 이 교수의 같은 품목 방문일지 중 가장 최근 것
+  const sameDocSameProd = pastLogs
+    .filter(l => l.formattedLog && l.formattedLog.length >= 50 && l.products?.includes(product))
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  if (sameDocSameProd.length > 0) return sameDocSameProd[0].formattedLog;
+
+  // 2순위: 이 교수의 방문일지 (품목 무관)
+  const sameDoc = pastLogs
+    .filter(l => l.formattedLog && l.formattedLog.length >= 50)
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  if (sameDoc.length > 0) return sameDoc[0].formattedLog;
+
+  // 3순위: 외부 사례 패턴 → 메모 문장으로 변환
+  const externalPatterns = externalCasePatternStorage.getForGeneration(doctor.department, [product]);
+  const externalMatch = externalPatterns.find(
+    (p: { product: string; reactionPattern?: string }) => p.product === product && p.reactionPattern
+  );
+  if (externalMatch) return buildExampleMemoFromExternalCase(externalMatch);
+
+  // 4순위: 템플릿 exampleMemo
+  if (templateExampleMemo) return templateExampleMemo;
+
+  return '';
+}
+
 async function convertToVisitLogBase(
   rawNotes: string,
   doctor: Doctor,
@@ -2080,96 +2114,38 @@ async function convertToVisitLogBase(
   selectedProducts: string[] = [],
   pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
-  const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
+  const { systemPrompt } = buildFullContext(doctor, pastLogs);
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
-  const productFitConstraint = buildProductFitConstraint(doctor.department, selectedProducts, activeProducts);
-  const includeObjection = Math.random() < 0.3;
+  const includeObjection = Math.random() < 0.1;
   const objectionInstruction = buildObjectionInstruction(includeObjection, doctor.department, activeProducts);
-  const visitCount = getDoctorVisitCount(doctor);
-  const visitOrdinal = visitCount + 1;
-  const lastVisitDate =
-    pastLogs[0]?.visitDate ??
-    doctor.conversationHistory?.[0]?.period ??
-    doctor.conversationHistory?.[0]?.createdAt ??
-    null;
-
-  const visitContextNote = visitCount > 0
-    ? `★★★ 최우선 규칙 (이것이 가장 중요):
-이 교수와는 이미 ${visitCount}회 방문한 기록이 있습니다.
-마지막 방문: ${lastVisitDate} / 오늘은 ${visitOrdinal}번째 방문입니다.
-절대로 첫 방문, 첫 인사, 처음 뵙겠습니다 같은 표현을 쓰지 말 것.
-단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
-    : '';
-
-  const cvSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 10, doctor.department);
-  const cvFocus = selectedProducts.length > 0
-    ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
-    : (() => {
-        const { primary, secondary } = getDeptFocusProducts(doctor.department);
-        const focus = secondary.length > 0
-          ? `${primary.join(', ')} 위주. 맥락에 자연스러울 때만 ${secondary.join(', ')} 추가 가능.`
-          : `${primary.join(', ')} 위주. 굳이 다른 제품 끼워 넣지 말 것.`;
-        return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
-      })();
-  const cvSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택, ICU/중증 관련 내용 우선):\n`
-    : `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택):\n`;
-  const cvSnippetSection = cvSnippetLines ? `${cvFocus}\n${cvSnippetLabel}${cvSnippetLines}\n` : `${cvFocus}\n`;
-
-  const cvProductConstraint = selectedProducts.length > 0
-    ? `\n★★★ 선택된 제품 중 과 적합 품목: ${activeProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
-    : '';
-
-  // 미도입 제품 여부 판단
   const cvAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
-  const cvIntroNote = buildIntroNote(activeProducts, cvAllowNewDrugReview);
   const cvErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
-  const cvThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
-  const cvRecentDetailMemory = buildRecentDetailMemory(pastLogs);
-  const cvLearningNote = buildLearningPreferenceNote(doctor, activeProducts, 'manual');
-  const cvPipelinePlanNote = pipelinePlan
-    ? `\n★ 파이프라인 생성 계획:
-${pipelinePlan.exampleMemo
-  ? `★★ 출력 스타일 예시 — 이 형식과 문체로 작성 (원본 메모 사실 최우선 유지):
-"${pipelinePlan.exampleMemo}"
 
-`
-  : ''}- 원본 메모의 사실은 최우선으로 유지
-- MR이 설명한 제품 특장점: ${pipelinePlan.detailAxis} (쉬운 말로)
-- 교수님 환자 맥락 (교수가 언급): ${pipelinePlan.patientGroup}
-- 전개 방식: "${pipelinePlan.narrativeStyle}"
-- ${pipelinePlan.professorQuestion ? `교수님 질문: "${pipelinePlan.professorQuestion}"` : '교수님 질문은 억지로 넣지 말 것'}
-- 교수 반응: 완전한 문장 필수. "교수님께서 보임" 단독 금지.
-- 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향
-- 과(${doctor.department})와 맞지 않는 환자군 금지\n`
-    : '';
+  // 참고 메모 선택 — 우선순위: 저장 로그 → 외부사례 → 템플릿 exampleMemo
+  const referenceMemo = findBestReferenceMemo(doctor, activeProducts[0], pastLogs, pipelinePlan?.exampleMemo);
+  const lastLog = pastLogs[0];
 
-  const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${cvThemeConstraint}${cvRecentDetailMemory}${cvLearningNote}${cvPipelinePlanNote}${cvSnippetSection}${cvProductConstraint}${cvIntroNote}${cvErNewDrugNote}${objectionInstruction}
-아래 [원본 메모]를 변환합니다.
-
-★★ 변환 원칙 (반드시 준수):
-1. 원본 메모의 내용(상황, 반응, 제품명, 수치 등)은 그대로 유지. 다른 제품/다른 디테일로 대체 금지.
-2. 말투·어미를 아래 규칙(~함, ~보임, ~예정 등)에 맞게 다듬을 것.
-3. 원본 메모의 흐름이 어색하거나 주제가 뚝 끊기면 → 사실은 유지하되 순서/연결을 자연스럽게 재구성할 것.
-4. 원본에 제품 디테일이 없으면 → 이 과(${doctor.department})에 맞는 제품 디테일 1개만 자연스럽게 추가.
-   단, 아래 후보에 있는 최근 미사용 디테일을 우선 사용하고 최근 방문과 같은 디테일로 대체하지 말 것.
-5. 오브젝션 핸들링 → 위 오브젝션 지시를 따를 것.
-6. 다음방문전략 → 반드시 작성 (필수).
-
+  const prompt = `교수: ${doctor.name} (${doctor.department}, ${doctor.hospital})
+${doctor.notes ? `특이사항: ${doctor.notes}` : ''}
+${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0, 80)}` : ''}
+${referenceMemo ? `\n★★ 참고 메모 — 이 스타일과 길이로 작성:
+"${referenceMemo}"\n` : ''}
 [원본 메모]
 {{RAW_MEMO}}
 
-${buildVisitLogFlow()}
+오늘 제품: ${activeProducts[0]}
+${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
+다음 방향: ${pipelinePlan.nextAction}` : ''}
+${cvErNewDrugNote}${objectionInstruction}
+원본 메모의 내용(상황·반응·제품명)을 유지하면서 참고 메모와 똑같은 문체·길이로 다듬어주세요.
+글자수: 100-230자 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
 
-${buildVisitLogRules()}
-
-응답 형식 (라벨 그대로 출력, 내용만 채울 것):
+응답 형식:
 ===영업일지===
-(100자 이상 230자 이내. 빈 줄 없이 이어서 작성)
+(메모 본문)
 
 ===다음방문전략===
-(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
+(다음방문시에는 으로 시작, 120자 이내)`;
 
   const response = await callVisitLogAI(
     systemPrompt,
@@ -2254,100 +2230,39 @@ async function autoGenerateVisitLogBase(
   const objectionInstruction = buildObjectionInstruction(includeObjection, doctor.department, activeProducts);
 
   const today = new Date().toISOString().split('T')[0];
-  const lastVisitDate =
-    pastLogs[0]?.visitDate ??
-    doctor.conversationHistory?.[0]?.period ??
-    doctor.conversationHistory?.[0]?.createdAt ??
-    '기록 없음';
-  const visitCount = getDoctorVisitCount(doctor);
-  const visitOrdinal = visitCount + 1;
-
-  const visitContextNote = visitCount > 0
-    ? `★★★ 최우선 규칙 (이것이 가장 중요):
-이 교수와는 이미 ${visitCount}회 방문한 기록이 있습니다.
-마지막 방문: ${lastVisitDate} / 오늘은 ${visitOrdinal}번째 방문입니다.
-절대로 첫 방문, 첫 인사, 처음 뵙겠습니다 같은 표현을 쓰지 말 것.
-단, "지난번에", "지난 방문에" 표현은 실제 과거 내용의 확인 결과나 교수 반응까지 이어 쓸 때만 사용하세요.\n\n`
-    : '';
-
-  const agSnippetLines = buildContextAwareSnippets(pastLogs, activeProducts, 10, doctor.department);
-  const agFocus = selectedProducts.length > 0
-    ? `★ 선택 제품 중 이 과에 맞는 품목(${activeProducts.join(', ')})에만 집중. 다른 제품 언급 금지.`
-    : (() => {
-        const { primary, secondary } = getDeptFocusProducts(doctor.department);
-        const focus = secondary.length > 0
-          ? `${primary.join(', ')} 위주. 맥락에 자연스러울 때만 ${secondary.join(', ')} 추가 가능.`
-          : `${primary.join(', ')} 위주. 굳이 다른 제품 끼워 넣지 말 것.`;
-        return `★ 이 과(${doctor.department}) 주력 제품: ${focus}`;
-      })();
-  const agSnippetLabel = isIcuDepartment(doctor.department) && !selectedProducts.length
-    ? `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택, ICU/중증 관련 내용 우선):\n`
-    : `\n오늘 활용할 제품 디테일 후보 (이 중 최근 미사용 디테일 1개 이상 선택):\n`;
-  const agSnippetSection = agSnippetLines ? `${agFocus}\n${agSnippetLabel}${agSnippetLines}\n` : `${agFocus}\n`;
-
-  const agProductConstraint = selectedProducts.length > 0
-    ? `\n★★★ 선택된 제품 중 과 적합 품목: ${activeProducts.join(', ')} — 오직 이 제품에 대해서만 작성. 다른 제품 언급 절대 금지.\n`
-    : '';
-
-  // 미도입 제품 여부 판단
   const agAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
-  const agIntroNote = buildIntroNote(activeProducts, agAllowNewDrugReview);
   const agErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
-  const agThemeConstraint = buildDepartmentFeatureConstraint(doctor.department);
-  const agRecentDetailMemory = buildRecentDetailMemory(pastLogs);
-  const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
   const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
-  const agLearningNote = buildLearningPreferenceNote(doctor, activeProducts, 'auto');
+  const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
 
-  // 외부 사례에서 추가 스타일 예시 1개 추출
-  const agExternalExample = (() => {
-    const patterns = externalCasePatternStorage.getForGeneration(doctor.department, activeProducts);
-    const match = patterns.find((p: { product: string; reactionPattern?: string }) =>
-      activeProducts.includes(p.product) && p.reactionPattern
-    );
-    return match ? buildExampleMemoFromExternalCase(match) : '';
-  })();
+  // 참고 메모 선택 — 우선순위: 저장 로그 → 외부사례 → 템플릿 exampleMemo
+  const referenceMemo = findBestReferenceMemo(doctor, activeProducts[0], pastLogs, pipelinePlan?.exampleMemo);
+  const lastLog = pastLogs[0];
 
-  const agPipelinePlanNote = pipelinePlan
-    ? `\n★ 파이프라인 생성 계획 (반드시 준수):
-${pipelinePlan.exampleMemo
-  ? `★★ 출력 스타일 예시 — 이 형식과 문체로 작성할 것 (내용만 오늘 상황에 맞게 변경):
-"${pipelinePlan.exampleMemo}"${agExternalExample ? `\n"${agExternalExample}"` : ''}
+  const prompt = `교수: ${doctor.name} (${doctor.department}, ${doctor.hospital})
+${doctor.notes ? `특이사항: ${doctor.notes}` : ''}
+${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0, 80)}` : '첫 방문'}
+${referenceMemo ? `\n★★ 참고 메모 — 이 스타일과 길이로 작성:
+"${referenceMemo}"\n` : ''}
+오늘(${today}) 이 교수를 방문했다고 가정하고 실제로 있을 법한 영업 현장 메모를 작성하세요.
 
-`
-  : ''}- 오늘 제품: ${pipelinePlan.product}
-- MR이 설명할 제품 특장점: ${pipelinePlan.detailAxis}
-  → 위 예시처럼 쉬운 말로. 수술명·병명 직접 언급 금지.
-- 교수님이 언급할 환자 맥락: ${pipelinePlan.patientGroup}
-  → 교수님께서 반응할 때 환자군 언급. MR이 먼저 꺼내지 않음.
-- 전개 방식: ${pipelinePlan.narrativeStyle}
-- ${pipelinePlan.professorQuestion ? `교수님 질문: ${pipelinePlan.professorQuestion}` : '교수님 질문은 억지로 넣지 말고 자연스러운 반응만'}
-- 교수 반응: 반드시 완전한 문장. "교수님께서 보임" 단독 금지 → "교수님께서 [구체 반응] 보임" 형태 필수.
-- 다음방문전략 방향: ${pipelinePlan.nextAction}
-오늘 디테일과 다음방문전략은 같은 주제 반복 금지. 지난 방문과도 같은 디테일 반복 금지.
-이번 배치에서 이미 사용한 교수 반응과 같은 의미 반응 금지.
-과(${doctor.department})와 맞지 않는 환자군 금지.\n`
-    : '';
+오늘 제품: ${activeProducts[0]}
+${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
+교수 반응 방향: ${pipelinePlan.patientGroup}은 교수님이 언급하는 것으로 (MR이 먼저 꺼내지 말 것)
+다음 방향: ${pipelinePlan.nextAction}` : ''}
+${agBatchAvoidNote}${agPreviousStrategyNote}${agErNewDrugNote}${objectionInstruction}
+위 참고 메모와 똑같은 문체·길이·구조로 작성하세요. 오늘 제품·주제·반응만 바꾸면 됩니다.
+글자수: 100-230자 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
 
-  const prompt = `${visitContextNote}${contextSection}
-${productFitConstraint}${agThemeConstraint}${agRecentDetailMemory}${agPreviousStrategyNote}${agBatchAvoidNote}${agLearningNote}${agPipelinePlanNote}${agSnippetSection}${agProductConstraint}${agIntroNote}${agErNewDrugNote}${objectionInstruction}
-오늘(${today}) 위 교수를 방문했다고 가정하고 실제로 있을 법한 영업일지를 처음부터 작성하세요.
-(전 방문 전략이 있으면 이번 방문에서 실행한 것으로 구성. 병원명과 과명에 맞게.)
-아래 제품 디테일 후보 중 최근 방문에서 덜 쓴 내용 1개 이상을 반드시 반영하고, 최근 방문과 같은 수치/근거/환자군 조합으로 대체하지 마세요.
-
-${buildVisitLogFlow()}
-
-${buildVisitLogRules()}
-
-응답 형식 (라벨 그대로 출력, 내용만 채울 것):
+응답 형식:
 ===제품===
-(해당 제품명, 쉼표 구분)
+(해당 제품명)
 
 ===영업일지===
-(100자 이상 230자 이내. 빈 줄 없이 이어서 작성)
+(메모 본문)
 
 ===다음방문전략===
-(120자 이내. 반드시 "다음방문시에는" 으로 시작. 구체적 제품명 + 진료과/환자군 연결. "~하겠다" 금지, "~할예정" 또는 메모체로 작성)`;
+(다음방문시에는 으로 시작, 120자 이내)`;
 
   const response = await callVisitLogAI(
     systemPrompt,
