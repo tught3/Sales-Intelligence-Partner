@@ -32,6 +32,11 @@ function clean(text: string): string {
     .replace(/환자\s*흐름으로/g, '환자에서')
     // "환자 환자" 중복 제거
     .replace(/환자\s+환자/g, '환자')
+    // "포인트" 금지어 — pipeline normalizer에서도 제거
+    .replace(/디테일\s*포인트/g, '디테일')
+    .replace(/처방\s*포인트/g, '처방 내용')
+    .replace(/핵심\s*포인트/g, '핵심')
+    .replace(/\s*포인트/g, '')
     // "말씀드렸더니." 끊긴 문장 정리
     .replace(/말씀드렸더니\.\s*/g, '말씀드렸더니 ')
     .replace(/\s+\./g, '.')

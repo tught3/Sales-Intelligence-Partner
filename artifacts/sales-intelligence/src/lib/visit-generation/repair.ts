@@ -64,7 +64,8 @@ function hasUsedReaction(reaction: string, ctx: VisitContext): boolean {
 }
 
 function selectNonDuplicateReaction(plan: DetailKey, ctx: VisitContext): string {
-  if (!hasUsedReaction(plan.doctorReaction, ctx)) return plan.doctorReaction;
+  // 빈 문자열이나 너무 짧은 반응(외부사례 reactionPattern 미입력)은 REACTION_REPLACEMENTS로
+  if (plan.doctorReaction && plan.doctorReaction.trim().length >= 10 && !hasUsedReaction(plan.doctorReaction, ctx)) return plan.doctorReaction;
   const seed = hashSeed(plan.product, plan.patientGroup, plan.detailAxis, plan.narrativeStyle, ctx.doctor.department);
   const candidates = [...REACTION_REPLACEMENTS].sort((a, b) =>
     Math.abs(hashSeed(seed.toString(), a)) - Math.abs(hashSeed(seed.toString(), b))
@@ -81,28 +82,27 @@ function pickExternalPattern(plan: DetailKey, ctx: VisitContext): ExternalCasePa
   )[0];
 }
 
-function buildSupportSentence(plan: DetailKey, ctx: VisitContext, pattern?: ExternalCasePattern): string {
+function buildSupportSentence(plan: DetailKey, ctx: VisitContext, _pattern?: ExternalCasePattern): string {
   const department = ctx.doctor.department || '';
-  const patternHint = pattern ? ` ${pattern.patientGroup}에서 ${pattern.detailAxis}을 같이 말씀드렸더니` : '';
   if (/소화기/.test(department) && plan.product === '페린젝트') {
-    return `위장관 출혈 뒤 Hb 추이와 경구용철분제 반응을 함께 말씀드렸더니${patternHint}`;
+    return '위장관 출혈 뒤 Hb 추이와 경구용철분제 반응 함께 안내드림';
   }
   if (/산부인과|산과|부인과/.test(department) && plan.product === '페린젝트') {
-    return `산후 외래 추이와 수술 전후 빈혈 케이스를 함께 말씀드렸더니${patternHint}`;
+    return '산후 외래 추이와 수술 전후 빈혈 케이스 함께 설명드림';
   }
   if (/종양|혈액종양|혈액내과/.test(department) && plan.product === '페린젝트') {
-    return `항암치료 중 Hb 추이와 경구용철분제 반응을 함께 말씀드렸더니${patternHint}`;
+    return '항암치료 중 Hb 추이와 경구용철분제 반응 함께 안내드림';
   }
   if (/소화기/.test(department) && plan.product === '위너프에이플러스') {
-    return `식사량 저하와 영양 보충 필요성을 함께 말씀드렸더니${patternHint}`;
+    return '식사량 저하와 영양 보충 필요성 함께 설명드림';
   }
   if (/산부인과|산과|부인과/.test(department) && plan.product === '위너프에이플러스') {
-    return `분만 후 회복기와 수술 전후 영양 공급 흐름을 말씀드렸더니${patternHint}`;
+    return '분만 후 회복기와 수술 전후 영양 공급 흐름 안내드림';
   }
   if (plan.product === '페린젝트') {
-    return `외래 빈혈 환자의 Hb 회복 경과와 급여 기준을 함께 말씀드렸더니${patternHint}`;
+    return '외래 빈혈 환자의 Hb 회복 경과와 급여 기준 함께 설명드림';
   }
-  return `회복기 환자의 영양 공급 필요성을 말씀드렸더니${patternHint}`;
+  return '회복기 환자의 영양 공급 필요성 안내드림';
 }
 
 function selectFollowUpClause(plan: DetailKey, ctx: VisitContext): string {
