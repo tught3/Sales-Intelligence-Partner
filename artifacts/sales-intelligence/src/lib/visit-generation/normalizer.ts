@@ -100,6 +100,26 @@ export function normalize(
   formattedLog = normalizeRepeatedProductPrefix(formattedLog, plan.product);
   nextStrategy = normalizeRepeatedProductPrefix(nextStrategy, plan.product);
 
+  // 제품 교차 맥락 오염 제거 — 다른 제품의 핵심 키워드가 포함된 문장 제거
+  if (plan.product === '위너프에이플러스') {
+    // 페린젝트/경구 철분 전용 맥락이 위너프에이플러스 텍스트에 있으면 해당 문장 제거
+    formattedLog = formattedLog
+      .split(/(?<=[.。])\s+/)
+      .filter((s) => !/GI\s*트러블|경구용철분제|철결핍|Hb\s*\d|빈혈(?!\s*회복)/.test(s))
+      .join(' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  if (plan.product === '페린젝트') {
+    // 위너프에이플러스 전용 맥락이 페린젝트 텍스트에 있으면 해당 문장 제거
+    formattedLog = formattedLog
+      .split(/(?<=[.。])\s+/)
+      .filter((s) => !/아미노산\s*\d+%|포도당\s*부담\s*감소|TPN|단백\s*보충/.test(s))
+      .join(' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
   if (formattedLog && !hasProduct(formattedLog, plan.product)) {
     formattedLog = `${plan.product}의 ${formattedLog}`;
   }

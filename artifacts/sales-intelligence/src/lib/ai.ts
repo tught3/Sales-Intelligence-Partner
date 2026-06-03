@@ -1901,6 +1901,31 @@ function buildExampleMemoFromExternalCase(pattern: { product: string; detailAxis
   return parts.join('. ') + '.';
 }
 
+// 다른 제품의 고유 표현이 섞이지 않도록 batchAvoidTexts 필터링
+function filterBatchAvoidTextsForProduct(avoidTexts: string[], product: string): string[] {
+  if (product === '위너프에이플러스') {
+    // 페린젝트 전용 표현(GI 트러블, 경구용철분제, Hb, 빈혈 등) 제거
+    return avoidTexts.map((text) =>
+      text
+        .split(/(?<=[.。])\s+/)
+        .filter((s) => !/GI\s*트러블|경구용철분제|철결핍|빈혈|Hb\s*\d/.test(s))
+        .join(' ')
+        .trim()
+    ).filter(Boolean);
+  }
+  if (product === '페린젝트') {
+    // 위너프에이플러스 전용 표현(아미노산, 포도당, TPN 등) 제거
+    return avoidTexts.map((text) =>
+      text
+        .split(/(?<=[.。])\s+/)
+        .filter((s) => !/아미노산\s*\d+%|포도당\s*부담\s*감소|TPN|단백\s*보충/.test(s))
+        .join(' ')
+        .trim()
+    ).filter(Boolean);
+  }
+  return avoidTexts;
+}
+
 function buildBatchAvoidanceNote(avoidTexts: string[]): string {
   const compact = avoidTexts
     .map((text) => reducePointWordUsage(text).replace(/\s+/g, ' ').trim())
@@ -2046,6 +2071,30 @@ function buildIntroNote(focusProducts: string[], includeNewDrugReview = false): 
 }
 
 // 응급의학과 신규사입(병원 코딩) 멘트 — 10% 확률로 삽입
+function buildProductForbiddenNote(product: string): string {
+  if (product === '페린젝트') {
+    return `\n★ 페린젝트 맥락: 철결핍 빈혈 + 1회 투여 + Hb 회복. 경구용철분제 GI 트러블 환자 대안.
+★ 금지: 아미노산 증가, 포도당 부담 감소, TPN, 단백 보충 — 위너프에이플러스 전용 표현. 절대 쓰지 말 것.\n`;
+  }
+  if (product === '위너프에이플러스') {
+    return `\n★ 위너프에이플러스 맥락: 수술 후/ICU 회복기 단백 보충. 아미노산 25% 증가, 혈당 부담 감소.
+★ 금지 — GI 트러블: 이는 경구용철분제 복용 환자의 부작용 표현. 위너프 문장에 절대 쓰지 말 것. 경장영양이 어려운 상황은 반드시 식이 불가, 경장영양 어려운으로만 표현.
+★ 금지 — 경구용철분제, 철결핍, 빈혈, Hb 수치: 페린젝트/철분제 전용 맥락. 절대 쓰지 말 것.\n`;
+  }
+  if (product === '플라주OP') {
+    return `\n★ 플라주OP 맥락: 응급/마취 진정 프로토콜, 신규사입 검토.
+★ 금지: Hb, 빈혈, 철결핍, 아미노산, 포도당 부담, TPN — 다른 제품 맥락. 절대 쓰지 말 것.\n`;
+  }
+  return '';
+}
+
+function buildDeptContextNote(department: string): string {
+  if (/응급의학과|응급의학/.test(department)) {
+    return `\n★ 응급의학과 진료 특성: 응급실 = 응급처치 후 해당과 transfer. 외래 진료 없음. 퇴원 전 보충, 외래 재방문, 외래 추적 표현 절대 금지. 플라주OP는 응급실 프로토콜 도입/신규사입 검토 목적으로 디테일.\n`;
+  }
+  return '';
+}
+
 function buildErNewDrugCodeNote(department: string): string {
   if (!/응급의학과|응급의학/.test(department)) return '';
   if (Math.random() >= 0.1) return '';
@@ -2156,7 +2205,8 @@ ${cvForbiddenPatterns.length > 0 ? `사용 금지 표현: ${cvForbiddenPatterns.
 반드시 75자 이상 230자 이하 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
 ★ 1인칭 메모 형식: 주어(MR이, 나는, 저는) 없이 서술어로만 작성. 예: 페린젝트 1회 투여 장점 말씀드렸더니 교수님께서 ~하심. MR이/나는/저는 절대 주어로 쓰지 말 것.
 ★ 순서 필수: 먼저 제품 특장점 설명 후 교수님이 반응. 교수님이 제품 특장점을 먼저 언급하거나 설명하는 구조 절대 금지.
-교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심, ~질문하심 등 구체 반응 1개 이상
+★ 특장점은 한 문장에 하나만. 여러 특장점 나열 금지.
+${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.department)}교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심, ~질문하심 등 구체 반응 1개 이상
 다음방문전략: 오늘 다룬 주제·제품과 같은 내용 반복 금지. 다른 각도나 환자군으로 한 가지만 작성.
 
 응답 형식:
@@ -2250,7 +2300,9 @@ async function autoGenerateVisitLogBase(
   const today = new Date().toISOString().split('T')[0];
   const agAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
   const agErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
-  const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
+  // 다른 제품의 고유 표현이 이번 생성 맥락을 오염시키지 않도록 필터링 후 전달
+  const filteredBatchAvoidTexts = filterBatchAvoidTextsForProduct(batchAvoidTexts, activeProducts[0]);
+  const agBatchAvoidNote = buildBatchAvoidanceNote(filteredBatchAvoidTexts);
   const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
 
   // 학습된 금지 패턴 (LEARNED_FORBIDDEN 방지)
@@ -2281,7 +2333,8 @@ ${agForbiddenPatterns.length > 0 ? `사용 금지 표현: ${agForbiddenPatterns.
 반드시 75자 이상 230자 이하 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
 ★ 1인칭 메모 형식: 주어(MR이, 나는, 저는) 없이 서술어로만 작성. 예: 페린젝트 1회 투여 장점 말씀드렸더니 교수님께서 ~하심. MR이/나는/저는 절대 주어로 쓰지 말 것.
 ★ 순서 필수: 먼저 제품 특장점 설명 후 교수님이 반응. 교수님이 제품 특장점을 먼저 언급하거나 설명하는 구조 절대 금지.
-교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심, ~질문하심 등 구체 반응 1개 이상
+★ 특장점은 한 문장에 하나만. 여러 특장점 나열 금지.
+${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.department)}교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심, ~질문하심 등 구체 반응 1개 이상
 다음방문전략: 오늘 다룬 주제·제품과 같은 내용 반복 금지. 다른 각도나 환자군으로 한 가지만 작성.
 
 응답 형식:
