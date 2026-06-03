@@ -2082,26 +2082,30 @@ function findBestReferenceMemo(
   pastLogs: VisitLog[],
   templateExampleMemo?: string
 ): string {
-  // 1순위: 이 교수의 같은 품목 방문일지 중 가장 최근 것
+  // 1순위: 외부 사례 패턴 (같은 진료과 + 같은 품목) — 직접 큐레이션된 가장 신뢰할 수 있는 스타일 예시
+  // 여러 개 있으면 랜덤 선택 → 매번 다른 스타일 참고, 다양성 확보
+  const externalPatterns = externalCasePatternStorage.getForGeneration(doctor.department, [product]);
+  const goodExternal = externalPatterns.filter(
+    (p: { product: string; reactionPattern?: string }) => p.product === product && p.reactionPattern
+  );
+  if (goodExternal.length > 0) {
+    const picked = goodExternal[Math.floor(Math.random() * goodExternal.length)];
+    return buildExampleMemoFromExternalCase(picked);
+  }
+
+  // 2순위: 이 교수의 같은 품목 저장 방문일지 중 가장 최근 것
   const sameDocSameProd = pastLogs
     .filter(l => l.formattedLog && l.formattedLog.length >= 50 && l.products?.includes(product))
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   if (sameDocSameProd.length > 0) return sameDocSameProd[0].formattedLog;
 
-  // 2순위: 이 교수의 방문일지 (품목 무관)
+  // 3순위: 이 교수의 방문일지 (품목 무관)
   const sameDoc = pastLogs
     .filter(l => l.formattedLog && l.formattedLog.length >= 50)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   if (sameDoc.length > 0) return sameDoc[0].formattedLog;
 
-  // 3순위: 외부 사례 패턴 → 메모 문장으로 변환
-  const externalPatterns = externalCasePatternStorage.getForGeneration(doctor.department, [product]);
-  const externalMatch = externalPatterns.find(
-    (p: { product: string; reactionPattern?: string }) => p.product === product && p.reactionPattern
-  );
-  if (externalMatch) return buildExampleMemoFromExternalCase(externalMatch);
-
-  // 4순위: 템플릿 exampleMemo
+  // 4순위: 템플릿 exampleMemo (최후 fallback)
   if (templateExampleMemo) return templateExampleMemo;
 
   return '';
