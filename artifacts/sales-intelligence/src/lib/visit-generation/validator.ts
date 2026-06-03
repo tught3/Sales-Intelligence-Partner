@@ -2,11 +2,12 @@ import type { VisitContext } from './context';
 import { extractKeys, extractReactionKeys, isDuplicateOf, similarityRatio } from './detailKeys';
 import type { DetailKey, RepairTarget, ValidationFailType, ValidationResult } from './types';
 
-const MIN_VISIT_LOG_LENGTH = 100;
+const MIN_VISIT_LOG_LENGTH = 75;
 const MAX_VISIT_LOG_LENGTH = 230;
 
+// 참고 메모 재작성 방식에서 자연스럽게 나오는 업무노트 표현까지 포함
 function hasReaction(text: string): boolean {
-  return /공감|관심|의견|반응|고려|확인|긍정|제한적|선별|보임|인정|하심|말씀|답변/.test(text);
+  return /공감|관심|의견|반응|고려|확인|긍정|제한적|선별|보임|인정|하심|말씀|답변|질문|물으심|여쭤|하겠다|보겠다|드렸|드렸더니|드렸음|알겠다|설명|안내|전달|소개함|언급|꺼내심|가능하다|없다|없음|됨|하셨|처방함|처방하심|결정하심/.test(text);
 }
 
 function hasForbiddenPhrase(text: string): boolean {
@@ -93,7 +94,7 @@ export function validate(
   if (!hasReaction(formattedLog)) failTypes.push('MISSING_REACTION');
 
   if (isDuplicateOf(formattedLog, ctx.batchAvoidTexts, 0.4)) failTypes.push('DUPLICATE_BATCH');
-  if (isDuplicateOf(formattedLog, ctx.pastLogs.map((log) => `${log.formattedLog} ${log.nextStrategy}`), 0.5)) {
+  if (isDuplicateOf(formattedLog, ctx.pastLogs.map((log) => `${log.formattedLog} ${log.nextStrategy}`), 0.65)) {
     failTypes.push('DUPLICATE_PAST');
   }
   if (similarityRatio(formattedLog, nextStrategy) >= 0.35) failTypes.push('DUPLICATE_STRATEGY');

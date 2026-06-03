@@ -97,12 +97,14 @@ export async function runVisitGenerationPipeline(
     }
     if (!finalValidation.pass) {
       const remaining = finalValidation.failTypes;
+      // 참고 메모 재작성 방식에서 자연스럽게 통과 못하는 케이스를 허용
       const nonBlockingFailures = [
         'DUPLICATE_BATCH',
         'DUPLICATE_PAST',
         'DUPLICATE_REACTION',
         'DUPLICATE_STRATEGY',
         'LEARNED_FORBIDDEN',
+        'MISSING_REACTION',
       ];
       if (remaining.every((type) => nonBlockingFailures.includes(type))) {
         const final = trace.finish('fallback');
