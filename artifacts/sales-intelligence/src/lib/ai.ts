@@ -544,7 +544,12 @@ function buildVisitLogRules(): string {
 function buildVisitLogFlow(): string {
   return `━━━ 일지 흐름 (이 순서로 자연스럽게 이어서 작성) ━━━
 ① [이전 연결 - 선택] 지난 방문 기록에서 실제로 이어 확인할 내용이 있을 때만 사용. 있으면 확인 결과나 교수 반응까지 한 번에 마무리.
-② [오늘 핵심] 오늘 전달한 제품의 특장점과 환자 맥락을 한 문단으로 자연스럽게 작성.
+② [오늘 핵심] MR(나)은 제품의 특장점을 쉽게 설명. 교수님은 환자군이나 임상 상황을 언급하며 반응하거나 질문함.
+   ★ 역할 구분 필수:
+   - MR(나): "~특장점 설명드렸더니", "~장점 말씀드렸더니" — 쉬운 제품 언어. 복잡한 수술명·병명 직접 언급 금지.
+   - 교수님: "수술 후 환자에게 써볼 수 있겠다", "이런 경우에도 되냐?" — 환자군·임상 상황은 교수가 언급.
+   ★ 좋은 예: "위너프에이플러스 단백 보충 빠른 장점 설명드렸더니 수술 후 환자 있으면 써보겠다 하심"
+   ★ 나쁜 예: "위너프에이플러스의 복강 내 감염 회복기 단백 보충을 복막염 후 환자와 연결해 디테일함" (MR이 교수 말투)
 ③ [오브젝션 핸들링] 30% 확률로 포함. 포함 시 교수님께서 하신 질문/반대 의견과 그에 대한 답변을 함께 작성.
 ④ [교수 반응] 교수 반응은 한 줄로만 정리.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -2093,13 +2098,13 @@ async function convertToVisitLogBase(
   const cvPipelinePlanNote = pipelinePlan
     ? `\n★ 파이프라인 생성 계획:
 - 원본 메모의 사실은 최우선으로 유지
-- 부족한 디테일은 제품 ${pipelinePlan.product}, 환자군 ${pipelinePlan.patientGroup}, 디테일 ${pipelinePlan.detailAxis} 중심으로 보강
-- 전개 방식은 "${pipelinePlan.narrativeStyle}"로 가져가되 템플릿처럼 보이지 않게 자연스럽게 작성
-- ${pipelinePlan.professorQuestion ? `교수님 질문이 필요하면 "${pipelinePlan.professorQuestion}" 흐름을 반영` : '교수님 질문은 억지로 넣지 말고 실제 반응 중심으로 작성'}
-- 교수 반응은 "${pipelinePlan.doctorReaction}"처럼 실제 의견으로 작성
-- 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향으로 작성
-- 과(${doctor.department})와 맞지 않는 환자군 금지. 소화기내과에는 분만, 산후, 산부인과, 부인과, 제왕절개 맥락 금지. 산부인과에는 IBD, 크론, 궤양성대장염, 위장관 출혈 맥락 금지
-- 금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성\n`
+- MR이 설명한 제품 특장점: ${pipelinePlan.detailAxis}
+  → MR(나)은 쉬운 말로. 수술명·병명 직접 말하지 않고 "빠른 회복", "1회로 끝남" 수준으로.
+- 교수님 환자 맥락 (교수가 언급하도록): ${pipelinePlan.patientGroup}
+- 전개 방식: "${pipelinePlan.narrativeStyle}"
+- ${pipelinePlan.professorQuestion ? `교수님 질문: "${pipelinePlan.professorQuestion}" 흐름 반영` : '교수님 질문은 억지로 넣지 말고 자연스러운 반응 중심'}
+- 다음방문전략은 오늘 본문과 겹치지 않게 "${pipelinePlan.nextAction}" 방향
+- 과(${doctor.department})와 맞지 않는 환자군 금지\n`
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
@@ -2258,18 +2263,16 @@ async function autoGenerateVisitLogBase(
   const agPipelinePlanNote = pipelinePlan
     ? `\n★ 파이프라인 생성 계획 (반드시 준수):
 - 오늘 제품: ${pipelinePlan.product}
-- 오늘 환자군: ${pipelinePlan.patientGroup}
-- 오늘 디테일: ${pipelinePlan.detailAxis}
+- MR이 설명할 제품 특장점 핵심: ${pipelinePlan.detailAxis}
+  → MR(나)은 이 특장점을 쉬운 말로 설명. 수술명·병명을 직접 말하지 않고 "빠른 회복", "1회로 끝남", "혈당 부담 적음" 수준으로.
+- 교수님이 반응할 환자 맥락 (교수 언어): ${pipelinePlan.patientGroup}
+  → 이 환자군은 교수님께서 언급하는 것으로 자연스럽게 처리. MR이 먼저 꺼내지 않음.
 - 전개 방식: ${pipelinePlan.narrativeStyle}
 - ${pipelinePlan.professorQuestion ? `교수님 질문/답변 후보: ${pipelinePlan.professorQuestion}` : '교수님 질문은 억지로 넣지 말고 자연스러운 반응만 작성'}
-- 교수 반응: ${pipelinePlan.doctorReaction}
 - 다음방문전략 방향: ${pipelinePlan.nextAction}
-- 선택 근거: ${pipelinePlan.selectionReason}
-지난 방문 기록에서 이어갈 만한 내용이 있으면 "지난 방문에 ~ 확인 후"처럼 실제 확인/반응까지 자연스럽게 연결하되, 오늘 디테일과 다음방문전략은 지난 방문 및 오늘 본문과 같은 디테일을 반복하지 말 것.
-이번 일괄 생성에서 이미 사용한 교수 반응과 같은 의미의 반응은 다시 쓰지 말 것. 특히 반복 내원 어려움, 재방문 부담, 외래 재방문 불편, 편의성 인정은 같은 반응으로 처리.
-과(${doctor.department})와 맞지 않는 환자군 금지. 소화기내과에는 분만, 산후, 산부인과, 부인과, 제왕절개 맥락 금지. 산부인과에는 IBD, 크론, 궤양성대장염, 위장관 출혈 맥락 금지.
-금지 표현: 실제+적용+환자군 조합, 적용+환자군+확인 조합, 환자군+중심 표현, 추가+디테일+진행할예정 조합. 대신 구체적인 환자 상황과 처방 맥락으로 작성.
-일정마다 같은 단어와 같은 전개가 반복되지 않게 교수별 과, 이전 기록, 환자 상황을 바꿔 쓸 것.\n`
+지난 방문 기록에서 이어갈 만한 내용이 있으면 자연스럽게 연결하되, 오늘 디테일과 다음방문전략은 지난 방문 및 오늘 본문과 같은 디테일을 반복하지 말 것.
+이번 일괄 생성에서 이미 사용한 교수 반응과 같은 의미의 반응은 다시 쓰지 말 것.
+과(${doctor.department})와 맞지 않는 환자군 금지.\n`
     : '';
 
   const prompt = `${visitContextNote}${contextSection}
