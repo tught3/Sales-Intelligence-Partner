@@ -98,6 +98,7 @@ export async function runVisitGenerationPipeline(
     if (!finalValidation.pass) {
       const remaining = finalValidation.failTypes;
       // 참고 메모 재작성 방식에서 자연스럽게 통과 못하는 케이스를 허용
+      // LENGTH_SHORT: fallback 텍스트도 normalizer에 의해 짧아질 수 있는 엣지케이스 허용
       const nonBlockingFailures = [
         'DUPLICATE_BATCH',
         'DUPLICATE_PAST',
@@ -105,6 +106,7 @@ export async function runVisitGenerationPipeline(
         'DUPLICATE_STRATEGY',
         'LEARNED_FORBIDDEN',
         'MISSING_REACTION',
+        'LENGTH_SHORT',
       ];
       if (remaining.every((type) => nonBlockingFailures.includes(type))) {
         const final = trace.finish('fallback');

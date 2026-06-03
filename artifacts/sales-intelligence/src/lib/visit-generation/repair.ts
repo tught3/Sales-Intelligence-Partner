@@ -83,26 +83,26 @@ function pickExternalPattern(plan: DetailKey, ctx: VisitContext): ExternalCasePa
 
 function buildSupportSentence(plan: DetailKey, ctx: VisitContext, pattern?: ExternalCasePattern): string {
   const department = ctx.doctor.department || '';
-  const patternHint = pattern ? ` ${pattern.patientGroup} 흐름과 ${pattern.detailAxis}을 같이 묶어봄` : '';
+  const patternHint = pattern ? ` ${pattern.patientGroup}에서 ${pattern.detailAxis}을 같이 말씀드렸더니` : '';
   if (/소화기/.test(department) && plan.product === '페린젝트') {
-    return `추가로 위장관 출혈 뒤 Hb 추이와 경구용철분제 반응을 함께 보겠다고 정리함${patternHint}`;
+    return `위장관 출혈 뒤 Hb 추이와 경구용철분제 반응을 함께 말씀드렸더니${patternHint}`;
   }
   if (/산부인과|산과|부인과/.test(department) && plan.product === '페린젝트') {
-    return `추가로 산후 외래 추이와 수술 전후 빈혈 케이스를 함께 보겠다고 정리함${patternHint}`;
+    return `산후 외래 추이와 수술 전후 빈혈 케이스를 함께 말씀드렸더니${patternHint}`;
   }
   if (/종양|혈액종양|혈액내과/.test(department) && plan.product === '페린젝트') {
-    return `추가로 항암치료 중 Hb 추이와 경구용철분제 반응을 함께 보겠다고 정리함${patternHint}`;
+    return `항암치료 중 Hb 추이와 경구용철분제 반응을 함께 말씀드렸더니${patternHint}`;
   }
   if (/소화기/.test(department) && plan.product === '위너프에이플러스') {
-    return `추가로 식사량 저하와 영양 보충 흐름을 함께 보겠다고 정리함${patternHint}`;
+    return `식사량 저하와 영양 보충 필요성을 함께 말씀드렸더니${patternHint}`;
   }
   if (/산부인과|산과|부인과/.test(department) && plan.product === '위너프에이플러스') {
-    return `추가로 분만 후 회복기와 수술 전후 영양 공급 흐름을 함께 보겠다고 정리함${patternHint}`;
+    return `분만 후 회복기와 수술 전후 영양 공급 흐름을 말씀드렸더니${patternHint}`;
   }
   if (plan.product === '페린젝트') {
-    return `추가로 외래 빈혈 환자의 Hb 회복 경과와 급여 기준을 함께 보겠다고 정리함${patternHint}`;
+    return `외래 빈혈 환자의 Hb 회복 경과와 급여 기준을 함께 말씀드렸더니${patternHint}`;
   }
-  return `추가로 회복기 환자의 영양 공급 흐름과 반응을 함께 보겠다고 정리함${patternHint}`;
+  return `회복기 환자의 영양 공급 필요성을 말씀드렸더니${patternHint}`;
 }
 
 function selectFollowUpClause(plan: DetailKey, ctx: VisitContext): string {
@@ -258,8 +258,8 @@ export function buildFallback(plan: DetailKey, ctx: VisitContext): RepairOutput 
   const supportSentence = buildSupportSentence(safePlan, ctx, pickExternalPattern(plan, ctx));
   const leadIns = [
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}와 연결해 디테일 진행함`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 흐름에 맞춰 설명드림`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 맥락에서 정리함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명드렸더니`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 맥락에서 말씀드렸더니`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 안내함`,
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle) % leadIns.length];
@@ -280,8 +280,8 @@ export function buildValidationSafeFallback(plan: DetailKey, ctx: VisitContext):
   const leadIns = [
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 상황에 맞춰 설명함`,
     `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 기준으로 안내함`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}에서 실제로 볼 수 있는 흐름으로 설명함`,
-    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 환자 흐름으로 정리함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup}에서 실제로 볼 수 있는 케이스로 설명함`,
+    `${safePlan.product}의 ${safePlan.detailAxis}을 ${safePlan.patientGroup} 환자 상황으로 설명드렸더니`,
   ];
   const opener = leadIns[hashSeed(safePlan.product, safePlan.patientGroup, safePlan.detailAxis, safePlan.narrativeStyle, 'validation') % leadIns.length];
   const formattedLog = limit(
