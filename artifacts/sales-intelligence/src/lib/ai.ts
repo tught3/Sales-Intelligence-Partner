@@ -18,7 +18,7 @@ const OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini';
 const VISIT_LOG_MODEL = 'gpt-5.4-mini';
 const DEFAULT_MAX_COMPLETION_TOKENS = 1000;
 const VISIT_LOG_MAX_COMPLETION_TOKENS = 800;
-const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
+const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP'] as const;
 const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 const MIN_VISIT_LOG_LENGTH = 100;
 const MAX_VISIT_LOG_LENGTH = 230;
@@ -2125,7 +2125,14 @@ async function convertToVisitLogBase(
   const cvAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
   const cvErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
 
-  // 참고 메모 선택 — 우선순위: 저장 로그 → 외부사례 → 템플릿 exampleMemo
+  // 학습된 금지 패턴 (LEARNED_FORBIDDEN 방지)
+  const cvForbiddenPatterns = preferenceStorage
+    .getForGeneration(doctor, activeProducts)
+    .flatMap((p: { forbiddenPatterns?: string[] }) => p.forbiddenPatterns ?? [])
+    .filter((p: string) => p.length >= 8)
+    .slice(0, 5);
+
+  // 참고 메모 선택 — 우선순위: 외부사례 → 저장 로그 → 템플릿 exampleMemo
   const referenceMemo = findBestReferenceMemo(doctor, activeProducts[0], pastLogs, pipelinePlan?.exampleMemo);
   const lastLog = pastLogs[0];
 
@@ -2141,8 +2148,10 @@ ${referenceMemo ? `\n★★ 참고 메모 — 이 스타일과 길이로 작성:
 ${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
 다음 방향: ${pipelinePlan.nextAction}` : ''}
 ${cvErNewDrugNote}${objectionInstruction}
+${cvForbiddenPatterns.length > 0 ? `사용 금지 표현: ${cvForbiddenPatterns.join(' / ')}\n` : ''}
 원본 메모의 내용(상황·반응·제품명)을 유지하면서 참고 메모와 똑같은 문체·길이로 다듬어주세요.
-글자수: 100-230자 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
+반드시 100자 이상 230자 이하 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
+교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심 등 구체 반응 1개 이상
 
 응답 형식:
 ===영업일지===
@@ -2227,9 +2236,8 @@ async function autoGenerateVisitLogBase(
   batchAvoidTexts: string[] = [],
   pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
-  const { systemPrompt, contextSection } = buildFullContext(doctor, pastLogs);
+  const { systemPrompt } = buildFullContext(doctor, pastLogs);
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
-  const productFitConstraint = buildProductFitConstraint(doctor.department, selectedProducts, activeProducts);
   const includeObjection = Math.random() < 0.3;
   const objectionInstruction = buildObjectionInstruction(includeObjection, doctor.department, activeProducts);
 
@@ -2239,7 +2247,14 @@ async function autoGenerateVisitLogBase(
   const agBatchAvoidNote = buildBatchAvoidanceNote(batchAvoidTexts);
   const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
 
-  // 참고 메모 선택 — 우선순위: 저장 로그 → 외부사례 → 템플릿 exampleMemo
+  // 학습된 금지 패턴 (LEARNED_FORBIDDEN 방지)
+  const agForbiddenPatterns = preferenceStorage
+    .getForGeneration(doctor, activeProducts)
+    .flatMap((p: { forbiddenPatterns?: string[] }) => p.forbiddenPatterns ?? [])
+    .filter((p: string) => p.length >= 8)
+    .slice(0, 5);
+
+  // 참고 메모 선택 — 우선순위: 외부사례 → 저장 로그 → 템플릿 exampleMemo
   const referenceMemo = findBestReferenceMemo(doctor, activeProducts[0], pastLogs, pipelinePlan?.exampleMemo);
   const lastLog = pastLogs[0];
 
@@ -2255,8 +2270,10 @@ ${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
 교수 반응 방향: ${pipelinePlan.patientGroup}은 교수님이 언급하는 것으로 (MR이 먼저 꺼내지 말 것)
 다음 방향: ${pipelinePlan.nextAction}` : ''}
 ${agBatchAvoidNote}${agPreviousStrategyNote}${agErNewDrugNote}${objectionInstruction}
+${agForbiddenPatterns.length > 0 ? `사용 금지 표현: ${agForbiddenPatterns.join(' / ')}\n` : ''}
 위 참고 메모와 똑같은 문체·길이·구조로 작성하세요. 오늘 제품·주제·반응만 바꾸면 됩니다.
-글자수: 100-230자 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
+반드시 100자 이상 230자 이하 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
+교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심 등 구체 반응 1개 이상
 
 응답 형식:
 ===제품===
@@ -2279,7 +2296,7 @@ ${agBatchAvoidNote}${agPreviousStrategyNote}${agErNewDrugNote}${objectionInstruc
   const strategyMatch = response.match(/===다음방문전략===\s*([\s\S]*?)$/);
 
   const productText = productMatch ? productMatch[1].trim() : '';
-  const KNOWN_PRODUCTS = ['위너프에이플러스', '페린젝트'];
+  const KNOWN_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP'];
   const allowedProducts = getAllowedProductsForDepartment(doctor.department);
   const products = productText
     .split(/[,，、]/)

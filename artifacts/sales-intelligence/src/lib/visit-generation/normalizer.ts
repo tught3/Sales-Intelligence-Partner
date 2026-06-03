@@ -11,6 +11,10 @@ function clean(text: string): string {
     // 취소선 마크다운(~~) 제거
     .replace(/~~([^~]*)~~/g, '$1')
     .replace(/~~/g, '')
+    // "예정할예정" 중복 버그 수정
+    .replace(/할예정할예정/g, '할예정')
+    .replace(/예정할예정/g, '할예정')
+    .replace(/예정\s+할예정/g, '할예정')
     // 조사 오류 자동 수정 ("결과을" → "결과를" 등 받침 없는 글자 뒤 "을" → "를")
     .replace(/([가-힣])을(\s|$)/g, (m, p1, p2) => {
       const code = p1.charCodeAt(0);
