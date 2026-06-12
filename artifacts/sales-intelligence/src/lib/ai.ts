@@ -676,100 +676,13 @@ function normalizeMemoTone(text: string): string {
     [/단회\s*투여/gi, '1회 투여'],
     [/단회투여/gi, '1회 투여'],
     [/플라주(?!OP)/g, '플라주OP'],
-    [/(위너프에이플러스|페린젝트|플라주OP)의\s+/g, '$1 '],
-    [/짚겠음/gi, '디테일 진행함'],
-    [/짚을 예정/gi, '디테일 진행 예정'],
-    [/짚어볼 예정/gi, '디테일 진행 예정'],
-    [/짚고\s*넘어/gi, '디테일 진행'],
-    [/짚음/gi, '디테일 진행함'],
-    [/짚을/gi, '디테일 진행할'],
-    [/([가-힣A-Za-z0-9]+ 환자)\s*말씀하시며/gi, '$1라고 말씀드렸더니'],
-    [/흐름이어서/gi, '드렸는데'],
-    [/흐름으로/gi, '드렸는데'],
-    [/할예정며/gi, '하다고 하시며'],
-    [/중\s*환자/gi, '중환자'],
-    [/다시\s*봄/gi, '재확인함'],
-    [/다시\s*말씀드림/gi, '추가 안내함'],
-    [/다시\s*디테일\s*진행함/gi, '추가 디테일 진행함'],
-    [/다시\s*디테일/gi, '추가 디테일'],
-    [/다시\s*안내함/gi, '추가 안내함'],
-    [/있다\s*말씀드리니/gi, '있다고 말씀드리니'],
-    [/수\s*있다\s*말씀드렸더니/gi, '수 있다고 말씀드렸더니'],
-    [/[·•]/g, ','],
-    [/↑/g, '증가'],
-    [/↓/g, '감소'],
-    [/→/g, ''],
-    [/←/g, ''],
-    [/부탁드립니다/gi, '부탁'],
-    [/요청드립니다/gi, '요청'],
-    [/말씀드렸습니다/gi, '말씀드림'],
-    [/말씀드리겠습니다/gi, '말씀드림'],
-    [/드리겠습니다/gi, '드림'],
-    [/드렸습니다/gi, '드림'],
-    [/어\s*보겠습니다/gi, '어볼 예정'],
-    [/아\s*보겠습니다/gi, '아볼 예정'],
-    [/해보겠습니다/gi, '해볼 예정'],
-    [/확인하겠다/gi, '확인할예정'],
-    [/전달하겠다/gi, '전달할예정'],
-    [/진행하겠다/gi, '진행할예정'],
-    [/하겠다/gi, '할예정'],
-    [/겠습니다/gi, '겠음'],
-    [/확인했습니다/gi, '확인함'],
-    [/검토했습니다/gi, '검토함'],
-    [/공유했습니다/gi, '공유함'],
-    [/정리했습니다/gi, '정리함'],
-    [/전달했습니다/gi, '전달함'],
-    [/진행했습니다/gi, '진행함'],
-    [/반영했습니다/gi, '반영함'],
-    [/권장합니다/gi, '권장함'],
-    [/가능합니다/gi, '가능함'],
-    [/필요합니다/gi, '필요함'],
-    [/생각됩니다/gi, '생각됨'],
-    [/보입니다/gi, '보임'],
-    [/보였습니다/gi, '보임'],
-    [/되었습니다/gi, '됨'],
-    [/있습니다/gi, '있음'],
-    [/없습니다/gi, '없음'],
-    [/같습니다/gi, '같음'],
-    [/예정입니다/gi, '예정'],
-    [/드릴 예정입니다/gi, '드릴 예정'],
-    [/했습니다/gi, '함'],
-    [/하였습니다/gi, '함'],
-    [/합니다/gi, '함'],
-    [/입니다/gi, '임'],
-    [/드립니다/gi, '부탁'],
   ];
-
-  let result = text
-    .replace(/={2,}\s*(다음방문전략|영업일지|전문영업일지|제품|반응근거|다음방문계획)\s*={2,}/g, '')
-    .replace(/^(다음방문전략|영업일지|전문영업일지|제품|반응근거|다음방문계획)\s*[:：]\s*/gm, '')
-    .trim();
-  for (const [pattern, replacement] of replacements) {
-    result = result.replace(pattern, replacement);
-  }
-
-  return normalizeOralIronTerminology(result
-    .replace(/\s*,\s*/g, ', ')
-    .replace(/\s+([.,!?])/g, '$1')
-    .replace(/[.]{2,}/g, '.')
-    .replace(/\s{2,}/g, ' ')
-    .trim());
+  return replacements.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text);
 }
 
 function reducePointWordUsage(text: string): string {
-  return text
-    .replace(/제품\s*포인트/g, '제품 디테일')
-    .replace(/처방\s*포인트/g, '처방 관련 내용')
-    .replace(/디테일\s*포인트/g, '디테일')
-    .replace(/짧은\s*포인트/g, '간단한 표현')
-    .replace(/차별화\s*포인트/g, '차별점')
-    .replace(/매력\s*포인트/g, '강점')
-    .replace(/활용\s*포인트/g, '활용 내용')
-    .replace(/포인트를/g, '디테일을')
-    .replace(/포인트는/g, '디테일은')
-    .replace(/포인트/g, '디테일')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  // few-shot 방식으로 전환 — AI가 자연스럽게 쓴 텍스트를 강제 변환하지 않음
+  return text;
 }
 
 function normalizeSnippetProductName(product: string): string {
@@ -854,32 +767,8 @@ function buildDoctorRosterForSnippetAnalysis(doctors: Doctor[]): string {
 }
 
 function cleanPreviousVisitConnection(text: string): string {
-  const previousPattern = /(지난번(?:에)?|지난\s*방문(?:에)?|지난방문(?:에)?|이전\s*방문(?:에)?)/;
-  if (!previousPattern.test(text)) return text;
-
-  const resultPattern = /(확인|여쭤|문의|처방\s*케이스|사용\s*중|반응|케이스|없다고|있다고|하심|말씀|보임|관심|부담|어렵|검토|공감|납득|아직|이후|그\s*후|그후)/;
-  const connectorPattern = /(했는데|드렸는데|안내했는데|진행했는데|전달했는데|설명했는데|디테일했는데)/;
-
-  return text
-    .split(/(?<=[.。!?])\s+|\n+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean)
-    .map((sentence) => {
-      if (!previousPattern.test(sentence)) return sentence;
-      const connectorMatch = sentence.match(connectorPattern);
-      if (!connectorMatch || connectorMatch.index === undefined) {
-        return resultPattern.test(sentence) ? sentence : '';
-      }
-      const afterConnector = sentence.slice(connectorMatch.index + connectorMatch[0].length);
-      if (resultPattern.test(afterConnector)) return sentence;
-      return afterConnector
-        .replace(/^(오늘은|금일은|이번에는)\s*/, '')
-        .trim();
-    })
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  // few-shot 방식으로 전환 — 지난 방문 연결 문장을 강제 편집하지 않음
+  return text;
 }
 
 function normalizeProductKey(text: string): string {
@@ -905,26 +794,8 @@ function containsProductKey(text: string, productKey: string): boolean {
 }
 
 function cleanRedundantPreviousUseFocus(text: string): string {
-  const productPattern = '(위너프\\s*에이플러스|위너프|페린젝트|프리페넴|플라주OP|플라주|이부프로펜\\s*프리믹스|이부프로펜프리믹스|제이세덱스|포스페넴)';
-  const focusPattern = new RegExp(`(오늘은|금일은|이번에는)\\s*${productPattern}\\s*중심으로`, 'g');
-
-  return text
-    .split(/(?<=[.。!?])\s+|\n+/)
-    .map((sentence) => {
-      if (!/(지난번(?:에)?|지난\s*방문(?:에)?|지난방문(?:에)?|이전\s*방문(?:에)?)/.test(sentence) || !/사용\s*중/.test(sentence)) {
-        return sentence;
-      }
-
-      return sentence.replace(focusPattern, (match, timing, product, offset) => {
-        const previousPart = sentence.slice(0, offset);
-        const productKey = normalizeProductKey(product);
-        if (!previousPart || !containsProductKey(previousPart, productKey)) return match;
-        return `${timing} 실제 사용 반응 확인 후`;
-      });
-    })
-    .join(' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  // few-shot 방식으로 전환 — 이전 방문 연결 표현을 강제 교체하지 않음
+  return text;
 }
 
 function normalizeGeneratedMemoText(text: string, department = ''): string {
