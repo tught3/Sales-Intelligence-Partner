@@ -6,6 +6,7 @@ export type ExternalCasePatternDraft = {
   reactionPattern: string;
   nextAction: string;
   sourceSummary: string;
+  styleExampleMemo: string;
   confidence: number;
 };
 
@@ -37,7 +38,7 @@ function cleanNoise(text: string): string {
     .replace(/^\s*(?:[-*ㆍ]|\d+[.)]|\d+\))\s*/g, '')
     .replace(/\([^)]*(?:월|백만|내정가|만원|원)[^)]*\)/g, '')
     .replace(/\b\d+\s*월\s*\d*\.?\d*\s*백만\b/g, '')
-    .replace(/(?:순천향부천병원|평촌성심|아주대|성빈센트|분당서울대병원|고대안산|길병원|인천성모병원|인하대병원|고대안산병원|평촌성심병원|성빈센트병원)\s*/g, '')
+    .replace(/(?:순천향부천병원|평촌성심|아주대|성빈센트|분당서울대병원|고대안산|길병원|인천성모병원|인하대병원|고대안산병원|평촌성심병원|성빈센트병원|신촌\s*세브란스|원주\s*세브란스|원주기독|강릉아산|신촌|세브란스)\s*/g, '')
     .replace(/(?:교수|의국장|전공의|pa팀|외\s*\d+명)\s*/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -64,6 +65,13 @@ function detectDepartment(text: string): string {
 
 function detectProduct(text: string): string {
   return normalizeExternalCaseProduct(text);
+}
+
+function detectProducts(text: string): string[] {
+  const products: string[] = [];
+  if (/페린젝트|패린젝트|ferinject|페린젝|페린/i.test(text)) products.push('페린젝트');
+  if (/위너프|winuf/i.test(text)) products.push('위너프에이플러스');
+  return [...new Set(products)];
 }
 
 function splitExternalCaseChunks(rawText: string): string[] {
@@ -203,6 +211,35 @@ function sourceSummaryFrom(department: string, product: string, patientGroup: st
   return `${department} ${product} 패턴 요약${summaryTail}`.trim();
 }
 
+function styleExampleMemoFrom(
+  department: string,
+  product: string,
+  patientGroup: string,
+  detailAxis: string,
+  reactionPattern: string,
+  nextAction: string,
+  chunk: string
+): string {
+  const cleanedChunk = cleanNoise(chunk)
+    .replace(/(?:심포지엄|학회|모객|참석|등록|좌장|연자|서베이|설문|제품설명회|컨퍼런스|강의|리플렛|기획기사|미니베너)[^.!?。]{0,40}/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const detail = detailAxis.replace(new RegExp(`^${product}의\\s*`), '');
+  const reaction = reactionPattern.replace(/^교수님(?:께서|께|은|이)?\s*/, '');
+  const next = nextAction
+    .replace(/^(?:다음\s*방문(?:시)?에는|추후|차주|지속적|주기적)\s*/g, '')
+    .replace(/(?:확인|검토|예정|계획)\s*$/g, '')
+    .trim();
+
+  const opener = `${product} ${detail}을 ${patientGroup} 상황과 연결해 말씀드림`;
+  const memo = `${opener}. 교수님께서 ${reaction}. 다음방문시에는 ${next || `${department} 환자군 반응`} 확인할예정`;
+  const fallback = `${product} ${detail} 말씀드림. 교수님께서 ${reaction}. 다음방문시에는 ${next || '환자 반응'} 확인할예정`;
+  return compact(memo.length <= 230 ? memo : fallback)
+    .replace(/백만|만원|내정가|고대안산|아주대|신촌\s*세브란스|신촌/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim() || cleanedChunk.slice(0, 220);
+}
+
 function normalizeComparable(value: string): string {
   return value
     .toLowerCase()
@@ -223,6 +260,7 @@ export function mergeExternalCasePatterns(...groups: ExternalCasePatternDraft[][
       department: normalizeExternalCaseDepartment(pattern.department),
       product: normalizeExternalCaseProduct(pattern.product),
       confidence: Math.max(0, Math.min(100, Number(pattern.confidence ?? 60) || 60)),
+      styleExampleMemo: pattern.styleExampleMemo ?? '',
     };
     if (!normalized.department || !normalized.product || !normalized.patientGroup || !normalized.detailAxis) continue;
     const key = [
@@ -240,21 +278,26 @@ export function mergeExternalCasePatterns(...groups: ExternalCasePatternDraft[][
 
 export function extractExternalCasePatternsFromText(rawText: string): ExternalCasePatternDraft[] {
   const chunks = splitExternalCaseChunks(rawText);
-  const drafts = chunks.map((chunk) => {
+  const drafts = chunks.flatMap((chunk) => {
     const department = detectDepartment(chunk);
-    const product = detectProduct(chunk);
-    const patientGroup = patientGroupFrom(chunk, department, product);
-    const detailAxis = detailAxisFrom(chunk, product);
-    return {
-      department,
-      product,
-      patientGroup,
-      detailAxis,
-      reactionPattern: reactionFrom(chunk, department, product),
-      nextAction: nextActionFrom(chunk, department, product, detailAxis),
-      sourceSummary: sourceSummaryFrom(department, product, patientGroup, detailAxis, chunk),
-      confidence: NOISE_RE.test(chunk) ? 68 : 78,
-    };
+    const products = detectProducts(chunk);
+    return products.map((product) => {
+      const patientGroup = patientGroupFrom(chunk, department, product);
+      const detailAxis = detailAxisFrom(chunk, product);
+      const reactionPattern = reactionFrom(chunk, department, product);
+      const nextAction = nextActionFrom(chunk, department, product, detailAxis);
+      return {
+        department,
+        product,
+        patientGroup,
+        detailAxis,
+        reactionPattern,
+        nextAction,
+        sourceSummary: sourceSummaryFrom(department, product, patientGroup, detailAxis, chunk),
+        styleExampleMemo: styleExampleMemoFrom(department, product, patientGroup, detailAxis, reactionPattern, nextAction, chunk),
+        confidence: NOISE_RE.test(chunk) ? 68 : 78,
+      };
+    });
   });
   return mergeExternalCasePatterns(drafts);
 }
@@ -263,4 +306,40 @@ export function buildExternalCasePromptInput(rawText: string): string {
   const chunks = splitExternalCaseChunks(rawText).slice(0, 80);
   if (chunks.length === 0) return rawText.slice(0, 12000);
   return chunks.map((chunk, index) => `${index + 1}. ${chunk}`).join('\n');
+}
+
+// 카카오톡 대화 내보내기 .txt 파일 → 메시지 텍스트만 추출
+export function parseKakaoTalkExport(fileText: string): string {
+  const lines = fileText.split(/\r?\n/);
+  const messages: string[] = [];
+
+  // PC 버전: [이름] [오전/오후 HH:MM] 메시지
+  const pcLineRe = /^\[.+?\]\s*\[(?:오전|오후)\s*\d{1,2}:\d{2}\]\s*/;
+  // 모바일 버전: YYYY년 M월 D일 오전/오후 HH:MM, 이름 : 메시지
+  const mobileLineRe = /^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*(?:오전|오후)\s*\d{1,2}:\d{2},\s*.+?\s*:\s*/;
+  // 날짜 구분선: ----- 날짜 -----
+  const dateDividerRe = /^-{3,}\s*\d{4}년.+-{3,}\s*$/;
+  // 파일 헤더
+  const headerRe = /^(?:카카오톡\s*대화\s*내보내기|저장한\s*날짜\s*:|방\s*이름\s*:|참여자\s*:)/;
+  // 미디어 전용 라인 (이미지/파일/이모티콘 등)
+  const mediaRe = /^(?:사진|동영상|이모티콘|파일|음성메시지|연락처|지도|일정|투표)\s*$/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (headerRe.test(trimmed)) continue;
+    if (dateDividerRe.test(trimmed)) continue;
+
+    let msg = trimmed;
+    if (pcLineRe.test(msg)) {
+      msg = msg.replace(pcLineRe, '').trim();
+    } else if (mobileLineRe.test(msg)) {
+      msg = msg.replace(mobileLineRe, '').trim();
+    }
+
+    if (!msg || mediaRe.test(msg)) continue;
+    messages.push(msg);
+  }
+
+  return messages.join('\n');
 }

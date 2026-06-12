@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useRef, useMemo, useState } from "react";
 import { analyzeExternalCasePatterns } from "@/lib/ai";
+import { parseKakaoTalkExport } from "@/lib/externalCases";
 import {
   externalCasePatternStorage,
   generateId,
@@ -13,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Brain,
   DatabaseZap,
+  FileUp,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -33,6 +35,8 @@ export default function ExternalCasesPage() {
   const [patterns, setPatterns] = useState<ExternalCasePattern[]>(() => externalCasePatternStorage.getAll());
   const [analyzing, setAnalyzing] = useState(false);
   const [lastSkipped, setLastSkipped] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const grouped = useMemo(() => {
     return patterns.reduce<Record<string, ExternalCasePattern[]>>((acc, pattern) => {
@@ -78,6 +82,37 @@ export default function ExternalCasesPage() {
     }
   }
 
+  function handleFileRead(file: File) {
+    if (!file.name.endsWith('.txt')) {
+      toast({ title: ".txt 파일만 지원합니다", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = typeof e.target?.result === 'string' ? e.target.result : '';
+      const parsed = parseKakaoTalkExport(text);
+      if (!parsed.trim()) {
+        toast({ title: "파일에서 메시지를 찾을 수 없습니다", variant: "destructive" });
+        return;
+      }
+      analyzeAndSave(parsed);
+    };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  function handleFileDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileRead(file);
+  }
+
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleFileRead(file);
+    e.target.value = '';
+  }
+
   function handleDelete(id: string) {
     externalCasePatternStorage.delete(id);
     setPatterns(externalCasePatternStorage.getAll());
@@ -101,7 +136,7 @@ export default function ExternalCasesPage() {
       <div className="mb-5 sm:mb-6">
         <h1 className="text-2xl font-bold text-foreground">외부 사례 학습</h1>
         <p className="text-muted-foreground mt-1">
-          번호, 병원명, 교수명, 금액, 학회 얘기는 버리고 진료과, 품목, 환자군, 디테일 포인트만 추출해 자동생성 재료로 사용합니다
+          번호, 병원명, 교수명, 금액, 학회 얘기는 버리고 진료과, 품목, 환자군, 디테일 포인트와 익명화 예문만 자동생성 재료로 사용합니다
         </p>
       </div>
 
@@ -114,15 +149,34 @@ export default function ExternalCasesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* 카카오톡 파일 업로드 존 */}
+            <div
+              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-5 text-center transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/30 hover:border-primary/50 hover:bg-muted/40'}`}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleFileDrop}
+              onClick={() => fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+            >
+              <FileUp className="h-6 w-6 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">카카오톡 대화 내보내기 파일 업로드</p>
+                <p className="text-xs text-muted-foreground">.txt 파일을 끌어다 놓거나 클릭 · PC/모바일 내보내기 모두 지원</p>
+              </div>
+              <input ref={fileInputRef} type="file" accept=".txt" className="hidden" onChange={handleFileInput} />
+            </div>
+            <p className="text-center text-xs text-muted-foreground">또는 직접 붙여넣기</p>
             <Textarea
               value={rawText}
               onChange={(event) => setRawText(event.target.value)}
-              placeholder="다른 사람들이 쓴 방문일지를 그대로 붙여넣으세요. 1. 2. 같은 번호, 다른 병원/교수 이름, 내정가, 심포지엄/학회/제품설명회 문구는 자동으로 제외하고 필요한 패턴만 추출합니다. 원문은 저장하지 않습니다."
-              className="min-h-[280px] text-base sm:text-sm"
+              placeholder="다른 사람들이 쓴 방문일지를 그대로 붙여넣으세요. 1. 2. 같은 번호, 다른 병원/교수 이름, 내정가, 심포지엄/학회/제품설명회 문구는 자동으로 제외하고 필요한 패턴만 추출합니다. 원문 전체는 저장하지 않고 익명화 예문만 남깁니다."
+              className="min-h-[200px] text-base sm:text-sm"
             />
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-muted-foreground">
-                저장 항목: 진료과, 품목, 환자군, 디테일 포인트, 반응, 다음 액션. 원문 문장은 저장하거나 재사용하지 않습니다.
+                저장 항목: 진료과, 품목, 환자군, 디테일 포인트, 반응, 다음 액션, 익명화 예문. 병원/교수/금액 원문은 저장하지 않습니다.
               </p>
               <Button onClick={() => analyzeAndSave(rawText)} disabled={analyzing || !rawText.trim()} className="gap-2">
                 {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
@@ -188,6 +242,9 @@ export default function ExternalCasesPage() {
                     )}
                     {pattern.sourceSummary && (
                       <p className="mt-2 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">{pattern.sourceSummary}</p>
+                    )}
+                    {pattern.styleExampleMemo && (
+                      <p className="mt-2 rounded-md border border-dashed p-2 text-xs text-muted-foreground">예문: {pattern.styleExampleMemo}</p>
                     )}
                     <div className="mt-3 flex justify-end gap-2">
                       <Button variant="outline" size="sm" onClick={() => handleReanalyze(pattern)} disabled={analyzing} className="gap-1">
