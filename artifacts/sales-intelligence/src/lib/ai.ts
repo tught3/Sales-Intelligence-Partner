@@ -311,6 +311,42 @@ function buildSystemPrompt(): string {
   return prompt;
 }
 
+function buildSimpleSystemPrompt(): string {
+  const ruleText = manualStorage.getByCategory('rule')
+    .map((m) => `[${m.title}]\n${m.content}`)
+    .join('\n\n---\n\n');
+  const productText = manualStorage.getByCategory('product')
+    .map((m) => `[${m.title}]\n${m.content}`)
+    .join('\n\n---\n\n');
+
+  const base = `JW중외제약 MR 영업 비서. 현장 메모처럼 자연스러운 한국어로 작성.
+종결 어미: ~함/~보임/~하심/~예정/~드림. 큰따옴표(") 작은따옴표(') 절대 금지.
+주어(MR이/나는/저는) 생략, 서술어로만 작성.`;
+
+  let prompt = base;
+
+  if (ruleText) {
+    prompt += `\n\n===회사 규칙 (최우선)===\n${ruleText}`;
+  }
+
+  if (productText) {
+    prompt += `\n\n===제품 정보===\n${productText}`;
+  }
+
+  return prompt;
+}
+
+async function buildGoldenFewShot(department: string, allowedProducts: string[]): Promise<string> {
+  const examples = await snippetStorage.getGoldenForGeneration(department, allowedProducts);
+  if (!examples || examples.length === 0) return '';
+
+  const lines = examples
+    .map((e, i) => `예시${i + 1}: ${e.content}`)
+    .join('\n');
+
+  return `=== 잘 쓴 일지 예시 (이 말투·길이·구성 그대로) ===\n${lines}`;
+}
+
 function buildSnippetContext(department = ''): string {
   const allSnippets = snippetStorage.getAll();
   if (allSnippets.length === 0) return '';
@@ -2437,45 +2473,26 @@ async function convertToVisitLogBase(
   selectedProducts: string[] = [],
   pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
-  const { systemPrompt } = buildFullContext(doctor, pastLogs);
+  const systemPrompt = buildSimpleSystemPrompt();
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department, rawNotes);
-  const includeObjection = Math.random() < 0.1;
-  const objectionInstruction = buildObjectionInstruction(includeObjection, doctor.department, activeProducts);
-  const cvAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
-  const cvErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
-
-  // 학습된 금지 패턴 (LEARNED_FORBIDDEN 방지)
-  const cvForbiddenPatterns = preferenceStorage
-    .getForGeneration(doctor, activeProducts)
-    .flatMap((p: { forbiddenPatterns?: string[] }) => p.forbiddenPatterns ?? [])
-    .filter((p: string) => p.length >= 8)
-    .slice(0, 5);
-
-  // 참고 메모 선택 — 우선순위: 외부사례 → 저장 로그 → 템플릿 exampleMemo
-  const referenceMemo = findBestReferenceMemo(doctor, activeProducts[0], pastLogs, pipelinePlan?.exampleMemo);
   const lastLog = pastLogs[0];
+
+  const goldenFewShot = await buildGoldenFewShot(doctor.department, getAllowedProductsForDepartment(doctor.department));
 
   const prompt = `교수: ${doctor.name} (${doctor.department}, ${doctor.hospital})
 ${doctor.notes ? `특이사항: ${doctor.notes}` : ''}
 ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0, 80)}` : ''}
-${referenceMemo ? `\n★★ 참고 메모 — 이 스타일과 길이로 작성:
-"${referenceMemo}"\n` : ''}
+오늘 품목: ${activeProducts[0]}
+
 [원본 메모]
 {{RAW_MEMO}}
-
-오늘 제품: ${activeProducts[0]}
-${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
-다음 방향: ${pipelinePlan.nextAction}` : ''}
-${cvErNewDrugNote}${objectionInstruction}
-${cvForbiddenPatterns.length > 0 ? `사용 금지 표현: ${cvForbiddenPatterns.join(' / ')}\n` : ''}
-원본 메모의 내용(상황·반응·제품명)을 유지하면서 참고 메모와 똑같은 문체·길이로 다듬어주세요.
-반드시 75자 이상 230자 이하 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
-★ 1인칭 메모 형식: 주어(MR이, 나는, 저는) 없이 서술어로만 작성. 예: 페린젝트 1회 투여 장점 말씀드렸더니 교수님께서 ~하심. MR이/나는/저는 절대 주어로 쓰지 말 것.
-★ 순서 필수: 먼저 제품 특장점 설명 후 교수님이 반응. 교수님이 제품 특장점을 먼저 언급하거나 설명하는 구조 절대 금지.
-★ 특장점은 한 문장에 하나만. 여러 특장점 나열 금지.
-★ 교수님 반응 연결 필수: 교수님 반응은 반드시 MR이 방금 설명한 그 내용(특장점/수치/기전)에 직접 연결되어야 함. MR이 말하지 않은 전혀 다른 내용을 교수님이 갑자기 꺼내는 구조 금지. 예: MR이 1회 투여 언급 → 교수님이 투여 횟수/급여 기준 질문. MR이 아미노산 증가 언급 → 교수님이 아미노산 차이/단백 보충 효과 반응. 맥락 없이 전혀 다른 수치나 부작용을 갑자기 언급 금지.
-${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.department)}교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심, ~질문하심 등 구체 반응 1개 이상
-다음방문전략: 오늘 설명한 수치·키워드(예: ferritin, TSAT, Hb 기준, 아미노산 수치 등)를 그대로 반복하는 전략 절대 금지. 오늘과 다른 각도 하나만: 처방 경험 확인 / 다른 환자군 적용 / 다른 특장점 중 하나로만 작성. 오늘 내용을 확인한다거나 다시 설명한다는 전략도 금지.
+${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
+[작성 지침 — 원본 메모의 내용(상황·반응·제품명)을 유지하면서 예시와 같은 문체·길이로 다듬기]
+- 흐름: 제품 특장점 설명 → 교수님 반응 → (가끔) 다음 방향 한 줄
+- 본문 100~230자, 다음방문전략 120자 이내
+- 오늘 품목(${activeProducts[0]})만 사용, 다른 과 질환·제품 섞지 말 것
+- 페린젝트는 1회 투여, 따옴표 금지
+- 종결: ~함/~하심/~예정/~드림
 
 응답 형식:
 ===영업일지===
@@ -2496,7 +2513,6 @@ ${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.dep
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   cleaned = normalizeGeneratedMemoText(cleaned, doctor.department);
   cleaned = normalizeObjectionLanguage(cleaned, activeProducts);
-  cleaned = normalizeIntroProductLanguage(cleaned, activeProducts, cvAllowNewDrugReview);
   cleaned = finalizeVisitLogBody(cleaned, activeProducts, doctor.department);
   nextStrategy = reducePointWordUsage(nextStrategy);
   nextStrategy = finalizeVisitStrategy(nextStrategy, activeProducts, doctor.department, cleaned);
@@ -2522,9 +2538,6 @@ ${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.dep
   }
   if (cleaned.length > 230) cleaned = compressTextToLimit(cleaned, 230);
 
-  if (includeObjection && !hasObjectionHandling(cleaned)) {
-    cleaned = await ensureObjectionHandling(systemPrompt, cleaned, doctor, activeProducts, cvAllowNewDrugReview);
-  }
   cleaned = finalizeVisitLogBody(cleaned, activeProducts, doctor.department);
 
   nextStrategy = finalizeVisitStrategy(nextStrategy, activeProducts, doctor.department, cleaned);
@@ -2556,51 +2569,31 @@ async function autoGenerateVisitLogBase(
   batchAvoidTexts: string[] = [],
   pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
-  const { systemPrompt } = buildFullContext(doctor, pastLogs);
+  const systemPrompt = buildSimpleSystemPrompt();
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
-  const includeObjection = Math.random() < 0.3;
-  const objectionInstruction = buildObjectionInstruction(includeObjection, doctor.department, activeProducts);
 
   const today = new Date().toISOString().split('T')[0];
-  const agAllowNewDrugReview = hasIntroProducts(activeProducts) && Math.random() < 0.1;
-  const agErNewDrugNote = buildErNewDrugCodeNote(doctor.department);
   // 다른 제품의 고유 표현이 이번 생성 맥락을 오염시키지 않도록 필터링 후 전달
   const filteredBatchAvoidTexts = filterBatchAvoidTextsForProduct(batchAvoidTexts, activeProducts[0]);
-  const agBatchAvoidNote = buildBatchAvoidanceNote(filteredBatchAvoidTexts);
-  const agPreviousStrategyNote = buildPreviousStrategyCarryoverNote(pastLogs, activeProducts, doctor.department);
-
-  // 학습된 금지 패턴 (LEARNED_FORBIDDEN 방지)
-  const agForbiddenPatterns = preferenceStorage
-    .getForGeneration(doctor, activeProducts)
-    .flatMap((p: { forbiddenPatterns?: string[] }) => p.forbiddenPatterns ?? [])
-    .filter((p: string) => p.length >= 8)
-    .slice(0, 5);
-
-  // 참고 메모 선택 — 우선순위: 외부사례 → 저장 로그 → 템플릿 exampleMemo
-  const referenceMemo = findBestReferenceMemo(doctor, activeProducts[0], pastLogs, pipelinePlan?.exampleMemo);
   const lastLog = pastLogs[0];
+
+  const goldenFewShot = await buildGoldenFewShot(doctor.department, getAllowedProductsForDepartment(doctor.department));
 
   const prompt = `교수: ${doctor.name} (${doctor.department}, ${doctor.hospital})
 ${doctor.notes ? `특이사항: ${doctor.notes}` : ''}
 ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0, 80)}` : '첫 방문'}
-${referenceMemo ? `\n★★ 참고 메모 — 이 스타일과 길이로 작성:
-"${referenceMemo}"\n` : ''}
 오늘(${today}) 이 교수를 방문했다고 가정하고 실제로 있을 법한 영업 현장 메모를 작성하세요.
 
-오늘 제품: ${activeProducts[0]}
+오늘 품목: ${activeProducts[0]}
 ${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
-교수 반응 방향: ${pipelinePlan.patientGroup}은 교수님이 언급하는 것으로 (MR이 먼저 꺼내지 말 것)
 다음 방향: ${pipelinePlan.nextAction}` : ''}
-${agBatchAvoidNote}${buildBatchDiversityNote(filteredBatchAvoidTexts, activeProducts[0])}${agPreviousStrategyNote}${agErNewDrugNote}${objectionInstruction}
-${agForbiddenPatterns.length > 0 ? `사용 금지 표현: ${agForbiddenPatterns.join(' / ')}\n` : ''}
-위 참고 메모와 똑같은 문체·길이·구조로 작성하세요. 오늘 제품·주제·반응만 바꾸면 됩니다.
-반드시 75자 이상 230자 이하 / 종결: ~함, ~하심, ~예정, ~드림 / 습니다체·정리함·추가로 금지
-★ 1인칭 메모 형식: 주어(MR이, 나는, 저는) 없이 서술어로만 작성. 예: 페린젝트 1회 투여 장점 말씀드렸더니 교수님께서 ~하심. MR이/나는/저는 절대 주어로 쓰지 말 것.
-★ 순서 필수: 먼저 제품 특장점 설명 후 교수님이 반응. 교수님이 제품 특장점을 먼저 언급하거나 설명하는 구조 절대 금지.
-★ 특장점은 한 문장에 하나만. 여러 특장점 나열 금지.
-★ 교수님 반응 연결 필수: 교수님 반응은 반드시 MR이 방금 설명한 그 내용(특장점/수치/기전)에 직접 연결되어야 함. MR이 말하지 않은 전혀 다른 내용을 교수님이 갑자기 꺼내는 구조 금지. 예: MR이 1회 투여 언급 → 교수님이 투여 횟수/급여 기준 질문. MR이 아미노산 증가 언급 → 교수님이 아미노산 차이/단백 보충 효과 반응. 맥락 없이 전혀 다른 수치나 부작용을 갑자기 언급 금지.
-${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.department)}교수님 반응 필수 포함: ~보임, ~하심, ~관심 보이심, ~의견 주심, ~질문하심 등 구체 반응 1개 이상
-다음방문전략: 오늘 설명한 수치·키워드(예: ferritin, TSAT, Hb 기준, 아미노산 수치 등)를 그대로 반복하는 전략 절대 금지. 오늘과 다른 각도 하나만: 처방 경험 확인 / 다른 환자군 적용 / 다른 특장점 중 하나로만 작성. 오늘 내용을 확인한다거나 다시 설명한다는 전략도 금지.
+${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
+[작성 지침]
+- 흐름: 제품 특장점 설명 → 교수님 반응 → (30% 확률 오브젝션+답변) → 다음 방향 한 줄
+- 본문 100~230자, 다음방문전략 120자 이내
+- 오늘 품목(${activeProducts[0]})만 사용, 다른 과 질환·제품 섞지 말 것
+- 페린젝트는 1회 투여, 따옴표 금지
+- 종결: ~함/~하심/~예정/~드림
 
 응답 형식:
 ===제품===
@@ -2642,7 +2635,6 @@ ${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.dep
   fullLog = fullLog.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
   fullLog = normalizeGeneratedMemoText(fullLog, doctor.department);
-  fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
   fullLog = finalizeVisitLogBody(fullLog, activeProducts, doctor.department);
   nextStrategy = reducePointWordUsage(nextStrategy);
   nextStrategy = finalizeVisitStrategy(nextStrategy, activeProducts, doctor.department, fullLog);
@@ -2668,13 +2660,9 @@ ${buildProductForbiddenNote(activeProducts[0])}${buildDeptContextNote(doctor.dep
   }
   if (fullLog.length > 230) fullLog = compressTextToLimit(fullLog, 230);
 
-  if (includeObjection && !hasObjectionHandling(fullLog)) {
-    fullLog = await ensureObjectionHandling(systemPrompt, fullLog, doctor, activeProducts, agAllowNewDrugReview, batchAvoidTexts);
-  }
   fullLog = normalizeGeneratedMemoText(fullLog, doctor.department);
   fullLog = normalizeObjectionLanguage(fullLog, activeProducts);
-  fullLog = normalizeBatchRepeatedLanguage(fullLog, batchAvoidTexts);
-  fullLog = normalizeIntroProductLanguage(fullLog, activeProducts, agAllowNewDrugReview);
+  fullLog = normalizeBatchRepeatedLanguage(fullLog, filteredBatchAvoidTexts);
   fullLog = finalizeVisitLogBody(fullLog, activeProducts, doctor.department);
 
   nextStrategy = finalizeVisitStrategy(nextStrategy, activeProducts, doctor.department, fullLog);
