@@ -29,6 +29,8 @@ function toPattern(draft: Omit<ExternalCasePattern, "id" | "createdAt">): Extern
   };
 }
 
+const KAKAO_LAST_DATE_KEY = 'kakaoLastParsedDate';
+
 export default function ExternalCasesPage() {
   const { toast } = useToast();
   const [rawText, setRawText] = useState("");
@@ -37,6 +39,10 @@ export default function ExternalCasesPage() {
   const [lastSkipped, setLastSkipped] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [lastSyncDate, setLastSyncDate] = useState<string | null>(() => {
+    const stored = localStorage.getItem(KAKAO_LAST_DATE_KEY);
+    return stored ? new Date(stored).toISOString().slice(0, 10) : null;
+  });
 
   const grouped = useMemo(() => {
     return patterns.reduce<Record<string, ExternalCasePattern[]>>((acc, pattern) => {
@@ -90,10 +96,19 @@ export default function ExternalCasesPage() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = typeof e.target?.result === 'string' ? e.target.result : '';
-      const parsed = parseKakaoTalkExport(text);
+      const storedDate = localStorage.getItem(KAKAO_LAST_DATE_KEY);
+      const sinceDate = storedDate ? new Date(storedDate) : null;
+      const { text: parsed, latestDate } = parseKakaoTalkExport(text, sinceDate);
       if (!parsed.trim()) {
-        toast({ title: "파일에서 메시지를 찾을 수 없습니다", variant: "destructive" });
+        const msg = sinceDate
+          ? `마지막 동기화(${storedDate?.slice(0, 10)}) 이후 새 내용이 없습니다`
+          : "파일에서 메시지를 찾을 수 없습니다";
+        toast({ title: msg, variant: sinceDate ? "default" : "destructive" });
         return;
+      }
+      if (latestDate) {
+        localStorage.setItem(KAKAO_LAST_DATE_KEY, latestDate.toISOString());
+        setLastSyncDate(latestDate.toISOString().slice(0, 10));
       }
       analyzeAndSave(parsed);
     };
@@ -164,6 +179,11 @@ export default function ExternalCasesPage() {
               <div>
                 <p className="text-sm font-medium">카카오톡 대화 내보내기 파일 업로드</p>
                 <p className="text-xs text-muted-foreground">.txt 파일을 끌어다 놓거나 클릭 · PC/모바일 내보내기 모두 지원</p>
+                {lastSyncDate && (
+                  <p className="mt-1 text-xs text-primary/80">
+                    마지막 동기화: {lastSyncDate} 이후 새 내용만 처리
+                  </p>
+                )}
               </div>
               <input ref={fileInputRef} type="file" accept=".txt" className="hidden" onChange={handleFileInput} />
             </div>

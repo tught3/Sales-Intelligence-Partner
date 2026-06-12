@@ -340,7 +340,11 @@ function stripCaseHeader(line: string): string {
 }
 
 // 카카오톡 대화 내보내기 .txt 파일 → 외부사례 관련 메시지만 추출
-export function parseKakaoTalkExport(fileText: string): string {
+// sinceDate가 있으면 그 날짜 이후 섹션만 처리 (증분 파싱)
+export function parseKakaoTalkExport(
+  fileText: string,
+  sinceDate?: Date | null,
+): { text: string; latestDate: Date | null } {
   const lines = fileText.split(/\r?\n/);
   const messages: string[] = [];
 
@@ -350,6 +354,8 @@ export function parseKakaoTalkExport(fileText: string): string {
   const mobileLineRe = /^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*(?:오전|오후)\s*\d{1,2}:\d{2},\s*.+?\s*:\s*/;
   // 날짜 구분선: ----- 날짜 -----
   const dateDividerRe = /^-{3,}\s*\d{4}년.+-{3,}\s*$/;
+  // 날짜 구분선에서 날짜 추출
+  const dateDividerExtractRe = /^-{3,}\s*(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/;
   // 파일 헤더
   const headerRe = /^(?:카카오톡\s*대화\s*내보내기|저장한\s*날짜\s*:|방\s*이름\s*:|참여자\s*:)/;
   // 미디어 전용 라인 (이미지/파일/이모티콘 등)
@@ -359,11 +365,40 @@ export function parseKakaoTalkExport(fileText: string): string {
   // 번호/대시로 시작하는 항목 줄
   const caseItemRe = /^(?:\d+[.)]\s*|[-•·]\s*)/;
 
+  let currentSectionDate: Date | null = null;
+  let latestDate: Date | null = null;
+
+  // sinceDate를 자정 기준으로 정규화 (시간 무시 비교용)
+  const sinceMidnight = sinceDate
+    ? new Date(sinceDate.getFullYear(), sinceDate.getMonth(), sinceDate.getDate())
+    : null;
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (headerRe.test(trimmed)) continue;
-    if (dateDividerRe.test(trimmed)) continue;
+
+    // 날짜 구분선: 현재 섹션 날짜 업데이트
+    if (dateDividerRe.test(trimmed)) {
+      const m = trimmed.match(dateDividerExtractRe);
+      if (m) {
+        currentSectionDate = new Date(+m[1], +m[2] - 1, +m[3]);
+        if (!latestDate || currentSectionDate > latestDate) {
+          latestDate = new Date(currentSectionDate);
+        }
+      }
+      continue;
+    }
+
+    // 증분 파싱: sinceDate 이하인 섹션은 스킵
+    if (sinceMidnight && currentSectionDate) {
+      const sectionMidnight = new Date(
+        currentSectionDate.getFullYear(),
+        currentSectionDate.getMonth(),
+        currentSectionDate.getDate(),
+      );
+      if (sectionMidnight <= sinceMidnight) continue;
+    }
 
     let msg = trimmed;
     if (pcLineRe.test(msg)) {
@@ -384,5 +419,5 @@ export function parseKakaoTalkExport(fileText: string): string {
     messages.push(msg);
   }
 
-  return messages.join('\n');
+  return { text: messages.join('\n'), latestDate };
 }
