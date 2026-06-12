@@ -192,7 +192,7 @@ export default function ExternalCasesPage() {
               value={rawText}
               onChange={(event) => setRawText(event.target.value)}
               placeholder="다른 사람들이 쓴 방문일지를 그대로 붙여넣으세요. 1. 2. 같은 번호, 다른 병원/교수 이름, 내정가, 심포지엄/학회/제품설명회 문구는 자동으로 제외하고 필요한 패턴만 추출합니다. 원문 전체는 저장하지 않고 익명화 예문만 남깁니다."
-              className="min-h-[200px] text-base sm:text-sm"
+              className="min-h-[200px] w-full resize-none break-words text-base sm:text-sm"
             />
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-muted-foreground">
