@@ -308,7 +308,7 @@ export function buildExternalCasePromptInput(rawText: string): string {
   return chunks.map((chunk, index) => `${index + 1}. ${chunk}`).join('\n');
 }
 
-// 카카오톡 대화 내보내기 .txt 파일 → 메시지 텍스트만 추출
+// 카카오톡 대화 내보내기 .txt 파일 → 외부사례 관련 메시지만 추출
 export function parseKakaoTalkExport(fileText: string): string {
   const lines = fileText.split(/\r?\n/);
   const messages: string[] = [];
@@ -323,6 +323,8 @@ export function parseKakaoTalkExport(fileText: string): string {
   const headerRe = /^(?:카카오톡\s*대화\s*내보내기|저장한\s*날짜\s*:|방\s*이름\s*:|참여자\s*:)/;
   // 미디어 전용 라인 (이미지/파일/이모티콘 등)
   const mediaRe = /^(?:사진|동영상|이모티콘|파일|음성메시지|연락처|지도|일정|투표)\s*$/;
+  // 결산 보고 노이즈: SAP 목표·실적·달성률·제품설명회·핵심품목 등
+  const reportNoiseRe = /^(?:SAP\s*\d|현\s*실적\s*[:：]|달성률\s*[:：]|제품설명회\s*횟수|\d+월\s*\d+일.*결산|영업일수|\*\s*핵심품목|\*\s*주요\s*한일|\*\s*주요활동|주요\s*활동$|-페린젝트$|-위너프[fF]?$|목표\s*[:：]|@\S+$|.+님이\s.+(?:초대|나갔))/i;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -338,6 +340,7 @@ export function parseKakaoTalkExport(fileText: string): string {
     }
 
     if (!msg || mediaRe.test(msg)) continue;
+    if (reportNoiseRe.test(msg)) continue;
     messages.push(msg);
   }
 
