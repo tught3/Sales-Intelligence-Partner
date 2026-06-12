@@ -337,10 +337,20 @@ function buildSimpleSystemPrompt(): string {
 }
 
 async function buildGoldenFewShot(department: string, allowedProducts: string[]): Promise<string> {
-  const examples = await snippetStorage.getGoldenForGeneration(department, allowedProducts);
-  if (!examples || examples.length === 0) return '';
+  // 외부사례 styleExampleMemo를 우선 소스로 사용 (이미 검수된 실전 메모)
+  const externalExamples = externalCasePatternStorage
+    .getForGeneration(department, allowedProducts)
+    .filter((p) => p.styleExampleMemo?.trim() && allowedProducts.includes(p.product))
+    .slice(0, 6)
+    .map((p) => ({ content: p.styleExampleMemo.trim(), product: p.product }));
 
-  const lines = examples
+  // 사용자가 별표한 골든 스니펫으로 보충
+  const goldenExamples = await snippetStorage.getGoldenForGeneration(department, allowedProducts);
+
+  const combined = [...externalExamples, ...goldenExamples].slice(0, 8);
+  if (combined.length === 0) return '';
+
+  const lines = combined
     .map((e, i) => `예시${i + 1}: ${e.content}`)
     .join('\n');
 
