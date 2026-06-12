@@ -308,6 +308,37 @@ export function buildExternalCasePromptInput(rawText: string): string {
   return chunks.map((chunk, index) => `${index + 1}. ${chunk}`).join('\n');
 }
 
+// 진료과 키워드 패턴 (병원+과+이름 헤더 감지용)
+const DEPT_KEYWORD_RE = /내과|외과|의학과|혈종|혈액|종양|정형|신경|흉부|산부인과|비뇨기|소화기|심장|호흡기|중환자|응급|약제팀/i;
+
+// 번호/대시 항목 줄에서 "병원명 진료과 이름, 내용" 또는 "병원명 진료과 이름 - 내용" 헤더 제거
+// → 내용 부분만 반환. 헤더만 있고 내용 없으면 빈 문자열 반환.
+function stripCaseHeader(line: string): string {
+  const withoutPrefix = line.replace(/^(?:\d+[.)]\s*|[-•·]\s*)/, '');
+
+  // 패턴 1: "병원명 진료과 이름, 내용" — 콤마 앞에 진료과 키워드
+  const commaIdx = withoutPrefix.indexOf(',');
+  if (commaIdx > 0) {
+    const beforeComma = withoutPrefix.slice(0, commaIdx);
+    if (DEPT_KEYWORD_RE.test(beforeComma)) {
+      return withoutPrefix.slice(commaIdx + 1).trim();
+    }
+  }
+
+  // 패턴 2: "병원명 진료과 이름 - 내용" — 대시 앞에 진료과 키워드
+  const dashMatch = withoutPrefix.match(/^(.{4,25})\s+-\s+([\s\S]+)/);
+  if (dashMatch && DEPT_KEYWORD_RE.test(dashMatch[1])) {
+    return dashMatch[2].trim();
+  }
+
+  // 헤더만 있는 줄: "병원명 진료과 이름" (내용 없음, 짧음) → 빈 문자열
+  if (withoutPrefix.length <= 20 && DEPT_KEYWORD_RE.test(withoutPrefix)) {
+    return '';
+  }
+
+  return withoutPrefix;
+}
+
 // 카카오톡 대화 내보내기 .txt 파일 → 외부사례 관련 메시지만 추출
 export function parseKakaoTalkExport(fileText: string): string {
   const lines = fileText.split(/\r?\n/);
@@ -325,6 +356,8 @@ export function parseKakaoTalkExport(fileText: string): string {
   const mediaRe = /^(?:사진|동영상|이모티콘|파일|음성메시지|연락처|지도|일정|투표)\s*$/;
   // 결산 보고 노이즈: SAP 목표·실적·달성률·제품설명회·핵심품목 등
   const reportNoiseRe = /^(?:SAP\s*\d|현\s*실적\s*[:：]|달성률\s*[:：]|제품설명회\s*횟수|\d+월\s*\d+일.*결산|영업일수|\*\s*핵심품목|\*\s*주요\s*한일|\*\s*주요활동|주요\s*활동$|-페린젝트$|-위너프[fF]?$|목표\s*[:：]|@\S+$|.+님이\s.+(?:초대|나갔))/i;
+  // 번호/대시로 시작하는 항목 줄
+  const caseItemRe = /^(?:\d+[.)]\s*|[-•·]\s*)/;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -341,6 +374,13 @@ export function parseKakaoTalkExport(fileText: string): string {
 
     if (!msg || mediaRe.test(msg)) continue;
     if (reportNoiseRe.test(msg)) continue;
+
+    // 번호/대시 항목: 병원+과+이름 헤더 제거하고 내용만 남기기
+    if (caseItemRe.test(msg)) {
+      msg = stripCaseHeader(msg);
+    }
+
+    if (!msg) continue;
     messages.push(msg);
   }
 
