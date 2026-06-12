@@ -4,6 +4,8 @@ import {
   doctorStorage,
   feedbackStorage,
   visitLogStorage,
+  snippetStorage,
+  generateId,
   type VisitLog,
 } from "@/lib/storage";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +22,7 @@ import {
   Pencil,
   Check,
   X,
+  Star,
 } from "lucide-react";
 
 /** 편집 전후 텍스트를 비교해서 무엇이 삭제/추가됐는지 명확한 힌트 생성 */
@@ -173,6 +176,32 @@ export default function VisitLogHistoryPage() {
     setAllLogs(visitLogStorage.getAll());
     if (editingId === id) setEditingId(null);
     toast({ title: "일지가 삭제되었습니다" });
+  }
+
+  function handleSaveGolden(log: VisitLog) {
+    const doc = doctors.find((d) => d.id === log.doctorId);
+    const department = doc?.department ?? '';
+    const content = log.nextStrategy
+      ? `${log.formattedLog}\n\n다음방문전략: ${log.nextStrategy}`
+      : log.formattedLog;
+    try {
+      const result = snippetStorage.save({
+        id: generateId(),
+        content,
+        context: department,
+        product: log.products?.[0] ?? '',
+        effectiveness: 5,
+        tags: [],
+        createdAt: new Date().toISOString(),
+      });
+      if (result.duplicate) {
+        toast({ title: "이미 유사한 골든 예시가 있습니다", description: result.message });
+      } else {
+        toast({ title: "골든 예시로 저장됨", description: "다음 AI 생성 시 few-shot으로 활용됩니다." });
+      }
+    } catch (e) {
+      console.warn('골든 예시 저장 실패:', e);
+    }
   }
 
   function handleHospitalChange(h: string) {
@@ -354,6 +383,13 @@ export default function VisitLogHistoryPage() {
                       {!isEditing && (
                         <>
                           <Pencil className="w-3 h-3 text-muted-foreground opacity-50 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" />
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleSaveGolden(log); }}
+                            title="골든 예시로 지정"
+                            className="touch-target opacity-70 lg:min-h-0 lg:min-w-0 lg:opacity-0 lg:group-hover:opacity-100 p-1 hover:text-yellow-500 transition-all rounded"
+                          >
+                            <Star className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDelete(log.id); }}
                             className="touch-target opacity-70 lg:min-h-0 lg:min-w-0 lg:opacity-0 lg:group-hover:opacity-100 p-1 hover:text-destructive transition-all rounded"

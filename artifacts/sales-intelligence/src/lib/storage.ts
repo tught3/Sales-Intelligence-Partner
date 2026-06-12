@@ -69,6 +69,7 @@ export interface ExternalCasePattern {
   reactionPattern: string;
   nextAction: string;
   sourceSummary: string;
+  styleExampleMemo: string;
   confidence: number;
   createdAt: string;
 }
@@ -427,6 +428,7 @@ function normalizeExternalCasePattern(v: any): ExternalCasePattern {
     reactionPattern: v.reactionPattern ?? v.reaction_pattern ?? '',
     nextAction: v.nextAction ?? v.next_action ?? '',
     sourceSummary: v.sourceSummary ?? v.source_summary ?? '',
+    styleExampleMemo: v.styleExampleMemo ?? v.style_example_memo ?? '',
     confidence: Math.max(0, Math.min(100, Number(v.confidence ?? 60) || 60)),
     createdAt: toISOStr(v.createdAt ?? v.created_at),
   };
@@ -1200,6 +1202,26 @@ export const snippetStorage = {
     cache.snippets = cache.snippets.filter((s) => s.id !== id);
     persistLocalCache();
     api(`/snippets/${id}`, 'DELETE').catch(console.error);
+  },
+  async getGoldenForGeneration(
+    department: string,
+    allowedProducts: string[],
+  ): Promise<Array<{ content: string; product: string }>> {
+    try {
+      const allowedSet = new Set(allowedProducts.filter(Boolean));
+      return [...cache.snippets]
+        .filter((s) => s.context === department || allowedSet.has(s.product))
+        .sort((a, b) => {
+          const effDiff = (b.effectiveness ?? 0) - (a.effectiveness ?? 0);
+          if (effDiff !== 0) return effDiff;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(0, 8)
+        .map((s) => ({ content: s.content, product: s.product }));
+    } catch (e) {
+      console.warn('getGoldenForGeneration 실패:', e);
+      return [];
+    }
   },
 };
 
