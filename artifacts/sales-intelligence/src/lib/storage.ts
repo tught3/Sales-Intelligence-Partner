@@ -959,6 +959,12 @@ export const externalCasePatternStorage = {
     persistLocalCache();
     api(`/external-case-patterns/${id}`, 'DELETE').catch(console.error);
   },
+  deleteAll(): void {
+    const ids = cache.externalCasePatterns.map((p) => p.id);
+    cache.externalCasePatterns = [];
+    persistLocalCache();
+    ids.forEach((id) => api(`/external-case-patterns/${id}`, 'DELETE').catch(console.error));
+  },
 };
 
 export function getDoctorVisitCount(doctor: Doctor | undefined): number {

@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
+  Trash,
 } from "lucide-react";
 
 function toPattern(draft: Omit<ExternalCasePattern, "id" | "createdAt">): ExternalCasePattern {
@@ -134,6 +135,13 @@ export default function ExternalCasesPage() {
     toast({ title: "외부 사례 패턴을 삭제했습니다" });
   }
 
+  function handleDeleteAll() {
+    if (!window.confirm(`저장된 외부 사례 패턴 ${patterns.length}개를 전부 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    externalCasePatternStorage.deleteAll();
+    setPatterns([]);
+    toast({ title: "외부 사례 패턴 전체 삭제 완료" });
+  }
+
   async function handleReanalyze(pattern: ExternalCasePattern) {
     const seed = [
       pattern.department,
@@ -226,6 +234,12 @@ export default function ExternalCasesPage() {
               <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                 마지막 분석에서 유사 중복 {lastSkipped}개를 제외했습니다.
               </p>
+            )}
+            {patterns.length > 0 && (
+              <Button variant="destructive" size="sm" className="w-full gap-2" onClick={handleDeleteAll} disabled={analyzing}>
+                <Trash className="h-4 w-4" />
+                전체 삭제 ({patterns.length}개)
+              </Button>
             )}
           </CardContent>
         </Card>
