@@ -70,6 +70,7 @@ export const externalCasePatterns = pgTable("external_case_patterns", {
   reactionPattern: text("reaction_pattern").notNull().default(""),
   nextAction: text("next_action").notNull().default(""),
   sourceSummary: text("source_summary").notNull().default(""),
+  styleExampleMemo: text("style_example_memo").notNull().default(""),
   confidence: integer("confidence").notNull().default(60),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

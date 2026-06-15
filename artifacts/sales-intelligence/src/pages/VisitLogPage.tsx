@@ -11,6 +11,7 @@ import {
   type VisitLog,
 } from "@/lib/storage";
 import { convertToVisitLog, autoGenerateVisitLog, processImportedRecords, compressTextToLimit } from "@/lib/ai";
+import { finalizeVisitGenerationOutput } from "@/lib/visit-generation/finalizer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +34,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 
-const PRODUCTS = ["위너프에이플러스", "페린젝트"];
+const PRODUCTS = ["위너프에이플러스", "페린젝트", "플라주OP"];
 const VISIT_LOG_TAB_STORAGE_KEY = "sip.visitLog.activeTab";
 const VISIT_LOG_HOSPITAL_STORAGE_KEY = "sip.visitLog.selectedHospital";
 const VISIT_LOG_DEPT_STORAGE_KEY = "sip.visitLog.selectedDept";
@@ -88,6 +89,35 @@ function getWeekKey(dateString: string): string {
   monday.setHours(0, 0, 0, 0);
   monday.setDate(date.getDate() - day);
   return monday.toISOString().split("T")[0];
+}
+
+function getDepartmentProductHint(department: string): string {
+  const compact = department.replace(/\s+/g, "");
+  if (/산부인과|산과|부인과/.test(compact)) {
+    return "기본 축은 페린젝트예요. 원문에 위너프·TPN·영양·회복기 단서가 있을 때만 위너프에이플러스가 예외로 잡힙니다.";
+  }
+  if (/정형외과/.test(compact)) {
+    return "기본 축은 페린젝트예요. 수술 전후 빈혈, Hb 회복, 수혈 부담 같은 단서가 우선입니다.";
+  }
+  if (/소화기내과|소화기|위장관|IBD/.test(compact)) {
+    return "위너프에이플러스와 페린젝트를 함께 보되, IBD·출혈·경구용철분제 단서는 페린젝트 쪽이 우선입니다.";
+  }
+  if (/마취통증의학과|마취과|응급의학과/.test(compact)) {
+    return "플라주OP 중심 과예요. 진정, 마취 유도, 처치 협조 같은 단서를 우선으로 봅니다.";
+  }
+  return "선택한 제품이 없으면 과별 기본 축과 원문 단서를 함께 보고 자동 선택합니다.";
+}
+
+function getDepartmentRecommendedProduct(department: string): string | null {
+  const compact = department.replace(/\s+/g, "");
+  if (/마취통증의학과|마취과|응급의학과/.test(compact)) return "플라주OP";
+  if (/산부인과|산과|부인과|정형외과|신장내과|소화기내과|소화기|위장관|종양내과|혈액종양내과|종양혈액내과|혈액내과/.test(compact)) {
+    return "페린젝트";
+  }
+  if (/호흡기내과|외과|흉부외과|신경외과|중환자의학과|중환자|ICU/.test(compact)) {
+    return "위너프에이플러스";
+  }
+  return null;
 }
 
 export default function VisitLogPage() {
@@ -161,6 +191,14 @@ export default function VisitLogPage() {
     [doctors, selectedDoctorId]
   );
   const selectedDoctorConversationCount = getConversationHistoryVisitCount(selectedDoctor);
+  const productHint = useMemo(
+    () => getDepartmentProductHint(selectedDoctor?.department || selectedDept),
+    [selectedDoctor?.department, selectedDept]
+  );
+  const recommendedProduct = useMemo(
+    () => getDepartmentRecommendedProduct(selectedDoctor?.department || selectedDept),
+    [selectedDoctor?.department, selectedDept]
+  );
 
   const pastLogs = useMemo(
     () => (selectedDoctorId ? visitLogStorage.getByDoctorId(selectedDoctorId) : []),
@@ -213,7 +251,6 @@ export default function VisitLogPage() {
         toast({ title: "AI 생성 결과가 너무 짧습니다", description: "다시 시도해주세요.", variant: "destructive" });
         return;
       }
-      setResult(res);
       let prods = snapshotProducts;
       if (prods.length === 0) {
         const detected = PRODUCTS.filter(
@@ -221,15 +258,29 @@ export default function VisitLogPage() {
         );
         if (detected.length) { setSelectedProducts(detected); prods = detected; }
       }
+      const displayResult = finalizeVisitGenerationOutput({
+        formattedLog: res.formattedLog,
+        nextStrategy: res.nextStrategy,
+        products: prods,
+        department: selectedDoctor.department,
+      });
+      prods = displayResult.products;
+      setResult({ formattedLog: displayResult.formattedLog, nextStrategy: displayResult.nextStrategy });
       if (snapshotDoctorId) {
         // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
-        const finalLog = res.formattedLog.length > 230
-          ? compressTextToLimit(res.formattedLog, 230)
-          : res.formattedLog;
+        const shortenedLog = displayResult.formattedLog.length > 230
+          ? compressTextToLimit(displayResult.formattedLog, 230)
+          : displayResult.formattedLog;
+        const finalForSave = finalizeVisitGenerationOutput({
+          formattedLog: shortenedLog,
+          nextStrategy: displayResult.nextStrategy,
+          products: prods,
+          department: selectedDoctor.department,
+        });
         const log: VisitLog = {
           id: generateId(), doctorId: snapshotDoctorId, visitDate: snapshotDate,
-          rawNotes: snapshotRawNotes, formattedLog: finalLog,
-          nextStrategy: res.nextStrategy, products: prods, createdAt: new Date().toISOString(),
+          rawNotes: snapshotRawNotes, formattedLog: finalForSave.formattedLog,
+          nextStrategy: finalForSave.nextStrategy, products: finalForSave.products, createdAt: new Date().toISOString(),
         };
         const saveResult = visitLogStorage.save(log);
         if (saveResult.duplicate) {
@@ -327,18 +378,24 @@ export default function VisitLogPage() {
             failures.push({ doctorName: doctor.name, reason: "결과 없음" });
             continue;
           }
-          // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장
-          const finalFormattedLog = res.formattedLog.length > 230
+          // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장 후 finalizer 재적용
+          const shortenedFormattedLog = res.formattedLog.length > 230
             ? compressTextToLimit(res.formattedLog, 230)
             : res.formattedLog;
+          const finalized = finalizeVisitGenerationOutput({
+            formattedLog: shortenedFormattedLog,
+            nextStrategy: res.nextStrategy,
+            products: res.products,
+            department: doctor.department,
+          });
           const log: VisitLog = {
             id: generateId(),
             doctorId: doctor.id,
             visitDate: res.visitDate,
             rawNotes: "",
-            formattedLog: finalFormattedLog,
-            nextStrategy: res.nextStrategy,
-            products: res.products,
+            formattedLog: finalized.formattedLog,
+            nextStrategy: finalized.nextStrategy,
+            products: finalized.products,
             createdAt: new Date().toISOString(),
           };
           const saveResult = visitLogStorage.save(log);
@@ -619,13 +676,24 @@ export default function VisitLogPage() {
                             className={`shrink-0 min-h-10 px-3 py-1.5 text-sm rounded-lg border-2 font-medium transition-all ${
                               selectedProducts.includes(p)
                                 ? "border-primary bg-primary text-primary-foreground"
+                                : recommendedProduct === p
+                                  ? "border-amber-400 bg-amber-50 text-amber-900 ring-2 ring-amber-200/80"
                                 : "border-border text-muted-foreground hover:border-primary/50"
                             }`}
                           >
-                            {p}
+                            <span className="inline-flex items-center gap-1">
+                              {p}
+                              {!selectedProducts.includes(p) && recommendedProduct === p && (
+                                <Badge variant="secondary" className="text-[10px] py-0 px-1.5">추천</Badge>
+                              )}
+                            </span>
                           </button>
                         ))}
                       </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        {productHint}
+                        {selectedProducts.length > 0 && " 선택한 제품이 있으면 그 선택이 우선 반영됩니다."}
+                      </p>
                     </div>
                   </>
                 )}

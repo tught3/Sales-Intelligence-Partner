@@ -129,6 +129,7 @@ function prepExternalCasePattern(v: any) {
     reactionPattern: v.reactionPattern ?? v.reaction_pattern ?? "",
     nextAction: v.nextAction ?? v.next_action ?? "",
     sourceSummary: v.sourceSummary ?? v.source_summary ?? "",
+    styleExampleMemo: v.styleExampleMemo ?? v.style_example_memo ?? "",
     confidence: Math.max(0, Math.min(100, Number(v.confidence ?? 60) || 60)),
     createdAt: toDate(v.createdAt ?? v.created_at),
   };

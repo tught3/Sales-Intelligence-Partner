@@ -1,5 +1,6 @@
 import { normalizeTerminology } from './detailKeys';
 import type { DetailKey } from './types';
+import { sanitizeVisitLogBody, stripBrokenFutureFragments, trimAfterReactionSentence } from './sanitizer';
 
 export type NormalizedOutput = {
   formattedLog: string;
@@ -47,6 +48,9 @@ function clean(text: string): string {
     .replace(/짧게\s*/g, '')
     // "MR이" 주어 제거 — 업무 메모는 주어 없이 서술어로만
     .replace(/\bMR이\s+/g, '')
+    .replace(/(?:확인|살펴|검토|진행|안내|여쭤|보여드려|가져가|보)\s*해?\s*보겠을(?=\s*할예정|$)/gi, '')
+    .replace(/(?:확인|살펴|검토|진행|안내|여쭤|보여드려|가져가|보)\s*해?\s*보겠음(?=\s*할예정|$)/gi, '')
+    .replace(/보겠을(?=\s*할예정|$)/gi, '')
     // "짚어" 금지 → "확인" 으로
     .replace(/짚어드릴/g, '확인드릴')
     .replace(/짚어볼/g, '확인할')
@@ -58,6 +62,11 @@ function clean(text: string): string {
     .replace(/보시면\s*된다고\s*안내함/g, '말씀드렸더니 확인해보겠다는 반응')
     .replace(/보시면\s*된다고\s*말씀드림/g, '말씀드렸더니 확인해보겠다는 반응')
     .replace(/보시면\s*된다고/g, '된다고 말씀드렸더니')
+    // 제품 소유격 문구와 어색한 조사/분리 오류 보정
+    .replace(/(위너프에이플러스|페린젝트|플라주OP)의\s+/g, '$1 ')
+    .replace(/할예정며/gi, '하다고 하시며')
+    .replace(/중\s*환자/gi, '중환자')
+    .replace(/경구용철분제으로/gi, '경구용철분제로')
     // 기존 정규화
     .replace(/근거을/g, '근거를')
     .replace(/반응하셨고/g, '반응 보였고')
@@ -86,10 +95,10 @@ function normalizeRepeatedProductPrefix(text: string, product: string): string {
   const repeatedPrefix = new RegExp(`^(${productPattern})(?:\\s*의)?\\s+\\1(?:\\s*의)?\\s*`, 'i');
   const repeatedAny = new RegExp(`(${productPattern})(?:\\s*의)?\\s+\\1(?:\\s*의)?`, 'gi');
   return text
-    .replace(repeatedPrefix, `${product}의 `)
-    .replace(repeatedAny, `${product}의`)
-    .replace(new RegExp(`^${productPattern}\\s*의\\s*의\\s*`, 'i'), `${product}의 `)
-    .replace(new RegExp(`(${productPattern})\\s*의\\s*의`, 'gi'), `${product}의`)
+    .replace(repeatedPrefix, `${product} `)
+    .replace(repeatedAny, `${product} `)
+    .replace(new RegExp(`^${productPattern}\\s*의\\s*의\\s*`, 'i'), `${product} `)
+    .replace(new RegExp(`(${productPattern})\\s*의\\s*의`, 'gi'), `${product}`)
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -99,7 +108,7 @@ export function normalize(
   plan: DetailKey
 ): NormalizedOutput {
   let formattedLog = clean(raw.formattedLog);
-  let nextStrategy = clean(raw.nextStrategy);
+  let nextStrategy = stripBrokenFutureFragments(clean(raw.nextStrategy));
 
   formattedLog = normalizeRepeatedProductPrefix(formattedLog, plan.product);
   nextStrategy = normalizeRepeatedProductPrefix(nextStrategy, plan.product);
@@ -125,7 +134,7 @@ export function normalize(
   }
 
   if (formattedLog && !hasProduct(formattedLog, plan.product)) {
-    formattedLog = `${plan.product}의 ${formattedLog}`;
+    formattedLog = `${plan.product} ${formattedLog}`;
   }
   formattedLog = normalizeRepeatedProductPrefix(formattedLog, plan.product);
 
@@ -145,6 +154,9 @@ export function normalize(
     }
   }
   nextStrategy = normalizeRepeatedProductPrefix(nextStrategy, plan.product);
+
+  formattedLog = sanitizeVisitLogBody(formattedLog, plan.product);
+  formattedLog = trimAfterReactionSentence(formattedLog);
 
   return { formattedLog, nextStrategy };
 }

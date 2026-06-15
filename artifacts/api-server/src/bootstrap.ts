@@ -80,9 +80,15 @@ export async function ensureDatabaseSchema() {
       reaction_pattern text NOT NULL DEFAULT '',
       next_action text NOT NULL DEFAULT '',
       source_summary text NOT NULL DEFAULT '',
+      style_example_memo text NOT NULL DEFAULT '',
       confidence integer NOT NULL DEFAULT 60,
       created_at timestamp NOT NULL DEFAULT now()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE external_case_patterns
+      ADD COLUMN IF NOT EXISTS style_example_memo text NOT NULL DEFAULT '';
   `);
 
   await pool.query(`

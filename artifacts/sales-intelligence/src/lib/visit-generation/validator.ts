@@ -1,5 +1,6 @@
 import type { VisitContext } from './context';
 import { extractKeys, extractReactionKeys, isDuplicateOf, similarityRatio } from './detailKeys';
+import { hasVisitLogProductLeak, hasVisitPlanLeak } from './sanitizer';
 import type { DetailKey, RepairTarget, ValidationFailType, ValidationResult } from './types';
 
 const MIN_VISIT_LOG_LENGTH = 75;
@@ -42,6 +43,15 @@ function hasLearnedForbidden(text: string, patterns: string[]): boolean {
   });
 }
 
+function hasGenericReaction(text: string): boolean {
+  return /실제\s*적용\s*사례\s*위주로\s*보겠다고\s*하심|처방\s*시점은\s*환자\s*상태를\s*보고\s*판단하겠다는\s*반응|차트상\s*조건을\s*보고\s*검토하겠다는\s*의견|실제\s*처방은\s*환자\s*추이를\s*보고\s*다시\s*판단하겠다는\s*반응|실제\s*처방\s*여부와\s*적용\s*가능\s*상황|적용\s*가능\s*케이스를\s*보겠다는\s*의견/.test(text);
+}
+
+function hasGenericNextStrategy(text: string): boolean {
+  const normalized = text.replace(/\s+/g, '');
+  return /실제처방여부|실제처방흐름|실제적용사례|실제적용가능상황|실제처방환자군|처방시점은환자상태를보고판단|차트상조건을보고검토/.test(normalized);
+}
+
 function changedManualFacts(formattedLog: string, ctx: VisitContext): boolean {
   if (!ctx.manualRawNotes?.trim()) return false;
   const raw = ctx.manualRawNotes.replace(/\s+/g, '');
@@ -74,6 +84,8 @@ export function validate(
   if (formattedLog.length < MIN_VISIT_LOG_LENGTH) failTypes.push('LENGTH_SHORT');
   if (formattedLog.length > MAX_VISIT_LOG_LENGTH) failTypes.push('LENGTH_LONG');
   if (!formattedLog.includes(plan.product)) failTypes.push('MISSING_PRODUCT');
+  if (hasVisitLogProductLeak(formattedLog, plan.product)) failTypes.push('FOREIGN_PRODUCT_MENTION');
+  if (hasVisitPlanLeak(formattedLog)) failTypes.push('NEXT_VISIT_LEAK');
   if (hasForbiddenPhrase(`${formattedLog} ${nextStrategy}`)) failTypes.push('FORBIDDEN_PHRASE');
   if (hasDepartmentMismatch(`${formattedLog} ${nextStrategy}`, ctx.doctor.department || '')) {
     failTypes.push('DEPARTMENT_MISMATCH');
@@ -87,6 +99,9 @@ export function validate(
   if (hasDuplicateReaction(formattedLog, ctx)) {
     failTypes.push('DUPLICATE_REACTION');
   }
+  if (hasGenericReaction(formattedLog)) {
+    failTypes.push('GENERIC_REACTION');
+  }
 
   const logKeys = extractKeys(formattedLog);
   const detailKeys = extractKeys(`${plan.detailAxis} ${plan.patientGroup}`);
@@ -98,6 +113,7 @@ export function validate(
     failTypes.push('DUPLICATE_PAST');
   }
   if (similarityRatio(formattedLog, nextStrategy) >= 0.35) failTypes.push('DUPLICATE_STRATEGY');
+  if (hasGenericNextStrategy(nextStrategy)) failTypes.push('GENERIC_NEXT_STRATEGY');
 
   if (failTypes.length === 0) return { pass: true };
 
@@ -112,6 +128,15 @@ export function resolveRepairTarget(failTypes: ValidationFailType[]): RepairTarg
   }
   if (unique.length === 1 && unique[0] === 'DUPLICATE_STRATEGY') {
     return { field: 'nextStrategy', reasons: unique };
+  }
+  if (unique.length === 1 && unique[0] === 'GENERIC_NEXT_STRATEGY') {
+    return { field: 'nextStrategy', reasons: unique };
+  }
+  if (unique.length === 1 && unique[0] === 'GENERIC_REACTION') {
+    return { field: 'formattedLog', reasons: unique };
+  }
+  if (unique.every((type) => type === 'FOREIGN_PRODUCT_MENTION' || type === 'NEXT_VISIT_LEAK')) {
+    return { field: 'formattedLog', reasons: unique };
   }
   if (unique.every((type) => type === 'LENGTH_SHORT' || type === 'LENGTH_LONG')) {
     return { field: 'formattedLog', reasons: unique };

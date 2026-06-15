@@ -10,7 +10,7 @@ import {
 } from '../storage';
 import { collectKeys, collectReactionKeys } from './detailKeys';
 
-const VISIT_PRODUCTS = ['위너프에이플러스', '페린젝트'];
+const VISIT_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP'];
 
 export type VisitContext = {
   doctor: Doctor;

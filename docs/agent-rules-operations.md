@@ -1,7 +1,6 @@
 # Agent Operations Rules
 
 ## 절대 수정 금지
-- `lite-app/`은 절대 수정하지 않는다.
 - 메인 앱 수정은 `client/src/` 기준으로 진행한다.
 
 ## 금융 원문 저장소

@@ -88,6 +88,24 @@ function externalNextActionVariants(pattern: ExternalCasePattern): string[] {
   ];
 }
 
+function professorQuestionFrom(candidate: Pick<PlanCandidate, 'product' | 'detailAxis' | 'patientGroup'>): string {
+  const text = `${candidate.product} ${candidate.detailAxis} ${candidate.patientGroup}`;
+  if (candidate.product === '페린젝트') {
+    if (/급여|TSAT|보험/.test(text)) return '급여 기준은 어떤 환자부터 맞는지 질문';
+    if (/수술|수혈|Hb|빈혈/.test(text)) return '수술 전후 어느 시점에 투여하는지 질문';
+    return '경구용철분제 반응이 부족한 환자에서 전환 기준을 질문';
+  }
+  if (candidate.product === '위너프에이플러스') {
+    if (/포도당|혈당/.test(text)) return '혈당 부담이 실제로 얼마나 줄어드는지 질문';
+    if (/아미노산|단백|영양/.test(text)) return '단백 보충이 필요한 환자 기준을 질문';
+    return '기존 TPN과 어떤 환자에서 구분하는지 질문';
+  }
+  if (candidate.product === '플라주OP') {
+    return '기존 수액 프로토콜에서 바꿀 기준을 질문';
+  }
+  return '차트상 어떤 조건을 먼저 봐야 하는지 질문';
+}
+
 function buildExternalCandidateVariants(pattern: ExternalCasePattern, ctx: VisitContext): PlanCandidate[] {
   // Math.random() 사용 — 매 호출마다 다른 조합 생성 (hashSeed 제거)
   const detailVariants = externalDetailVariants(pattern);
@@ -108,6 +126,7 @@ function buildExternalCandidateVariants(pattern: ExternalCasePattern, ctx: Visit
     // doctorReaction은 빈 문자열 — AI가 자유롭게 생성하도록 (고정 반응 제거)
     const nextAction = pickRandom(nextActionVariants);
     const narrativeStyle = pickRandom(styles);
+    const professorQuestion = professorQuestionFrom({ product: pattern.product, detailAxis, patientGroup: pattern.patientGroup });
     variants.push({
       templateId: `external-${pattern.id}-${i}`,
       product: pattern.product,
@@ -116,6 +135,7 @@ function buildExternalCandidateVariants(pattern: ExternalCasePattern, ctx: Visit
       doctorReaction: '',
       nextAction,
       narrativeStyle,
+      professorQuestion,
       allowedDepartments: [pattern.department],
     });
   }
@@ -132,6 +152,7 @@ function buildTemplateCandidates(ctx: VisitContext): PlanCandidate[] {
     doctorReaction: template.doctorReaction,
     nextAction: template.nextAxis,
     narrativeStyle: template.narrativeStyle,
+    professorQuestion: professorQuestionFrom(template),
     allowedDepartments: [template.department],
     exampleMemo: template.exampleMemo,   // few-shot 예시 — AI 스타일 가이드
   }));
@@ -340,6 +361,11 @@ function extractBatchProducts(texts: string[]): string[] {
   return [...products];
 }
 
+function getMostRecentProduct(ctx: VisitContext): string | undefined {
+  const recent = ctx.pastLogs[0];
+  return recent?.products?.find((product) => product === '위너프에이플러스' || product === '페린젝트');
+}
+
 export function buildPlan(ctx: VisitContext): DetailKey {
   const recentKeys = collectKeys([
     ...ctx.pastLogs.slice(0, 3).flatMap((log) => [log.formattedLog, log.nextStrategy]),
@@ -353,6 +379,8 @@ export function buildPlan(ctx: VisitContext): DetailKey {
   const batchKeys = new Set(ctx.batchUsedDetailKeys);
   const recentKeySet = new Set(recentKeys);
   const batchProducts = extractBatchProducts(ctx.batchAvoidTexts);
+  const mostRecentProduct = getMostRecentProduct(ctx);
+  const canRotateProduct = ctx.availableProducts.filter((product) => product !== mostRecentProduct).length > 0;
 
   const baseCandidates = candidatesFor(ctx);
   const reactionSafeCandidates = baseCandidates.filter((candidate) => !hasUsedReaction(candidate, ctx));
@@ -406,11 +434,15 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     const aCarryoverBonus =
       carryoverKeys.filter((key) => aKeys.includes(key)).length * 5 +
       (carryoverProduct && a.product === carryoverProduct ? 3 : 0) +
+      (canRotateProduct && mostRecentProduct && a.product !== mostRecentProduct ? 8 : 0) +
+      (canRotateProduct && mostRecentProduct && a.product === mostRecentProduct ? -10 : 0) +
       externalPatternBonus(a, ctx) +
       templateFreshnessBonus(a, ctx);
     const bCarryoverBonus =
       carryoverKeys.filter((key) => bKeys.includes(key)).length * 5 +
       (carryoverProduct && b.product === carryoverProduct ? 3 : 0) +
+      (canRotateProduct && mostRecentProduct && b.product !== mostRecentProduct ? 8 : 0) +
+      (canRotateProduct && mostRecentProduct && b.product === mostRecentProduct ? -10 : 0) +
       externalPatternBonus(b, ctx) +
       templateFreshnessBonus(b, ctx);
     return (aPenalty - aBonus - aCarryoverBonus) - (bPenalty - bBonus - bCarryoverBonus);

@@ -7,7 +7,9 @@ import ts from 'typescript';
 const root = process.cwd();
 const externalCasesPath = path.join(root, 'artifacts/sales-intelligence/src/lib/externalCases.ts');
 const detailKeysPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/detailKeys.ts');
+const finalizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/finalizer.ts');
 const normalizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/normalizer.ts');
+const sanitizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/sanitizer.ts');
 const validatorPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/validator.ts');
 const repairPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/repair.ts');
 const plannerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/planner.ts');
@@ -42,6 +44,8 @@ async function importVisitGenerationCjs(entryFile) {
   await mkdir(dir, { recursive: true });
   for (const [sourcePath, moduleName] of [
     [detailKeysPath, 'detailKeys.js'],
+    [sanitizerPath, 'sanitizer.js'],
+    [finalizerPath, 'finalizer.js'],
     [normalizerPath, 'normalizer.js'],
     [validatorPath, 'validator.js'],
     [repairPath, 'repair.js'],
@@ -132,11 +136,53 @@ try {
     patterns.some((p) => p.product === '위너프에이플러스' && /영양|고단백|아미노산/.test(`${p.patientGroup} ${p.detailAxis}`)),
     '위너프 계열 참고사항은 위너프에이플러스 영양 디테일 패턴으로 정규화되어야 합니다.'
   );
+  assert(
+    patterns.some((p) => p.styleExampleMemo && /교수님께서|교수님께/.test(p.styleExampleMemo) && !/백만|고대안산|아주대|신촌/.test(p.styleExampleMemo)),
+    '외부 사례는 병원/금액 노이즈를 제거한 익명화 예문 styleExampleMemo를 함께 보존해야 합니다.'
+  );
   const promptInput = buildExternalCasePromptInput(sample);
   assert(!/^\s*1\.\s*1\./m.test(promptInput), '전처리 후보에는 의미 없는 중첩 번호가 남으면 안 됩니다.');
   assert(!/백만/.test(promptInput), '전처리 후보에는 내정가/금액 노이즈가 남으면 안 됩니다.');
 } finally {
   await externalCases.cleanup();
+}
+
+const finalizer = await importVisitGenerationCjs('finalizer.js');
+try {
+  const { finalizeVisitGenerationOutput } = finalizer.module;
+  const ferinject = finalizeVisitGenerationOutput({
+    formattedLog: '페린젝트의 소화과 출혈 뒤 철 결핍성 빈혈은 Hb 회복이 늦을 수 있다고 말씀드렸더니 교수님께서 내시경 지혈 후 회복기 환자에서 실제로 그런 케이스가 있냐고 질문하심. 급여 기준 맞는 환자부터 처방 흐름 보겠다고 답변드림. 다음방문시에는 출혈 후 외래 복귀 시점에 페린젝트 처방이 붙는 타이밍과 실제 적용 케이스를 확인해보겠을할예정',
+    nextStrategy: '',
+    products: ['페린젝트'],
+    department: '소화기내과',
+  });
+  assert(!/다음방문|다음 방문|다음엔/.test(ferinject.formattedLog), 'finalizer는 본문에서 다음방문 계획 문구를 제거해야 합니다.');
+  assert(!/위너프에이플러스/.test(ferinject.formattedLog), '페린젝트 결과 본문에는 위너프에이플러스가 남으면 안 됩니다.');
+  assert(!/확인해보겠을할예정/.test(`${ferinject.formattedLog} ${ferinject.nextStrategy}`), 'finalizer는 깨진 어미를 제거해야 합니다.');
+  assert(/디테일함|안내드림|확인할예정/.test('디테일함 안내드림 확인할예정'), '정상 종결어는 금지 대상이 아닙니다.');
+
+  const winuf = finalizeVisitGenerationOutput({
+    formattedLog: '위너프에이플러스 수술 후 식이 진행이 늦은 환자에게 단백 보충 속도 디테일함. 교수님께서 회복기 영양 필요성은 공감하심. 페린젝트 Hb 회복과 철결핍 빈혈도 같이 설명함',
+    nextStrategy: '다음방문시에는 실제 처방 여부와 실제 적용 케이스 확인할예정',
+    products: ['위너프에이플러스'],
+    department: '정형외과',
+  });
+  assert(!/페린젝트|철결핍|정맥철/.test(winuf.formattedLog), '위너프에이플러스 결과 본문에는 페린젝트/철결핍 맥락이 남으면 안 됩니다.');
+  assert(!/실제\s*처방\s*여부|실제\s*적용\s*케이스/.test(winuf.nextStrategy), 'generic 다음방문전략은 구체 축으로 재작성되어야 합니다.');
+
+  const repeatedNext = finalizeVisitGenerationOutput({
+    formattedLog: '분만 후 철결핍성 빈혈 환자에서 페린젝트 1회 투여로 Hb 회복이 빠르고 에 도움된다고 말씀드림. 교수님께서 출혈량이 많은 산후 환자에선 우선순위가 중요하다고 하심. 수혈 전 단계에서 빠른 교정 필요 케이스부터 안내드리며 다음 방문 시 수술 전후 빈혈 사례로 추가 설명드릴 예정임 다음방문시에는 산후병동에서 실제 처방 들어간 케이스와 산과 외래 루틴을 확인드릴예정',
+    nextStrategy: '다음방문시에는 다음방문시에는 산후병동에서 실제 처방 들어간 케이스와 산과 외래 루틴을 확인드릴예정',
+    products: ['페린젝트'],
+    department: '산부인과',
+  });
+  assert(
+    (repeatedNext.nextStrategy.match(/다음방문시에는/g) ?? []).length === 1,
+    'finalizer는 다음방문시에는 중첩을 1개로 줄여야 합니다.'
+  );
+  assert(!/다음\s*방문|다음방문/.test(repeatedNext.formattedLog), 'finalizer는 본문에 붙은 다음방문 조각을 저장 전에 제거해야 합니다.');
+} finally {
+  await finalizer.cleanup();
 }
 
 const normalizer = await importVisitGenerationCjs('normalizer.js');
@@ -347,8 +393,8 @@ assert(
 assert(
   externalCasesPageSource.includes('외부 사례 학습') &&
     externalCasesPageSource.includes('분석하기') &&
-    externalCasesPageSource.includes('원문은 저장하지 않습니다'),
-  '외부 사례 학습 페이지는 붙여넣기 분석과 원문 미저장 안내를 제공해야 합니다.'
+    externalCasesPageSource.includes('익명화 예문'),
+  '외부 사례 학습 페이지는 붙여넣기 분석과 익명화 예문 저장 안내를 제공해야 합니다.'
 );
 
 console.log('pipeline cases passed');
