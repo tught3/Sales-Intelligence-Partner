@@ -312,11 +312,16 @@ function buildSystemPrompt(): string {
   return prompt;
 }
 
-function buildSimpleSystemPrompt(): string {
+function buildSimpleSystemPrompt(activeProduct?: string): string {
   const ruleText = manualStorage.getByCategory('rule')
     .map((m) => `[${m.title}]\n${m.content}`)
     .join('\n\n---\n\n');
-  const productText = manualStorage.getByCategory('product')
+  // 오늘 품목 매뉴얼만 포함 — 다른 제품 정보가 섞이면 AI가 잘못된 제품을 언급함
+  const allProductManuals = manualStorage.getByCategory('product');
+  const filteredManuals = activeProduct
+    ? allProductManuals.filter((m) => m.title.includes(activeProduct) || activeProduct.includes(m.title))
+    : allProductManuals;
+  const productText = filteredManuals
     .map((m) => `[${m.title}]\n${m.content}`)
     .join('\n\n---\n\n');
 
@@ -2355,12 +2360,13 @@ async function convertToVisitLogBase(
   selectedProducts: string[] = [],
   pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string }> {
-  const systemPrompt = buildSimpleSystemPrompt();
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department, rawNotes);
+  const systemPrompt = buildSimpleSystemPrompt(activeProducts[0]);
   const lastLog = pastLogs[0];
 
   const goldenFewShot = await buildGoldenFewShot(doctor.department, getAllowedProductsForDepartment(doctor.department));
 
+  const forbiddenProducts = VISIT_GENERATION_PRODUCTS.filter((p) => p !== activeProducts[0]);
   const prompt = `교수: ${doctor.name} (${doctor.department}, ${doctor.hospital})
 ${doctor.notes ? `특이사항: ${doctor.notes}` : ''}
 ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0, 80)}` : ''}
@@ -2372,7 +2378,7 @@ ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 [작성 지침 — 원본 메모의 내용(상황·반응·제품명)을 유지하면서 예시와 같은 문체·길이로 다듬기]
 - 흐름: 제품 특장점 설명 → 교수님 반응 → (가끔) 다음 방향 한 줄
 - 본문 100~230자, 다음방문전략 120자 이내
-- 오늘 품목(${activeProducts[0]})만 사용, 다른 과 질환·제품 섞지 말 것
+- 오늘 품목(${activeProducts[0]})만 사용. ${forbiddenProducts.length > 0 ? `${forbiddenProducts.join(', ')} 언급 절대 금지.` : ''}
 - 페린젝트는 1회 투여, 따옴표 금지
 - 종결: ~함/~하심/~예정/~드림
 
@@ -2458,8 +2464,8 @@ async function autoGenerateVisitLogBase(
   batchAvoidTexts: string[] = [],
   pipelinePlan?: DetailKey
 ): Promise<{ formattedLog: string; nextStrategy: string; visitDate: string; products: string[] }> {
-  const systemPrompt = buildSimpleSystemPrompt();
   const activeProducts = getActiveProductsForGeneration(selectedProducts, doctor.department);
+  const systemPrompt = buildSimpleSystemPrompt(activeProducts[0]);
 
   const today = new Date().toISOString().split('T')[0];
   // 다른 제품의 고유 표현이 이번 생성 맥락을 오염시키지 않도록 필터링 후 전달
@@ -2468,6 +2474,7 @@ async function autoGenerateVisitLogBase(
 
   const goldenFewShot = await buildGoldenFewShot(doctor.department, getAllowedProductsForDepartment(doctor.department));
 
+  const forbiddenProducts = VISIT_GENERATION_PRODUCTS.filter((p) => p !== activeProducts[0]);
   const prompt = `교수: ${doctor.name} (${doctor.department}, ${doctor.hospital})
 ${doctor.notes ? `특이사항: ${doctor.notes}` : ''}
 ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0, 80)}` : '첫 방문'}
@@ -2480,7 +2487,7 @@ ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 [작성 지침]
 - 흐름: 제품 특장점 설명 → 교수님 반응 → (30% 확률 오브젝션+답변) → 다음 방향 한 줄
 - 본문 100~230자, 다음방문전략 120자 이내
-- 오늘 품목(${activeProducts[0]})만 사용, 다른 과 질환·제품 섞지 말 것
+- 오늘 품목(${activeProducts[0]})만 사용. ${forbiddenProducts.length > 0 ? `${forbiddenProducts.join(', ')} 언급 절대 금지.` : ''}
 - 페린젝트는 1회 투여, 따옴표 금지
 - 종결: ~함/~하심/~예정/~드림
 
