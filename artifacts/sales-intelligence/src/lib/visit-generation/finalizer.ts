@@ -101,11 +101,8 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
     .replace(/근거을/g, '근거를')
     .replace(/반응하셨고/g, '반응 보였고');
 
-  // 타과 제품 혼입이 있으면 빈 문자열로 처리 (pipeline에서 재호출 폴백이 담당)
-  // 길이 체크 fallback은 제거 — AI 출력을 그대로 유지
-  if (hasVisitLogProductLeak(body, primaryProduct)) {
-    body = '';
-  }
+  // 타과 제품 혼입 감지 — removeForeignProductSentences를 이미 2회 실행했으므로
+  // pipeline repair 루프 제거 후에는 빈 문자열로 대체하지 않고 현 body 유지
 
   let strategySeed = input.nextStrategy || leakedPlan || '';
   strategySeed = normalizeRepeatedNextMarkers(strategySeed);
