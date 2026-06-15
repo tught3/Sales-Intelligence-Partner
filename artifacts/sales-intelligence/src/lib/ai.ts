@@ -2392,6 +2392,13 @@ ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 
   cleaned = cleaned.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
+
+  // nextStrategy에 "다음방문시에는" 문장이 2개 이상이면 첫 번째만 유지
+  const nextStrategyDupMatches = [...nextStrategy.matchAll(/다음\s*방문(?:시에는|에는)/g)];
+  if (nextStrategyDupMatches.length > 1 && nextStrategyDupMatches[1].index !== undefined) {
+    nextStrategy = nextStrategy.slice(0, nextStrategyDupMatches[1].index).trim();
+  }
+
   cleaned = normalizeGeneratedMemoText(cleaned, doctor.department);
   cleaned = normalizeObjectionLanguage(cleaned, activeProducts);
   cleaned = finalizeVisitLogBody(cleaned, activeProducts, doctor.department);
@@ -2515,6 +2522,13 @@ ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 
   fullLog = fullLog.replace(/['"]/g, '').trim();
   nextStrategy = nextStrategy.replace(/['"]/g, '').trim();
+
+  // nextStrategy에 "다음방문시에는" 문장이 2개 이상이면 첫 번째만 유지
+  const autoStrategyDupMatches = [...nextStrategy.matchAll(/다음\s*방문(?:시에는|에는)/g)];
+  if (autoStrategyDupMatches.length > 1 && autoStrategyDupMatches[1].index !== undefined) {
+    nextStrategy = nextStrategy.slice(0, autoStrategyDupMatches[1].index).trim();
+  }
+
   fullLog = normalizeGeneratedMemoText(fullLog, doctor.department);
   fullLog = finalizeVisitLogBody(fullLog, activeProducts, doctor.department);
   nextStrategy = reducePointWordUsage(nextStrategy);
