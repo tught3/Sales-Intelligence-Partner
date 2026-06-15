@@ -234,6 +234,7 @@ export async function analyzeExternalCasePatterns(rawText: string): Promise<Exte
 - 병원명, 교수명, 금액, 일정, 심포지엄, 학회, 제품설명회, 모객, 참석 여부, 서베이는 버리고 환자군/디테일/반응만 남길 것.
 - HER story/캠페인은 그대로 저장하지 말고 산부인과 철결핍/산후 빈혈/수술 전후 빈혈 패턴으로만 바꿀 것.
 - 각 항목 필드: department, product, patientGroup, detailAxis, reactionPattern, nextAction, sourceSummary, styleExampleMemo, confidence
+- styleExampleMemo: 원문의 실전 표현과 말투를 최대한 살려 짧게 재구성. 병원명/교수명 제거 후 임상 상황·반응 중심으로 1~2문장(150자 이내). 원문이 구체적이면 원문 표현을 그대로 쓰는 것을 우선.
 - confidence는 0-100 정수.
 - JSON 배열만 출력.
 

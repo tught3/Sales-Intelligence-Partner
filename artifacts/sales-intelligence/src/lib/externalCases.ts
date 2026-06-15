@@ -222,8 +222,16 @@ function styleExampleMemoFrom(
 ): string {
   const cleanedChunk = cleanNoise(chunk)
     .replace(/(?:심포지엄|학회|모객|참석|등록|좌장|연자|서베이|설문|제품설명회|컨퍼런스|강의|리플렛|기획기사|미니베너)[^.!?。]{0,40}/gi, '')
+    .replace(/백만|만원|내정가/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+
+  // 원문이 구체적이면 원문 언어 우선 사용 (실전 말투·표현 보존)
+  if (cleanedChunk.length >= 15 && USEFUL_DETAIL_RE.test(cleanedChunk)) {
+    return cleanedChunk.slice(0, 220);
+  }
+
+  // 원문이 부실하면 구조화 필드로 재조립
   const detail = detailAxis.replace(new RegExp(`^${product}의\\s*`), '');
   const reaction = reactionPattern.replace(/^교수님(?:께서|께|은|이)?\s*/, '');
   const next = nextAction
@@ -235,7 +243,6 @@ function styleExampleMemoFrom(
   const memo = `${opener}. 교수님께서 ${reaction}. 다음방문시에는 ${next || `${department} 환자군 반응`} 확인할예정`;
   const fallback = `${product} ${detail} 말씀드림. 교수님께서 ${reaction}. 다음방문시에는 ${next || '환자 반응'} 확인할예정`;
   return compact(memo.length <= 230 ? memo : fallback)
-    .replace(/백만|만원|내정가|고대안산|아주대|신촌\s*세브란스|신촌/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim() || cleanedChunk.slice(0, 220);
 }
