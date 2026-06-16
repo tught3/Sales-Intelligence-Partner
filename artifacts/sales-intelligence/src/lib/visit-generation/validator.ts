@@ -1,6 +1,5 @@
 import type { VisitContext } from './context';
 import { extractKeys, extractReactionKeys, isDuplicateOf, similarityRatio } from './detailKeys';
-import { hasDepartmentMismatch } from './departmentProfiles';
 import { hasVisitLogProductLeak, hasVisitPlanLeak } from './sanitizer';
 import type { DetailKey, RepairTarget, ValidationFailType, ValidationResult } from './types';
 
@@ -78,9 +77,6 @@ export function validate(
   if (hasVisitLogProductLeak(formattedLog, plan.product)) failTypes.push('FOREIGN_PRODUCT_MENTION');
   if (hasVisitPlanLeak(formattedLog)) failTypes.push('NEXT_VISIT_LEAK');
   if (hasForbiddenPhrase(`${formattedLog} ${nextStrategy}`)) failTypes.push('FORBIDDEN_PHRASE');
-  if (hasDepartmentMismatch(`${formattedLog} ${nextStrategy}`, ctx.doctor.department || '')) {
-    failTypes.push('DEPARTMENT_MISMATCH');
-  }
   if (hasLearnedForbidden(`${formattedLog} ${nextStrategy}`, ctx.learnedForbiddenPatterns ?? [])) {
     failTypes.push('LEARNED_FORBIDDEN');
   }
