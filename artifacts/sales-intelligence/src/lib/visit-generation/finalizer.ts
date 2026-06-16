@@ -4,7 +4,6 @@ import {
   stripDoctorDepartmentPrefix,
 } from './departmentProfiles';
 import {
-  hasVisitLogProductLeak,
   sanitizeNextStrategyText,
   sanitizeVisitLogBody,
   stripBrokenFutureFragments,
@@ -85,10 +84,6 @@ function normalizeRepeatedNextMarkers(text: string): string {
   return `다음방문시에는 ${parts[parts.length - 1]}`;
 }
 
-function hasGenericNextStrategy(text: string): boolean {
-  const normalized = text.replace(/\s+/g, '');
-  return /실제처방여부|실제처방흐름|실제적용사례|실제적용가능상황|실제처방환자군|실제적용케이스|처방경험여부|적용가능케이스/.test(normalized);
-}
 
 function hasMeaningfulBody(text: string, primaryProduct: string): boolean {
   if (text.length < 30) return false;
@@ -130,13 +125,9 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
   // 하드코딩 fallbackStrategy 호출 제거 — AI 출력을 그대로 유지
   strategy = normalizeRepeatedNextMarkers(sanitizeNextStrategyText(strategy, primaryProduct));
 
-  const productReactionPattern = new RegExp(`${primaryProduct}(?:의)?\\s*교수님께서`);
   const needsSafeFallback =
     !body ||
-    !hasMeaningfulBody(body, primaryProduct) ||
-    productReactionPattern.test(body) ||
-    hasVisitLogProductLeak(body, primaryProduct) ||
-    hasGenericNextStrategy(strategy);
+    !hasMeaningfulBody(body, primaryProduct);
 
   if (needsSafeFallback) {
     const fallback = buildDepartmentSafeVisitOutput(primaryProduct, input.department || '');
