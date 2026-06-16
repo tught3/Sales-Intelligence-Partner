@@ -3,9 +3,10 @@ import { generateWithPlan } from './generator';
 import { normalize } from './normalizer';
 import { buildPlan, preCheckUniqueness } from './planner';
 import { finalizeVisitGenerationOutput } from './finalizer';
+import { buildFallback, MAX_REPAIR_ATTEMPTS, repair } from './repair';
 import { initTrace } from './trace';
 import type { GenerationResult, PipelineTrace, RawGenerationOutput, VisitGenerationDependencies, VisitGenerationInput } from './types';
-import { validate } from './validator';
+import { resolveRepairTarget, validate } from './validator';
 
 export async function runVisitGenerationPipeline(
   input: VisitGenerationInput,
@@ -56,18 +57,69 @@ export async function runVisitGenerationPipeline(
       return makeResult(current, raw, plan, ctx, false, final);
     }
 
-    // ── few-shot 프롬프트 전환 후: 모든 실패를 non-blocking으로 처리, AI 출력 그대로 반환 ──
-    // repair 루프 제거 — 하드코딩 문장으로 교체하는 로직은 품질을 낮추므로 사용 안 함
-    trace.add('ai_pass_through', {
-      output: current,
-      note: `validation failed: ${firstValidation.failTypes.join(', ')} — AI 출력 유지 (repair 루프 제거)`,
+    let repaired = current;
+    let usedFallback = false;
+    for (let attempt = 0; attempt < MAX_REPAIR_ATTEMPTS; attempt++) {
+      const validation = validate(repaired.formattedLog, repaired.nextStrategy, plan, ctx);
+      if (validation.pass) {
+        const final = trace.finish('success');
+        return makeResult(repaired, raw, plan, ctx, usedFallback, final);
+      }
+      const target = resolveRepairTarget(validation.failTypes);
+      const repairedRaw = await repair(repaired, validation, plan, ctx, target, attempt);
+      usedFallback = usedFallback || repairedRaw.usedFallback;
+      repaired = normalize(
+        { formattedLog: repairedRaw.formattedLog, nextStrategy: repairedRaw.nextStrategy },
+        plan
+      );
+      trace.add(`repair_${attempt}`, {
+        output: repaired,
+        note: `validate_repair target=${target.field}; failTypes=${target.reasons.join(', ')}`,
+        failTypes: target.reasons,
+      });
+    }
+
+    const finalValidation = validate(repaired.formattedLog, repaired.nextStrategy, plan, ctx);
+    trace.add('validate_final', {
+      output: finalValidation.pass ? 'PASS' : finalValidation.details,
+      failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
     });
-    const final = trace.finish('success');
-    return makeResult(current, raw, plan, ctx, false, final);
+    if (finalValidation.pass || (!finalValidation.pass && finalValidation.failTypes.every((type) => type === 'LEARNED_FORBIDDEN'))) {
+      const final = trace.finish('success');
+      return makeResult(repaired, raw, plan, ctx, usedFallback, final);
+    }
+
+    const hardFallback = normalize(buildFallback(plan, ctx), plan);
+    trace.add('hard_fallback', {
+      output: hardFallback,
+      note: `failed final validation: ${finalValidation.pass ? '' : finalValidation.failTypes.join(', ')}`,
+      failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
+    });
+    const final = trace.finish('fallback');
+    return makeResult(hardFallback, raw, plan, ctx, true, final);
 
   } catch (error) {
     trace.add('error', { note: error instanceof Error ? error.message : String(error) });
-    throw error;
+    const fallback = normalize(buildFallback(plan, ctx), plan);
+    trace.add('hard_fallback', {
+      output: fallback,
+      note: `generation error fallback: ${error instanceof Error ? error.message : String(error)}`,
+      failTypes: [],
+    });
+    const final = trace.finish('fallback');
+    return makeResult(
+      fallback,
+      {
+        formattedLog: fallback.formattedLog,
+        nextStrategy: fallback.nextStrategy,
+        visitDate: ctx.todayDate,
+        products: [plan.product],
+      },
+      plan,
+      ctx,
+      true,
+      final
+    );
   }
 }
 
@@ -84,6 +136,8 @@ function makeResult(
     nextStrategy: current.nextStrategy,
     products: raw.products?.length ? raw.products : [plan.product],
     department: ctx.doctor.department || '',
+    doctorName: ctx.doctor.name,
+    hospital: ctx.doctor.hospital,
   });
   return {
     formattedLog: finalized.formattedLog,

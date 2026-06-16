@@ -6,6 +6,7 @@
 
 ## Stable Context
 - This repository is a pnpm workspace for the Sales Intelligence Partner app.
+- The active local checkout path is now `E:\Project\Sales-Intelligence-Partner`.
 - The main application code lives in `artifacts/api-server` and `artifacts/sales-intelligence`.
 - Shared packages live under `lib/`.
 - GSD initialization has been seeded and the first user-facing fix has been applied.
@@ -45,9 +46,51 @@
 - Department routing now sets anesthesiology and emergency medicine to `플라주OP 70% / 제이세덱스 30%`.
 
 ## Latest Checkpoint
+- 산부인과 템플릿을 페린젝트/위너프 각각에 대해 더 세분화했고, 실사례 검증은 3건 모두 통과할 때까지 반복했습니다.
+- 최종 샘플 3건은 `convertToVisitLog`/`autoGenerateVisitLog`를 실제 번들된 모듈로 호출해서 확인했고, 본문과 nextStrategy 모두 눈에 띄는 이상 표현 없이 정리됐습니다.
+- 샘플 검증 중에는 `경구용철분제` 비교 문구, `보겠음`, `확인드릴`, `편할예정며`, `환자군 환자` 같은 잔재를 단계적으로 제거했습니다.
+- `nextStrategy` 중복 판정이 `실제 적용/처방 흐름/차트상 조건/적용 가능` 같은 유사 표현까지 키로 잡도록 강화했습니다.
+- follow-up 후보 선택은 `getDetailKeyOverlap()`와 새 키 기반 판정을 같이 보며, 본문과 같은 축이면 다시 다른 축으로 재선택합니다.
+- 산부인과/페린젝트 분기에서 더 구체적인 후보를 추가해, 같은 과에서라도 환자군-상황-특장점 축이 더 자주 바뀌도록 했습니다.
+- `nextStrategy` 정규화는 이제 길이 제한 전에 한 번, 길이 제한 후에 한 번 더 돌도록 바뀌어서 잘린 문장이 그대로 남지 않게 했습니다.
+- `sanitizeNextStrategyText()`는 마지막 `다음...` 구간만 남기고 `다음방문시에는 ... 확인할예정` 형태로 재조립해서, `다음엔 ... 다음방문시에는 ...할예정` 같은 중첩을 막습니다.
+- 영업일지 본문은 최종 정리 단계에서 다시 `sanitizeVisitLogBody()`와 `trimAfterReactionSentence()`를 거치도록 유지해서, 다음 방문 계획 문구가 본문에 섞이는 걸 더 강하게 막았습니다.
+- Obstetrics product routing now defaults to 페린젝트 only, so the normal generation path should no longer drift to 위너프에이플러스 unless a manual product scope explicitly forces it.
+- Visit-log generation now trims the body after the professor reaction sentence, blocks generic reaction/strategy phrasing, and biases follow-up selection toward a different product when one is available.
+- Visit-log generation now strips foreign product sentences and next-visit leakage from the body before validation, so the visible memo stays on a single product and the nextStrategy stays separate.
+- Raw visit notes for 산부인과 can now steer product selection from the note content itself, so explicit 위너프/TPN-style cases can still resolve to 위너프에이플러스 while 빈혈/Hb cases stay on 페린젝트.
+- The visit-log candidate pool was widened with more 산부인과-specific Winuf/페린젝트 templates plus extra fallback details, so the planner has more non-overlapping product/detail axes to rotate through.
+- A second wave of department-specific templates was added as an extra pool for 정형외과, 호흡기, 외과, 신경외과, 중환자, 소화기, 종양, 산부인과, 신장, 마취과, and 응급의학과, and the Visit Log UI now shows a short product-selection hint per department.
+- 산부인과 raw-note inference now only admits 위너프에이플러스 on explicit Winuf/TPN-style signals, and the Visit Log product buttons now visually recommend the department-fit product without overwriting a manual selection.
+- Final visit-log cleanup now strips `위너프에이플러스의` from nextStrategy, removes embedded next-visit phrases from the body more aggressively, and prevents duplicate `다음방문시에는`/`할예정` suffixes from surviving the last normalization pass.
+- NextStrategy is now reassembled into a stricter one-line format during final sanitation, with product prefixes removed before the final `다음방문시에는 ... 할예정` pattern is emitted.
+- Snippet analysis now prints a department-wide coverage line so matching specialties are shown across both hospitals, and auto-generation prompt text now explicitly tells the model to consider both Gangneung Asan and Wonju Severance when a department fits both hospitals.
+- Core snippet generation no longer relies on product-info titles only; product manual matching now inspects title and content, and snippet duplicate filtering now requires stronger overlap than a single shared meaning key. Product and snippet-library generation toasts also distinguish AI returning no candidates from candidates being filtered as duplicates.
+- Visit-log auto-generation is now locked to `위너프에이플러스`, `페린젝트`, and `플라주OP` only. Batch generation with 3 or more targets forces `플라주OP` until one saved log contains it, the visit-log product selector only shows the three allowed products, department product routing excludes the old products, and bare `플라주` output is normalized to `플라주OP`. `pnpm run typecheck` passed; individual frontend/API builds passed after the root build timed out.
+- Visit-log generation now surfaces more core-ment candidates and pushes recent repeats down harder: snippet candidates increased from 4 to 8, recent detail comparison widened from 5 to 16 logs, recent keyword memory widened to 12 logs, hardcoded repeated examples were removed from the anti-repeat prompt, and recent style examples are sanitized so `포인트` does not get re-primed. `pnpm run typecheck` and `pnpm run build` passed.
+- Re-split Winuf and Winuf A+ after source check: Winuf remains the existing 3-chamber TPN/o3-o6/market-reference product, while Winuf A+ is the higher-amino-acid/lower-glucose 4th-gen severe-patient product. Existing snippet rows are now `위너프` 8 and `위너프에이플러스` 12, and forced Winuf-to-A+ normalization was removed from snippet/API/client generation paths.
+- Hospital/department profile management was removed from the frontend route/nav/storage and AI generation context; live `hospital_profiles` and `department_profiles` are empty.
+- Removed `포인트` wording from existing `golden_snippets` rows in the live DB, verified 0 remaining matches, and added frontend/API sanitizers plus snippet-generation prompt rules so future core-ment snippets save with alternate wording such as content/detail/evidence/differentiation.
+- Core snippet AI auto-generation now filters generated snippets against both existing library entries and accepted items from the same batch using normalized text similarity before saving, so repeated detail content is skipped client-side.
+- Repository relocation from `E:\Sales-Intelligence-Partner` to `E:\Project\Sales-Intelligence-Partner` has been verified. `pnpm install` rebuilt pnpm links after the move, `pnpm run build` passed, and temporary runtime checks returned HTTP 200 from API `/api/healthz` on port 3001 and the Vite app on port 5174.
 - Visit-log generation now catches bare `지난번 ...` openings and strips that framing when the sentence does not include a real feedback/result before moving into a new detail.
 - When prior context says a product is already in use, same-product `오늘은 ... 중심으로` wording is normalized into usage reaction/reorder/applicable-patient follow-up instead of repeating the product focus.
 - Bulk auto-generation now feeds already-created logs from the current batch into later generation and validation calls so same-hospital multi-generate avoids repeated objection/answer/detail phrasing.
+- Visit-log normalizer/sanitizer now strips trailing next-visit plan leakage from the visible body, removes product-name spillover from nextStrategy, and admits 플라주OP into the visit-generation context so 마취과/응급의학과 route correctly again.
+- Verified the fix with three fresh samples after the patch: 산부인과/페린젝트, 정형외과/위너프에이플러스, and 소화기내과/페린젝트 all came back without the earlier body-leak patterns.
+- Broken future fragments such as `확인해보겠을할예정` are now stripped before nextStrategy finalization, while normal memo endings like `디테일함`, `안내드림`, and `확인할예정` remain allowed.
+- Raw note product inference now trusts explicit `위너프/페린젝트` mentions before generic Hb/영양 signals, and follow-up finalization now rebuilds generic `실제 처방 여부`-style axes into a different detail line when they repeat the body.
+- Visit-log generation now has a shared `finalizeVisitGenerationOutput()` gate used by the pipeline and Visit Log save path, so body text, nextStrategy, and product tags are normalized together after truncation and before persistence.
+- The finalizer strips embedded `다음방문...` text from the body, collapses repeated `다음방문시에는`, removes broken future fragments, blocks cross-product leakage, and rebuilds generic nextStrategy axes such as `실제 처방 여부/흐름/적용 사례`.
+- External case learning now preserves an anonymized `styleExampleMemo` alongside structured fields, splits multi-product external chunks into separate product patterns, and surfaces anonymized examples in generation context.
+- Added pipeline tests for product/body mismatch, body next-visit leakage, broken suffix cleanup, normal ending preservation, external style examples, and repeated `다음방문시에는` regression. Verified `node scripts/test-pipeline.mjs`, `pnpm run typecheck`, and `pnpm run build`.
+- Representative finalizer samples for 소화기내과/페린젝트, 정형외과/페린젝트, 정형외과/위너프에이플러스, 산부인과/페린젝트, 외과/위너프에이플러스, and 마취통증의학과/플라주OP all passed without product leakage, repeated next-visit markers, or broken future suffixes.
+- Visit-log generation now has a shared department profile gate for oncology, pulmonology, neurosurgery, orthopedics, OB/GYN, ICU, gastroenterology, colorectal surgery, HPB surgery, and gastric surgery. Planner candidates, validator mismatch checks, finalizer cleanup, and repair fallback now use the same department-patient context.
+- Finalizer now removes professor/hospital/department prefixes such as `종양내과 이종인 교수님`, blocks malformed product-reaction starts like `위너프에이플러스의 교수님께서`, rewrites generic next strategies, and falls back to department-safe product text before save.
+- Pipeline validation failures no longer pass through as AI output. The repair loop is restored with `validate_repair`, final validation, and hard fallback, while external-case style examples now preserve anonymized `교수님께서...` memo structure.
+- Regression checks were added for 이종인/종양내과 prefix removal, 호흡기내과 산후 mismatch, 종양내과 암/항암 context, 신경외과 fallback, repair fallback, and planner/pipeline static guardrails.
+- Empty or too-short AI outputs now route through deterministic department fallback instead of being saved as fragments or shown as `결과 없음`. The bulk UI no longer short-circuits before finalizer fallback, and the pipeline catches generation errors with hard fallback.
+- A regression case now checks `최성진/산부인과` with a fragment like `수술 후에도 가능하냐고 확인하심.` and verifies that the saved output uses 산후/부인과 페린젝트 context, not 정형외과 context.
 
 ## Useful Entry Points
 - `package.json`

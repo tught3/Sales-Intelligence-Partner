@@ -12,6 +12,7 @@ import { runVisitGenerationPipeline } from './visit-generation/pipeline';
 import { buildContext } from './visit-generation/context';
 import { buildPlan, preCheckUniqueness } from './visit-generation/planner';
 import { extractReactionKeys as extractVisitReactionKeys } from './visit-generation/detailKeys';
+import { getDepartmentContextGuide } from './visit-generation/departmentProfiles';
 import { hasVisitLogProductLeak, hasVisitPlanLeak, sanitizeVisitLogBody, sanitizeNextStrategyText, stripBrokenFutureFragments, trimAfterReactionSentence } from './visit-generation/sanitizer';
 import { finalizeVisitGenerationOutput } from './visit-generation/finalizer';
 import type { DetailKey, VisitGenerationInput } from './visit-generation/types';
@@ -1139,6 +1140,7 @@ function buildContextSection(doctor: Doctor, pastLogs: VisitLog[]): string {
   let context = `교수 정보:
 - 이름: ${doctor.name} (${doctor.position})
 - 병원: ${doctor.hospital} / 과: ${doctor.department}
+- 진료과 환자군 기준: ${getDepartmentContextGuide(doctor.department)}
 - 성향: ${traitText || '미기록'}
 - 처방 경향: ${doctor.prescriptionTendency || '미기록'}
 - 관심 분야: ${doctor.interestAreas || '미기록'}
@@ -2371,6 +2373,7 @@ async function convertToVisitLogBase(
 ${doctor.notes ? `특이사항: ${doctor.notes}` : ''}
 ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0, 80)}` : ''}
 오늘 품목: ${activeProducts[0]}
+진료과 환자군 기준: ${getDepartmentContextGuide(doctor.department)}
 
 [원본 메모]
 {{RAW_MEMO}}
@@ -2379,6 +2382,8 @@ ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 - 흐름: 제품 특장점 설명 → 교수님 반응 → (가끔) 다음 방향 한 줄
 - 본문 100~230자, 다음방문전략 120자 이내
 - 오늘 품목(${activeProducts[0]})만 사용. ${forbiddenProducts.length > 0 ? `${forbiddenProducts.join(', ')} 언급 절대 금지.` : ''}
+- 본문 첫머리에 교수명/병원명/진료과명 접두를 쓰지 말 것. 예: "${doctor.department} ${doctor.name} 교수님" 금지
+- 환자군은 반드시 ${doctor.department} 기준으로 맞출 것. 타과 환자군은 쓰지 말 것.
 - 페린젝트는 1회 투여, 따옴표 금지
 - 종결: ~함/~하심/~예정/~드림
 
@@ -2481,6 +2486,7 @@ ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0
 오늘(${today}) 이 교수를 방문했다고 가정하고 실제로 있을 법한 영업 현장 메모를 작성하세요.
 
 오늘 품목: ${activeProducts[0]}
+진료과 환자군 기준: ${getDepartmentContextGuide(doctor.department)}
 ${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
 다음 방향: ${pipelinePlan.nextAction}` : ''}
 ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
@@ -2488,6 +2494,8 @@ ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 - 흐름: 제품 특장점 설명 → 교수님 반응 → (30% 확률 오브젝션+답변) → 다음 방향 한 줄
 - 본문 100~230자, 다음방문전략 120자 이내
 - 오늘 품목(${activeProducts[0]})만 사용. ${forbiddenProducts.length > 0 ? `${forbiddenProducts.join(', ')} 언급 절대 금지.` : ''}
+- 본문 첫머리에 교수명/병원명/진료과명 접두를 쓰지 말 것. 예: "${doctor.department} ${doctor.name} 교수님" 금지
+- 환자군은 반드시 ${doctor.department} 기준으로 맞출 것. 타과 환자군은 쓰지 말 것.
 - 페린젝트는 1회 투여, 따옴표 금지
 - 종결: ~함/~하심/~예정/~드림
 
@@ -2791,6 +2799,8 @@ export async function validateAndFixVisitLog(
     nextStrategy: strategy,
     products: activeProducts.length > 0 ? activeProducts : finalAllowedProducts,
     department: doctor.department,
+    doctorName: doctor.name,
+    hospital: doctor.hospital,
   });
   return { formattedLog: finalized.formattedLog, nextStrategy: finalized.nextStrategy };
 }

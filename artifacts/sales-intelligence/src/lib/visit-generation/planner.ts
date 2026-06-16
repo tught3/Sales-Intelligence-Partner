@@ -1,5 +1,6 @@
 import type { VisitContext } from './context';
 import { collectKeys, extractKeys, extractReactionKeys, similarityRatio } from './detailKeys';
+import { buildDepartmentFallbackPlan, getDepartmentProfile, isTextAllowedForDepartment } from './departmentProfiles';
 import type { ExternalCasePattern } from '../storage';
 import type { DetailKey } from './types';
 import { getVisitTemplates } from './templates';
@@ -137,9 +138,20 @@ function buildExternalCandidateVariants(pattern: ExternalCasePattern, ctx: Visit
       narrativeStyle,
       professorQuestion,
       allowedDepartments: [pattern.department],
+      exampleMemo: pattern.styleExampleMemo,
     });
   }
   return uniqueByText(variants);
+}
+
+export function buildDepartmentFallbackPlanCandidate(ctx: VisitContext, product?: string): PlanCandidate {
+  const selectedProduct = product ?? ctx.availableProducts[0] ?? '위너프에이플러스';
+  const fallback = buildDepartmentFallbackPlan(selectedProduct, ctx.doctor.department || '');
+  const profile = getDepartmentProfile(ctx.doctor.department || '');
+  return {
+    ...fallback,
+    templateId: `department-fallback-${profile?.key ?? 'general'}-${fallback.product}`,
+  };
 }
 
 function buildTemplateCandidates(ctx: VisitContext): PlanCandidate[] {
@@ -286,21 +298,23 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
   if (/산부인과|산과|부인과/.test(department) && /IBD|크론|궤양성대장염|위장관\s*출혈/.test(planText(candidate))) {
     return false;
   }
-  return true;
+  return isTextAllowedForDepartment(planText(candidate), department);
 }
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const templateCandidates = buildTemplateCandidates(ctx);
   const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.flatMap((pattern) => buildExternalCandidateVariants(pattern, ctx));
-  const all = [...templateCandidates, ...externalCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const manualProducts = ctx.manualRawNotes
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
     : [];
   const productPool = manualProducts.length > 0 ? manualProducts : ctx.availableProducts;
-  return all.filter((candidate) =>
+  const fallbackCandidates = productPool.map((product) => buildDepartmentFallbackPlanCandidate(ctx, product));
+  const all = [...externalCandidates, ...templateCandidates, ...fallbackCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
+  const filtered = all.filter((candidate) =>
     productPool.includes(candidate.product) &&
     isCandidateAllowedForDepartment(candidate, ctx.doctor.department || '')
   );
+  return filtered.length > 0 ? filtered : fallbackCandidates;
 }
 
 function hasUsedReaction(candidate: PlanCandidate, ctx: VisitContext): boolean {
@@ -450,7 +464,9 @@ export function buildPlan(ctx: VisitContext): DetailKey {
 
   // 상위 3개 중 랜덤 선택 — 같은 입력이라도 매번 다른 결과 (A→A→A 방지 핵심)
   const topN = ranked.slice(0, Math.min(3, ranked.length));
-  const selected = pickRandom(topN) ?? candidatesFor({ ...ctx, availableProducts: ['위너프에이플러스', '페린젝트'] })[0] ?? FERINJECT_CANDIDATES[0];
+  const selected = topN.length > 0
+    ? pickRandom(topN)
+    : candidatesFor({ ...ctx, availableProducts: ['위너프에이플러스', '페린젝트'] })[0] ?? buildDepartmentFallbackPlanCandidate(ctx);
   const carryoverNote = latestStrategy
     ? `; 최근 다음방문전략(${latestStrategy.slice(0, 60)})과 이어질 수 있는 후보를 우선 반영`
     : '';

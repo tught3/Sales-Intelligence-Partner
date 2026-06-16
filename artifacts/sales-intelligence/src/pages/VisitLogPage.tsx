@@ -247,10 +247,6 @@ export default function VisitLogPage() {
     resetResult();
     try {
       const res = await convertToVisitLog(snapshotRawNotes, selectedDoctor, pastLogs, snapshotProducts);
-      if (!res.formattedLog || res.formattedLog.trim().length < 10) {
-        toast({ title: "AI 생성 결과가 너무 짧습니다", description: "다시 시도해주세요.", variant: "destructive" });
-        return;
-      }
       let prods = snapshotProducts;
       if (prods.length === 0) {
         const detected = PRODUCTS.filter(
@@ -263,6 +259,8 @@ export default function VisitLogPage() {
         nextStrategy: res.nextStrategy,
         products: prods,
         department: selectedDoctor.department,
+        doctorName: selectedDoctor.name,
+        hospital: selectedDoctor.hospital,
       });
       prods = displayResult.products;
       setResult({ formattedLog: displayResult.formattedLog, nextStrategy: displayResult.nextStrategy });
@@ -276,6 +274,8 @@ export default function VisitLogPage() {
           nextStrategy: displayResult.nextStrategy,
           products: prods,
           department: selectedDoctor.department,
+          doctorName: selectedDoctor.name,
+          hospital: selectedDoctor.hospital,
         });
         const log: VisitLog = {
           id: generateId(), doctorId: snapshotDoctorId, visitDate: snapshotDate,
@@ -374,10 +374,6 @@ export default function VisitLogPage() {
             batchUsedTemplateIds,
             batchUsedProducts
           );
-          if (!res.formattedLog || res.formattedLog.trim().length < 10) {
-            failures.push({ doctorName: doctor.name, reason: "결과 없음" });
-            continue;
-          }
           // 최종 글자수 보장: 230자 초과 시 강제 컷 후 저장 후 finalizer 재적용
           const shortenedFormattedLog = res.formattedLog.length > 230
             ? compressTextToLimit(res.formattedLog, 230)
@@ -387,6 +383,8 @@ export default function VisitLogPage() {
             nextStrategy: res.nextStrategy,
             products: res.products,
             department: doctor.department,
+            doctorName: doctor.name,
+            hospital: doctor.hospital,
           });
           const log: VisitLog = {
             id: generateId(),

@@ -1,4 +1,10 @@
 import {
+  buildDepartmentSafeVisitOutput,
+  hasDepartmentMismatch,
+  normalizeVisitProduct,
+  stripDoctorDepartmentPrefix,
+} from './departmentProfiles';
+import {
   hasVisitLogProductLeak,
   sanitizeNextStrategyText,
   sanitizeVisitLogBody,
@@ -11,6 +17,8 @@ export type FinalizeVisitGenerationInput = {
   nextStrategy: string;
   products: string[];
   department: string;
+  doctorName?: string;
+  hospital?: string;
 };
 
 export type FinalizedVisitGenerationOutput = {
@@ -26,11 +34,7 @@ function compact(text: string): string {
 }
 
 function normalizeProduct(product: string): string {
-  const compacted = product.replace(/\s+/g, '');
-  if (compacted.includes('페린젝트')) return '페린젝트';
-  if (compacted.includes('위너프에이플러스')) return '위너프에이플러스';
-  if (compacted.includes('플라주OP') || compacted.includes('플라주오피')) return '플라주OP';
-  return product.trim();
+  return normalizeVisitProduct(product);
 }
 
 function splitSentences(text: string): string[] {
@@ -82,6 +86,19 @@ function normalizeRepeatedNextMarkers(text: string): string {
   return `다음방문시에는 ${parts[parts.length - 1]}`;
 }
 
+function hasGenericNextStrategy(text: string): boolean {
+  const normalized = text.replace(/\s+/g, '');
+  return /실제처방여부|실제처방흐름|실제적용사례|실제적용가능상황|실제처방환자군|실제적용케이스|처방경험여부|적용가능케이스/.test(normalized);
+}
+
+function hasMeaningfulBody(text: string, primaryProduct: string): boolean {
+  if (text.length < 55) return false;
+  if (!text.includes(primaryProduct)) return false;
+  if (!/말씀드림|디테일|안내|설명|전달/.test(text)) return false;
+  if (!/교수님께서|교수님이|반응|의견|질문|하심|보임/.test(text)) return false;
+  return true;
+}
+
 export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInput): FinalizedVisitGenerationOutput {
   const products = input.products.map(normalizeProduct).filter(Boolean);
   const primaryProduct = products[0] || '위너프에이플러스';
@@ -89,6 +106,11 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
   const leakedPlan = split.leakedPlan;
 
   let body = removeForeignProductSentences(split.body, primaryProduct);
+  body = stripDoctorDepartmentPrefix(body, {
+    department: input.department,
+    doctorName: input.doctorName,
+    hospital: input.hospital,
+  });
   body = sanitizeVisitLogBody(body, primaryProduct);
   body = removeForeignProductSentences(body, primaryProduct);
   body = trimAfterReactionSentence(body);
@@ -110,6 +132,24 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
   strategy = normalizeRepeatedNextMarkers(strategy);
   // 하드코딩 fallbackStrategy 호출 제거 — AI 출력을 그대로 유지
   strategy = normalizeRepeatedNextMarkers(sanitizeNextStrategyText(strategy, primaryProduct));
+
+  const productReactionPattern = new RegExp(`${primaryProduct}(?:의)?\\s*교수님께서`);
+  const needsSafeFallback =
+    !body ||
+    !hasMeaningfulBody(body, primaryProduct) ||
+    productReactionPattern.test(body) ||
+    hasVisitLogProductLeak(body, primaryProduct) ||
+    hasDepartmentMismatch(`${body} ${strategy}`, input.department || '') ||
+    hasGenericNextStrategy(strategy);
+
+  if (needsSafeFallback) {
+    const fallback = buildDepartmentSafeVisitOutput(primaryProduct, input.department || '');
+    return {
+      formattedLog: fallback.formattedLog,
+      nextStrategy: normalizeRepeatedNextMarkers(sanitizeNextStrategyText(fallback.nextStrategy, primaryProduct)),
+      products: fallback.products,
+    };
+  }
 
   return {
     formattedLog: body,

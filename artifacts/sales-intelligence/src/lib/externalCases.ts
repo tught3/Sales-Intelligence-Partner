@@ -228,7 +228,12 @@ function styleExampleMemoFrom(
 
   // 원문이 구체적이면 원문 언어 우선 사용 (실전 말투·표현 보존)
   if (cleanedChunk.length >= 15 && USEFUL_DETAIL_RE.test(cleanedChunk)) {
-    return cleanedChunk.slice(0, 220);
+    const rawMemo = cleanedChunk.slice(0, 180);
+    if (/교수님께서|교수님께/.test(rawMemo)) return rawMemo;
+    const detail = detailAxis.replace(new RegExp(`^${product}의\\s*`), '');
+    const reaction = reactionPattern.replace(/^교수님(?:께서|께|은|이)?\s*/, '');
+    return compact(`${product} ${detail}을 ${patientGroup} 상황과 연결해 말씀드림. 교수님께서 ${reaction}.`)
+      .slice(0, 220);
   }
 
   // 원문이 부실하면 구조화 필드로 재조립

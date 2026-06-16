@@ -7,6 +7,7 @@ import ts from 'typescript';
 const root = process.cwd();
 const externalCasesPath = path.join(root, 'artifacts/sales-intelligence/src/lib/externalCases.ts');
 const detailKeysPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/detailKeys.ts');
+const departmentProfilesPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/departmentProfiles.ts');
 const finalizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/finalizer.ts');
 const normalizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/normalizer.ts');
 const sanitizerPath = path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/sanitizer.ts');
@@ -44,6 +45,7 @@ async function importVisitGenerationCjs(entryFile) {
   await mkdir(dir, { recursive: true });
   for (const [sourcePath, moduleName] of [
     [detailKeysPath, 'detailKeys.js'],
+    [departmentProfilesPath, 'departmentProfiles.js'],
     [sanitizerPath, 'sanitizer.js'],
     [finalizerPath, 'finalizer.js'],
     [normalizerPath, 'normalizer.js'],
@@ -181,6 +183,49 @@ try {
     'finalizer는 다음방문시에는 중첩을 1개로 줄여야 합니다.'
   );
   assert(!/다음\s*방문|다음방문/.test(repeatedNext.formattedLog), 'finalizer는 본문에 붙은 다음방문 조각을 저장 전에 제거해야 합니다.');
+
+  const emptyLikeOb = finalizeVisitGenerationOutput({
+    formattedLog: '수술 후에도 가능하냐고 확인하심.',
+    nextStrategy: '다음방문시에는 수술 후 빈혈 환자에서 페린젝트 적용 가능 여부와 급여 기준 실제 처방 사례 추가 확인할예정',
+    products: ['페린젝트'],
+    department: '산부인과',
+    doctorName: '최성진',
+    hospital: '원주세브란스',
+  });
+  assert(emptyLikeOb.formattedLog.includes('페린젝트'), 'finalizer는 제품명 없는 짧은 조각을 그대로 저장하면 안 됩니다.');
+  assert(/산후|부인과|산모/.test(emptyLikeOb.formattedLog + emptyLikeOb.nextStrategy), '산부인과 fallback은 산후/부인과/산모 맥락을 포함해야 합니다.');
+  assert(!/TKR|THR|정형외과|관절/.test(emptyLikeOb.formattedLog + emptyLikeOb.nextStrategy), '최성진이 산부인과로 들어오면 정형외과 환자군이 나오면 안 됩니다.');
+  assert(emptyLikeOb.formattedLog.length >= 55, 'finalizer fallback 본문은 결과 없음처럼 보일 만큼 짧으면 안 됩니다.');
+
+  const leeJongin = finalizeVisitGenerationOutput({
+    formattedLog: '종양내과 이종인 교수님 위너프에이플러스의 교수님께서 입원 중 영양 공급이 충분치 않은 환자에 실제 적용이 가능한지 질문하심. 중증 암환자처럼 단백 요구량이 높은 환자에서 중심정맥으로 충분한 단백 공급이 가능하다고 안내함.',
+    nextStrategy: '다음방문시에는 암환자 병동 영양 공급 반응 확인할예정',
+    products: ['위너프에이플러스'],
+    department: '종양내과',
+    doctorName: '이종인',
+    hospital: '원주세브란스',
+  });
+  assert(!/^종양내과\s*이종인\s*교수님/.test(leeJongin.formattedLog), 'finalizer는 이종인/종양내과 같은 교수명 접두를 제거해야 합니다.');
+  assert(!/위너프에이플러스의\s*교수님께서/.test(leeJongin.formattedLog), 'finalizer는 제품명 다음에 바로 교수 반응이 오는 구조를 교정해야 합니다.');
+  assert(/암|항암|종양/.test(leeJongin.formattedLog), '종양내과 fallback은 암/항암/종양 환자 맥락을 포함해야 합니다.');
+
+  const respiratoryMismatch = finalizeVisitGenerationOutput({
+    formattedLog: '위너프에이플러스 단백 보충을 산후 회복기 산모에게 설명드림. 교수님께서 분만 후 식이 진행이 늦은 환자에서는 볼 수 있겠다고 하심.',
+    nextStrategy: '다음방문시에는 산후 영양 공급 반응 확인할예정',
+    products: ['위너프에이플러스'],
+    department: '호흡기내과',
+  });
+  assert(!/산후|분만|산모|제왕절개|부인과/.test(respiratoryMismatch.formattedLog + respiratoryMismatch.nextStrategy), '호흡기내과 결과에는 산후/분만/산모 맥락이 남으면 안 됩니다.');
+  assert(/폐암|COPD|폐렴|호흡/.test(respiratoryMismatch.formattedLog + respiratoryMismatch.nextStrategy), '호흡기내과 fallback은 폐암/COPD/폐렴/호흡 맥락을 포함해야 합니다.');
+
+  const neuroMismatch = finalizeVisitGenerationOutput({
+    formattedLog: '페린젝트 1회 투여를 산후 빈혈 환자와 연결해 말씀드림. 교수님께서 산모 외래 재방문이 줄면 좋겠다고 하심.',
+    nextStrategy: '다음방문시에는 산후 외래 처방 흐름 확인할예정',
+    products: ['페린젝트'],
+    department: '신경외과',
+  });
+  assert(!/산후|분만|산모|부인과|위장관|대장/.test(neuroMismatch.formattedLog + neuroMismatch.nextStrategy), '신경외과 결과에는 산부인과/소화기/대장항문 환자군이 남으면 안 됩니다.');
+  assert(/뇌수술|척추수술|신경외과|장기 재원/.test(neuroMismatch.formattedLog + neuroMismatch.nextStrategy), '신경외과 fallback은 뇌수술/척추수술/신경외과 수술 맥락을 포함해야 합니다.');
 } finally {
   await finalizer.cleanup();
 }
@@ -277,6 +322,21 @@ try {
     !learnedForbiddenShortAnchor.failTypes?.includes('LEARNED_FORBIDDEN'),
     '학습 금지는 앞부분 일부만 겹친 정상 문장을 막으면 안 됩니다.'
   );
+  const badRespiratory = validate(
+    '위너프에이플러스 단백 보충을 산후 회복기 산모에게 설명드림. 교수님께서 분만 후 식이 진행이 늦은 환자에서는 볼 수 있겠다고 하심',
+    '다음방문시에는 산후 영양 공급 반응 확인할예정',
+    { ...plan, product: '위너프에이플러스', patientGroup: '호흡 재활 중 식이량 저하 환자', detailAxis: '위너프에이플러스의 단백 보충과 호흡 재활 회복' },
+    { ...ctx, doctor: { department: '호흡기내과' } }
+  );
+  assert(!badRespiratory.pass && badRespiratory.failTypes.includes('DEPARTMENT_MISMATCH'), '호흡기내과에 산후/분만 맥락이 나오면 DEPARTMENT_MISMATCH로 실패해야 합니다.');
+
+  const goodOncology = validate(
+    '위너프에이플러스 단백 보충을 항암치료 중 식사량이 떨어진 암환자 상황에 맞춰 말씀드림. 교수님께서 병동 암환자 영양 공급은 필요성을 보겠다는 반응 보임',
+    '다음방문시에는 항암 병동 암환자 식사량과 영양 반응 확인할예정',
+    { ...plan, product: '위너프에이플러스', patientGroup: '항암치료 중 식사량 저하가 있는 암환자', detailAxis: '위너프에이플러스의 암환자 회복기 단백 보충' },
+    { ...ctx, doctor: { department: '종양내과' } }
+  );
+  assert(goodOncology.pass || !goodOncology.failTypes.includes('DEPARTMENT_MISMATCH'), '종양내과 암환자/항암 맥락은 진료과 불일치로 실패하면 안 됩니다.');
 } finally {
   await validator.cleanup();
 }
@@ -303,6 +363,20 @@ try {
     !extractReactionKeysForTest(repaired.formattedLog).includes('반복내원재방문부담'),
     'repair fallback은 이미 사용된 반복내원재방문부담 반응을 다시 쓰면 안 됩니다.'
   );
+  const mismatchFallback = buildFallback(
+    {
+      product: '위너프에이플러스',
+      patientGroup: '산후 회복기 산모',
+      detailAxis: '위너프에이플러스의 산후 영양 보충',
+      doctorReaction: '',
+      nextAction: '산후 영양 공급 반응 확인',
+      narrativeStyle: '환자 케이스 연결형',
+      selectionReason: 'test',
+    },
+    { doctor: { department: '호흡기내과' }, batchUsedReactionKeys: [], learnedPreferredPatterns: [] }
+  );
+  assert(!/산후|분만|산모/.test(mismatchFallback.formattedLog + mismatchFallback.nextStrategy), 'repair fallback은 호흡기내과에서 산후 맥락을 제거해야 합니다.');
+  assert(/폐암|COPD|폐렴|호흡/.test(mismatchFallback.formattedLog + mismatchFallback.nextStrategy), 'repair fallback은 호흡기내과에 맞는 환자군을 사용해야 합니다.');
 } finally {
   await repairer.cleanup();
 }
@@ -314,6 +388,7 @@ const storageSource = await readFile(path.join(root, 'artifacts/sales-intelligen
 const dataRouteSource = await readFile(path.join(root, 'artifacts/api-server/src/routes/data.ts'), 'utf8');
 const contextSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/lib/visit-generation/context.ts'), 'utf8');
 const externalCasesPageSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/pages/ExternalCasesPage.tsx'), 'utf8');
+const visitLogPageSource = await readFile(path.join(root, 'artifacts/sales-intelligence/src/pages/VisitLogPage.tsx'), 'utf8');
 assert(
   plannerSource.includes('hasDailyObFerinject') && plannerSource.includes('산부인과 페린젝트'),
   'planner는 하루 1건 산부인과 페린젝트 보장 규칙을 포함해야 합니다.'
@@ -383,6 +458,28 @@ assert(
     plannerSource.includes('externalPatternBonus') &&
     plannerSource.includes('confidence'),
   'planner는 외부 사례 후보와 confidence 보너스를 생성 후보 평가에 반영해야 합니다.'
+);
+assert(
+  plannerSource.includes('getDepartmentProfile') &&
+    plannerSource.includes('buildDepartmentFallbackPlanCandidate') &&
+    plannerSource.includes('isTextAllowedForDepartment'),
+  'planner는 진료과 프로파일로 후보를 제한하고 안전 fallback 후보를 추가해야 합니다.'
+);
+assert(
+  pipelineSource.includes('repair(') &&
+    pipelineSource.includes('validate_repair') &&
+    pipelineSource.includes('generation error fallback') &&
+    !pipelineSource.includes('ai_pass_through'),
+  'pipeline은 검증 실패를 그대로 통과시키지 말고 repair 루프를 사용해야 합니다.'
+);
+assert(
+  !pipelineSource.includes("name:'최성진'") && !pipelineSource.includes('최성진') && !pipelineSource.includes('정형외과 fallback으로 정상 본문'),
+  '테스트/구현은 교수명으로 진료과를 추정하는 샘플을 남기면 안 됩니다.'
+);
+assert(
+  !visitLogPageSource.includes('reason: "결과 없음"') &&
+    !visitLogPageSource.includes('AI 생성 결과가 너무 짧습니다'),
+  '방문일지 UI는 짧거나 빈 AI 결과를 즉시 실패 처리하지 말고 finalizer/pipeline fallback 경로로 보내야 합니다.'
 );
 assert(
   storageSource.includes('externalCasePatternStorage') &&
