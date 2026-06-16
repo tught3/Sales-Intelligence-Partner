@@ -92,10 +92,8 @@ function hasGenericNextStrategy(text: string): boolean {
 }
 
 function hasMeaningfulBody(text: string, primaryProduct: string): boolean {
-  if (text.length < 55) return false;
+  if (text.length < 30) return false;
   if (!text.includes(primaryProduct)) return false;
-  if (!/말씀드림|디테일|안내|설명|전달/.test(text)) return false;
-  if (!/교수님께서|교수님이|반응|의견|질문|하심|보임/.test(text)) return false;
   return true;
 }
 
