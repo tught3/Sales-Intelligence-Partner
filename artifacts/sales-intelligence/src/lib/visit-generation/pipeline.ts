@@ -46,19 +46,9 @@ export async function runVisitGenerationPipeline(
     trace.add('normalize', { output: current });
 
     // ── 1차: AI 출력 검증 ──────────────────────────────────────
-    console.debug('[Pipeline] before validate:', {
-      doctorId: ctx.doctor.id,
-      department: ctx.doctor.department,
-      product: plan.product,
-      logLen: current.formattedLog.length,
-      logPreview: current.formattedLog.slice(0, 80),
-    });
+    console.log('[Pipeline] before validate: dept=' + ctx.doctor.department + ' product=' + plan.product + ' logLen=' + current.formattedLog.length + ' log=' + current.formattedLog.slice(0, 80));
     const firstValidation = validate(current.formattedLog, current.nextStrategy, plan, ctx);
-    console.debug('[Pipeline] validate result:', {
-      pass: firstValidation.pass,
-      failTypes: firstValidation.failTypes,
-      logPreview: current.formattedLog.slice(0, 80),
-    });
+    console.log('[Pipeline] validate result: pass=' + firstValidation.pass + ' failTypes=' + (firstValidation.failTypes || []).join(',') + ' log=' + current.formattedLog.slice(0, 80));
     trace.add('validate_0', {
       output: firstValidation.pass ? 'PASS' : firstValidation.details,
       failTypes: firstValidation.pass ? [] : firstValidation.failTypes,
