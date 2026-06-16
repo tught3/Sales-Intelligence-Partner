@@ -57,43 +57,27 @@ export async function runVisitGenerationPipeline(
       return makeResult(current, raw, plan, ctx, false, final);
     }
 
-    let repaired = current;
-    let usedFallback = false;
-    for (let attempt = 0; attempt < MAX_REPAIR_ATTEMPTS; attempt++) {
-      const validation = validate(repaired.formattedLog, repaired.nextStrategy, plan, ctx);
-      if (validation.pass) {
-        const final = trace.finish('success');
-        return makeResult(repaired, raw, plan, ctx, usedFallback, final);
-      }
-      const target = resolveRepairTarget(validation.failTypes);
-      const repairedRaw = await repair(repaired, validation, plan, ctx, target, attempt);
-      usedFallback = usedFallback || repairedRaw.usedFallback;
-      repaired = normalize(
-        { formattedLog: repairedRaw.formattedLog, nextStrategy: repairedRaw.nextStrategy },
-        plan
-      );
-      trace.add(`repair_${attempt}`, {
-        output: repaired,
-        note: `validate_repair target=${target.field}; failTypes=${target.reasons.join(', ')}`,
-        failTypes: target.reasons,
-      });
-    }
+    // 제품명 누락·타과 제품 혼입이 아닌 경우 AI 출력을 그대로 사용
+    // (repair는 AI 재호출 없이 하드코딩 fallback만 반환하므로, 품질 경고성 실패는 통과시킴)
+    const isCriticalFailure = firstValidation.failTypes.some(
+      (type) => type === 'MISSING_PRODUCT' || type === 'FOREIGN_PRODUCT_MENTION'
+    );
+    const hasContent = current.formattedLog.length >= 20;
 
-    const finalValidation = validate(repaired.formattedLog, repaired.nextStrategy, plan, ctx);
-    trace.add('validate_final', {
-      output: finalValidation.pass ? 'PASS' : finalValidation.details,
-      failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
-    });
-    if (finalValidation.pass || (!finalValidation.pass && finalValidation.failTypes.every((type) => type === 'LEARNED_FORBIDDEN'))) {
+    if (!isCriticalFailure && hasContent) {
+      trace.add('validate_0_soft_pass', {
+        output: `soft-pass: ${firstValidation.failTypes.join(', ')}`,
+        failTypes: firstValidation.failTypes,
+      });
       const final = trace.finish('success');
-      return makeResult(repaired, raw, plan, ctx, usedFallback, final);
+      return makeResult(current, raw, plan, ctx, false, final);
     }
 
     const hardFallback = normalize(buildFallback(plan, ctx), plan);
     trace.add('hard_fallback', {
       output: hardFallback,
-      note: `failed final validation: ${finalValidation.pass ? '' : finalValidation.failTypes.join(', ')}`,
-      failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
+      note: `critical failure: ${firstValidation.failTypes.join(', ')}`,
+      failTypes: firstValidation.failTypes,
     });
     const final = trace.finish('fallback');
     return makeResult(hardFallback, raw, plan, ctx, true, final);
