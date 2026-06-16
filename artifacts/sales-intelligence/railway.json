@@ -1,4 +1,0 @@
-{
-  "buildCommand": "cd ../.. && pnpm install && pnpm run build:deploy",
-  "startCommand": "cd ../.. && node artifacts/sales-intelligence/server.js"
-}

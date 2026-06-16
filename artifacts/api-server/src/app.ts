@@ -6,9 +6,7 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
-/**
- * ✅ 루트 체크용 (Railway 헬스체크 대응)
- */
+// 헬스체크 엔드포인트
 app.get("/", (req, res) => {
   res.send("API Server Running");
 });

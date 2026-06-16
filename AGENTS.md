@@ -325,8 +325,9 @@ lib/
 
 ## 배포 구조
 
-- **Vercel** (프론트): `vercel.json`에서 `/api/*` → Railway로 rewrite
-- **Railway** (백엔드): Express API + PostgreSQL
+- **Vercel**: 프론트엔드(React) + 백엔드(Express API)를 서버리스 함수로 통합 배포
+  - `/api/*` → `artifacts/sales-intelligence/api/[...path].js` (esbuild 번들 서버리스 함수)
+  - DB: Neon (PostgreSQL)
 
 ## Detail references
 - Workflow details: `docs/agent-rules-workflow.md`
