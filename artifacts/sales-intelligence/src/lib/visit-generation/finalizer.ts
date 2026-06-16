@@ -1,6 +1,5 @@
 import {
   buildDepartmentSafeVisitOutput,
-  hasDepartmentMismatch,
   normalizeVisitProduct,
   stripDoctorDepartmentPrefix,
 } from './departmentProfiles';
@@ -137,7 +136,6 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
     !hasMeaningfulBody(body, primaryProduct) ||
     productReactionPattern.test(body) ||
     hasVisitLogProductLeak(body, primaryProduct) ||
-    hasDepartmentMismatch(`${body} ${strategy}`, input.department || '') ||
     hasGenericNextStrategy(strategy);
 
   if (needsSafeFallback) {
