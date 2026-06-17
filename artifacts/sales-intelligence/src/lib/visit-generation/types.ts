@@ -14,6 +14,7 @@ export type DetailKey = {
   blockedDepartments?: string[];
   professorQuestion?: string;
   exampleMemo?: string;   // templates.ts의 few-shot 예시 메모 — AI 스타일 가이드용
+  nextVisitDetailAxis?: string;  // 다음방문전략에 사용할 오늘과 다른 detailAxis
   selectionReason: string;
 };
 

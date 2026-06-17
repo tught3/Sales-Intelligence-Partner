@@ -1305,6 +1305,10 @@ const DEPT_PRODUCT_MAP: DeptProductRule[] = [
   { keywords: ['간담췌외과', '간담'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
   { keywords: ['중환자의학과', '중환자', 'ICU'], weightedProducts: [{ name: '위너프에이플러스', weight: 80 }, { name: '페린젝트', weight: 20 }], weighted: true },
   { keywords: ['신경외과'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
+  { keywords: ['혈액종양내과', '종양내과', '종양혈액', '혈액내과', '혈액종양', '혈종'], weightedProducts: [{ name: '페린젝트', weight: 70 }, { name: '위너프에이플러스', weight: 30 }], weighted: true },
+  { keywords: ['내분비내과', '내분비', '당뇨'], weightedProducts: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 40 }], weighted: true },
+  { keywords: ['순환기내과', '심장내과', '순환기'], weightedProducts: [{ name: '위너프에이플러스', weight: 60 }, { name: '페린젝트', weight: 40 }], weighted: true },
+  { keywords: ['신장내과', '신장', '투석'], weightedProducts: [{ name: '페린젝트', weight: 60 }, { name: '위너프에이플러스', weight: 40 }], weighted: true },
 ];
 
 function getDeptProductRule(department: string): DeptProductRule {
@@ -1328,8 +1332,8 @@ function getAllowedProductsForDepartment(department: string): string[] {
     ].filter((product) => VISIT_GENERATION_PRODUCT_SET.has(product));
     return [...new Set(products)];
   }
-  // 명시 라우팅 없으면 전체 허용
-  return [...VISIT_GENERATION_PRODUCTS];
+  // 명시 라우팅 없으면 플라주OP 제외 기본값 (플라주는 마취통증/응급만 허용)
+  return VISIT_GENERATION_PRODUCTS.filter((p) => p !== '플라주OP');
 }
 
 function pickWeightedProductForDepartment(department: string): string {
@@ -2488,7 +2492,7 @@ ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0
 오늘 품목: ${activeProducts[0]}
 진료과 환자군 기준: ${getDepartmentContextGuide(doctor.department)}
 ${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
-다음 방향: ${pipelinePlan.nextAction}` : ''}
+다음 방향: ${pipelinePlan.nextAction}${pipelinePlan.nextVisitDetailAxis ? `\n다음 방문 주제(오늘과 다른 각도): ${pipelinePlan.nextVisitDetailAxis} — 다음방문전략은 이 방향으로 작성할 것` : ''}` : ''}
 ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 [작성 지침]
 - 흐름: 제품 특장점 설명 → 교수님 반응 → (30% 확률 오브젝션+답변) → 다음 방향 한 줄

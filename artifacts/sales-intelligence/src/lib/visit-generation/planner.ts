@@ -298,6 +298,14 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
   if (/산부인과|산과|부인과/.test(department) && /IBD|크론|궤양성대장염|위장관\s*출혈/.test(planText(candidate))) {
     return false;
   }
+  // 순수 내과 계열 (수술 안 함) — 수술 회복기 환자군 금지
+  if (departmentMatches(department, ['호흡기내과', '호흡기', '종양내과', '혈액종양', '혈액내과', '소화기내과', '내분비내과', '순환기내과', '신장내과'])) {
+    if (/수술\s*후\s*회복|절제\s*후\s*회복|수술\s*회복기|수술\s*전후\s*영양/.test(planText(candidate))) return false;
+  }
+  // 비간담췌외과 — 간절제 표현 금지
+  if (!departmentMatches(department, ['간담췌외과', '간담'])) {
+    if (/간\s*절제|간절제/.test(planText(candidate))) return false;
+  }
   return isTextAllowedForDepartment(planText(candidate), department);
 }
 
@@ -381,9 +389,12 @@ function getMostRecentProduct(ctx: VisitContext): string | undefined {
 }
 
 export function buildPlan(ctx: VisitContext): DetailKey {
-  const recentKeys = collectKeys([
-    ...ctx.pastLogs.slice(0, 3).flatMap((log) => [log.formattedLog, log.nextStrategy]),
+  const veryRecentKeys = collectKeys([
+    ...ctx.pastLogs.slice(0, 3).flatMap((log) => [log.formattedLog, log.nextStrategy ?? '']),
     ...(ctx.manualRawNotes ? [ctx.manualRawNotes] : []),
+  ]);
+  const olderRecentKeys = collectKeys([
+    ...ctx.pastLogs.slice(3, 15).flatMap((log) => [log.formattedLog, log.nextStrategy ?? '']),
   ]);
   const latestStrategy = ctx.recentStrategies[0]?.trim() ?? '';
   const carryoverKeys = latestStrategy ? extractKeys(latestStrategy) : [];
@@ -391,7 +402,8 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     ? ['위너프에이플러스', '페린젝트'].find((product) => latestStrategy.includes(product))
     : undefined;
   const batchKeys = new Set(ctx.batchUsedDetailKeys);
-  const recentKeySet = new Set(recentKeys);
+  const recentKeySet = new Set(veryRecentKeys);
+  const olderKeySet = new Set(olderRecentKeys);
   const batchProducts = extractBatchProducts(ctx.batchAvoidTexts);
   const mostRecentProduct = getMostRecentProduct(ctx);
   const canRotateProduct = ctx.availableProducts.filter((product) => product !== mostRecentProduct).length > 0;
@@ -426,7 +438,8 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     const aPenalty =
       aKeys.filter((key) => batchKeys.has(key)).length * 10 +
       aReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
-      aKeys.filter((key) => recentKeySet.has(key)).length * 3 +
+      aKeys.filter((key) => recentKeySet.has(key)).length * 8 +
+      aKeys.filter((key) => olderKeySet.has(key)).length * 4 +
       (ctx.usedProductsRecently.includes(a.product) ? 1 : 0) +
       (ctx.batchUsedProducts.includes(a.product) ? 10 : 0) +
       (batchProducts.includes(a.product) ? 12 : 0) +
@@ -436,7 +449,8 @@ export function buildPlan(ctx: VisitContext): DetailKey {
     const bPenalty =
       bKeys.filter((key) => batchKeys.has(key)).length * 10 +
       bReactionKeys.filter((key) => ctx.batchUsedReactionKeys.includes(key)).length * 25 +
-      bKeys.filter((key) => recentKeySet.has(key)).length * 3 +
+      bKeys.filter((key) => recentKeySet.has(key)).length * 8 +
+      bKeys.filter((key) => olderKeySet.has(key)).length * 4 +
       (ctx.usedProductsRecently.includes(b.product) ? 1 : 0) +
       (ctx.batchUsedProducts.includes(b.product) ? 10 : 0) +
       (batchProducts.includes(b.product) ? 12 : 0) +
@@ -467,12 +481,14 @@ export function buildPlan(ctx: VisitContext): DetailKey {
   const selected = topN.length > 0
     ? pickRandom(topN)
     : candidatesFor({ ...ctx, availableProducts: ['위너프에이플러스', '페린젝트'] })[0] ?? buildDepartmentFallbackPlanCandidate(ctx);
+  const runnerUp = ranked.find((c) => c !== selected && c.detailAxis !== selected.detailAxis);
   const carryoverNote = latestStrategy
     ? `; 최근 다음방문전략(${latestStrategy.slice(0, 60)})과 이어질 수 있는 후보를 우선 반영`
     : '';
   return {
     ...withUnusedReaction(selected, ctx),
-    selectionReason: `과 ${ctx.doctor.department}, 최근 ${recentKeys.join(', ') || '없음'}, 배치 ${ctx.batchUsedDetailKeys.join(', ') || '없음'} 기준으로 중복을 줄여 조합 선택${carryoverNote}`,
+    nextVisitDetailAxis: runnerUp?.detailAxis,
+    selectionReason: `과 ${ctx.doctor.department}, 최근 ${veryRecentKeys.join(', ') || '없음'}, 배치 ${ctx.batchUsedDetailKeys.join(', ') || '없음'} 기준으로 중복을 줄여 조합 선택${carryoverNote}`,
   };
 }
 
