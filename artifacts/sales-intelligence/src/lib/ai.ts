@@ -1295,7 +1295,7 @@ type DeptProductRule = {
 // 과별 주력 제품 매핑 (selectedProducts 없을 때 AI 제품 포커스 결정)
 const DEPT_PRODUCT_MAP: DeptProductRule[] = [
   { keywords: ['정형외과'], weightedProducts: [{ name: '페린젝트', weight: 100 }], weighted: true },
-  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 70 }, { name: '위너프에이플러스', weight: 30 }], weighted: true },
+  { keywords: ['산부인과', '산과', '부인과'], weightedProducts: [{ name: '페린젝트', weight: 100 }], weighted: true },
   { keywords: ['소화기내과', '소화기', 'IBD', '위장관'], weightedProducts: [{ name: '위너프에이플러스', weight: 50 }, { name: '페린젝트', weight: 50 }], weighted: true },
   { keywords: ['호흡기내과', '호흡기', '결핵'], weightedProducts: [{ name: '위너프에이플러스', weight: 70 }, { name: '페린젝트', weight: 30 }], weighted: true },
   { keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'], weightedProducts: [{ name: '플라주OP', weight: 100 }], weighted: true },
@@ -2492,7 +2492,9 @@ ${lastLog ? `지난 방문(${lastLog.visitDate}): ${lastLog.formattedLog.slice(0
 오늘 품목: ${activeProducts[0]}
 진료과 환자군 기준: ${getDepartmentContextGuide(doctor.department)}
 ${pipelinePlan ? `오늘 주제: ${pipelinePlan.detailAxis}
-다음 방향: ${pipelinePlan.nextAction}${pipelinePlan.nextVisitDetailAxis ? `\n다음 방문 주제(오늘과 다른 각도): ${pipelinePlan.nextVisitDetailAxis} — 다음방문전략은 이 방향으로 작성할 것` : ''}` : ''}
+${pipelinePlan.nextVisitDetailAxis
+  ? `다음 방문 주제(오늘 주제와 반드시 다른 각도): ${pipelinePlan.nextVisitDetailAxis} — 다음방문전략에서 오늘 일지의 환자군·디테일을 그대로 반복하지 말 것`
+  : `다음 방향: ${pipelinePlan.nextAction}`}` : ''}
 ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 [작성 지침]
 - 흐름: 제품 특장점 설명 → 교수님 반응 → (30% 확률 오브젝션+답변) → 다음 방향 한 줄

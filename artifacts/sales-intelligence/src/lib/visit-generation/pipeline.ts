@@ -64,6 +64,24 @@ export async function runVisitGenerationPipeline(
     );
     const hasContent = current.formattedLog.length >= 20;
 
+    // DUPLICATE_STRATEGY 단독 실패 → nextStrategy만 nextVisitDetailAxis 기반으로 교체
+    if (
+      firstValidation.failTypes.length === 1 &&
+      firstValidation.failTypes[0] === 'DUPLICATE_STRATEGY' &&
+      plan.nextVisitDetailAxis
+    ) {
+      const patched = {
+        ...current,
+        nextStrategy: `다음방문시에는 ${plan.nextVisitDetailAxis} 관련 확인할예정`,
+      };
+      trace.add('duplicate_strategy_fix', {
+        output: patched.nextStrategy,
+        note: `nextVisitDetailAxis 기반 교체: ${plan.nextVisitDetailAxis}`,
+      });
+      const final = trace.finish('success');
+      return makeResult(patched, raw, plan, ctx, false, final);
+    }
+
     if (!isCriticalFailure && hasContent) {
       trace.add('validate_0_soft_pass', {
         output: `soft-pass: ${firstValidation.failTypes.join(', ')}`,
