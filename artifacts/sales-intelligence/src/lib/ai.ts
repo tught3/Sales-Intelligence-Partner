@@ -2502,6 +2502,7 @@ ${goldenFewShot ? `\n${goldenFewShot}\n` : ''}
 - 환자군은 반드시 ${doctor.department} 기준으로 맞출 것. 타과 환자군은 쓰지 말 것.
 - 페린젝트는 1회 투여, 따옴표 금지
 - 종결: ~함/~하심/~예정/~드림
+- 의학 약어(AST/ALT/bilirubin/RSI/TSAT/ferritin/CRP 등)는 영문 그대로 쓰지 말 것. 한글로 풀어쓰거나 괄호로 설명 추가. 예: "간수치(AST·ALT)", "혈색소(Hb)", "신속 기도 확보(RSI)"
 
 응답 형식:
 ===제품===
