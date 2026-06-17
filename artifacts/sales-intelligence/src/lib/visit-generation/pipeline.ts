@@ -46,9 +46,7 @@ export async function runVisitGenerationPipeline(
     trace.add('normalize', { output: current });
 
     // ── 1차: AI 출력 검증 ──────────────────────────────────────
-    console.log('[Pipeline] before validate: dept=' + ctx.doctor.department + ' product=' + plan.product + ' logLen=' + current.formattedLog.length + ' log=' + current.formattedLog.slice(0, 80));
     const firstValidation = validate(current.formattedLog, current.nextStrategy, plan, ctx);
-    console.log('[Pipeline] validate result: pass=' + firstValidation.pass + ' failTypes=' + (firstValidation.failTypes || []).join(',') + ' log=' + current.formattedLog.slice(0, 80));
     trace.add('validate_0', {
       output: firstValidation.pass ? 'PASS' : firstValidation.details,
       failTypes: firstValidation.pass ? [] : firstValidation.failTypes,
@@ -120,7 +118,7 @@ function makeResult(
   const finalized = finalizeVisitGenerationOutput({
     formattedLog: current.formattedLog,
     nextStrategy: current.nextStrategy,
-    products: raw.products?.length ? raw.products : [plan.product],
+    products: [plan.product],
     department: ctx.doctor.department || '',
     doctorName: ctx.doctor.name,
     hospital: ctx.doctor.hospital,
