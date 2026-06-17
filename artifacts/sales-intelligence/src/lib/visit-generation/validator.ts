@@ -1,4 +1,5 @@
 import type { VisitContext } from './context';
+import { hasDepartmentPatientGroupMismatch } from './departmentFilters';
 import { extractKeys, extractReactionKeys, isDuplicateOf, similarityRatio } from './detailKeys';
 import { hasVisitLogProductLeak, hasVisitPlanLeak } from './sanitizer';
 import type { DetailKey, RepairTarget, ValidationFailType, ValidationResult } from './types';
@@ -16,13 +17,7 @@ function hasForbiddenPhrase(text: string): boolean {
 }
 
 function hasDepartmentMismatch(text: string, department: string): boolean {
-  if (/소화기/.test(department) && /분만|산후|산부인과|부인과|제왕절개/.test(text)) {
-    return true;
-  }
-  if (/산부인과|산과|부인과/.test(department) && /IBD|크론|궤양성대장염|위장관\s*출혈/.test(text)) {
-    return true;
-  }
-  return false;
+  return hasDepartmentPatientGroupMismatch(text, department);
 }
 
 function hasLearnedForbidden(text: string, patterns: string[]): boolean {
@@ -133,6 +128,9 @@ export function resolveRepairTarget(failTypes: ValidationFailType[]): RepairTarg
     return { field: 'nextStrategy', reasons: unique };
   }
   if (unique.length === 1 && unique[0] === 'GENERIC_REACTION') {
+    return { field: 'formattedLog', reasons: unique };
+  }
+  if (unique.length === 1 && unique[0] === 'DEPARTMENT_MISMATCH') {
     return { field: 'formattedLog', reasons: unique };
   }
   if (unique.every((type) => type === 'FOREIGN_PRODUCT_MENTION' || type === 'NEXT_VISIT_LEAK')) {

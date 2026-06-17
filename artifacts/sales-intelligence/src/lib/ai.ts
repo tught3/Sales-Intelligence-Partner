@@ -11,6 +11,7 @@ import {
 import { runVisitGenerationPipeline } from './visit-generation/pipeline';
 import { buildContext } from './visit-generation/context';
 import { buildPlan, preCheckUniqueness } from './visit-generation/planner';
+import { DEPT_DISALLOWED_KEYWORDS, departmentDisallowedThemeLabels } from './visit-generation/departmentFilters';
 import { extractReactionKeys as extractVisitReactionKeys } from './visit-generation/detailKeys';
 import { hasVisitLogProductLeak, hasVisitPlanLeak, sanitizeVisitLogBody, sanitizeNextStrategyText, stripBrokenFutureFragments, trimAfterReactionSentence } from './visit-generation/sanitizer';
 import { finalizeVisitGenerationOutput } from './visit-generation/finalizer';
@@ -21,9 +22,11 @@ const VISIT_LOG_MODEL = 'gpt-5.4-mini';
 const DEFAULT_MAX_COMPLETION_TOKENS = 1000;
 const VISIT_LOG_MAX_COMPLETION_TOKENS = 800;
 const VISIT_GENERATION_PRODUCTS = ['위너프에이플러스', '페린젝트', '플라주OP'] as const;
+const DEFAULT_FALLBACK_PRODUCTS = ['위너프에이플러스', '페린젝트'] as const;
 const VISIT_GENERATION_PRODUCT_SET = new Set<string>(VISIT_GENERATION_PRODUCTS);
 const MIN_VISIT_LOG_LENGTH = 100;
 const MAX_VISIT_LOG_LENGTH = 230;
+const DEPT_DISALLOWED_KEYWORD_SET = new Set<string>(DEPT_DISALLOWED_KEYWORDS);
 
 type AIRequestOptions = {
   temperature?: number;
@@ -1307,7 +1310,7 @@ const DEPT_PRODUCT_MAP: DeptProductRule[] = [
 
 function getDeptProductRule(department: string): DeptProductRule {
   return DEPT_PRODUCT_MAP.find((rule) => rule.keywords.some(k => department.includes(k))) ??
-    { keywords: [], weightedProducts: VISIT_GENERATION_PRODUCTS.map((name) => ({ name })), weighted: false };
+    { keywords: [], weightedProducts: DEFAULT_FALLBACK_PRODUCTS.map((name) => ({ name })), weighted: false };
 }
 
 function getDeptFocusProducts(department: string): { primary: string[]; secondary: string[] } {
@@ -1326,8 +1329,8 @@ function getAllowedProductsForDepartment(department: string): string[] {
     ].filter((product) => VISIT_GENERATION_PRODUCT_SET.has(product));
     return [...new Set(products)];
   }
-  // 명시 라우팅 없으면 전체 허용
-  return [...VISIT_GENERATION_PRODUCTS];
+  // 명시 라우팅 없으면 플라주OP가 새어 나가지 않도록 기본 품목만 허용
+  return [...DEFAULT_FALLBACK_PRODUCTS];
 }
 
 function pickWeightedProductForDepartment(department: string): string {
@@ -1871,59 +1874,48 @@ function buildProductFitConstraint(department: string, selectedProducts: string[
 type DeptFeatureRule = {
   keywords: string[];
   allowedThemes: string[];
-  disallowedThemes: string[];
 };
 
 const DEPT_FEATURE_RULES: DeptFeatureRule[] = [
   {
     keywords: ['정형외과'],
     allowedThemes: ['수술 전후 빈혈', 'Hb 회복', '수혈 부담 감소', '재활 회복', '통증 관리', '염증 관리', '출혈 관리', '외래 투여 편의'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
   },
   {
     keywords: ['산부인과', '산과', '부인과'],
     allowedThemes: ['산후 빈혈', '수술 전후 빈혈', '출혈 후 회복', 'Hb 회복', '수혈 부담 감소', '외래 편의'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '장염', '장관', '대장', '소화기내과', 'GI'],
   },
   {
     keywords: ['소화기내과', '소화기', 'IBD', '위장관'],
     allowedThemes: ['IBD', '위장관 출혈', '장관 영양', '수술 전후 빈혈', '수혈 부담 감소', '회복', '외래 편의'],
-    disallowedThemes: ['정형외과 환자군', '산부인과 환자군'],
   },
   {
     keywords: ['호흡기내과', '호흡기', '결핵'],
     allowedThemes: ['호흡기 감염', '폐렴', '결핵', '항생제 치료', '경구 섭취 어려움', '회복'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '대장', '장염', '정형외과', '산부인과'],
   },
   {
     keywords: ['마취통증의학과', '마취통증', '마취과', '통증의학'],
     allowedThemes: ['수술 전후 통증 조절', '마취 후 회복', '진통', 'opioid-sparing', '회복실', '수술실'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '대장', '정형외과 환자군'],
   },
   {
     keywords: ['외과', '일반외과', '복부외과', '대장항문외과'],
     allowedThemes: ['수술 전후', '출혈 관리', '회복', '위장관', '장관 영양', '대장항문', 'IBD', '복부 수술', '영양'],
-    disallowedThemes: [],
   },
   {
     keywords: ['흉부외과', '심혈관외과', '심장외과'],
     allowedThemes: ['흉부 수술', '심장 수술', '수술 전후 회복', '출혈 관리', 'ICU', '혈역학', '영양'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
   },
   {
     keywords: ['간담췌외과', '간담'],
     allowedThemes: ['간담췌 수술', '복부 대수술', '수술 전후', '출혈 관리', '영양', '회복'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
   },
   {
     keywords: ['중환자의학과', '중환자', 'ICU'],
     allowedThemes: ['ICU', '중증 환자', '혈역학', '감염', '영양', '회복', '수술 후'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '정형외과'],
   },
   {
     keywords: ['신경외과'],
     allowedThemes: ['뇌수술', '척추수술', '수술 전후', 'ICU', '회복', '출혈 관리', '중증 환자'],
-    disallowedThemes: ['IBD', '크론', '궤양성대장염', '위장관', '대장', '소화기내과', '정형외과'],
   },
 ];
 
@@ -1945,11 +1937,19 @@ function buildDepartmentFeatureConstraint(department: string): string {
     ? '\n- 응급의학과 방문은 플라주OP 신규사입(병원 코딩 등재) 목적. 프로토콜 도입/검토 방향으로 작성.'
     : '';
 
-  if (!rule) return noOutpatientNote + erNote ? `\n★★★ 과별 제한:${noOutpatientNote}${erNote}\n` : '';
+  const sharedDisallowedThemes = departmentDisallowedThemeLabels(department)
+    .filter((theme) => DEPT_DISALLOWED_KEYWORD_SET.has(theme));
+
+  if (!rule) {
+    const disallowedLine = sharedDisallowedThemes.length > 0
+      ? `\n- 이 과(${department})에 맞지 않는 환자군/질환명은 쓰지 말 것: ${sharedDisallowedThemes.join(', ')}`
+      : '';
+    return noOutpatientNote + erNote + disallowedLine ? `\n★★★ 과별 제한:${noOutpatientNote}${erNote}${disallowedLine}\n` : '';
+  }
 
   return `\n★★★ 과별 특장점 제한:
 - 이 과(${department})에서는 다음 테마만 중심적으로 사용: ${rule.allowedThemes.join(', ')}
-- 이 과(${department})에 맞지 않는 테마는 쓰지 말 것: ${rule.disallowedThemes.join(', ') || '없음'}
+- 이 과(${department})에 맞지 않는 테마는 쓰지 말 것: ${sharedDisallowedThemes.join(', ') || '없음'}
 - 허용 테마는 참고용이며, 한 문장에 테마는 하나만 사용.${noOutpatientNote}${erNote}\n`;
 }
 
@@ -1974,9 +1974,11 @@ function removeDisallowedProductSentences(text: string, department: string): str
 
 function removeDisallowedDepartmentThemeSentences(text: string, department: string): string {
   const rule = getDeptFeatureRule(department);
-  if (!rule) return text;
+  const sharedDisallowedThemes = departmentDisallowedThemeLabels(department)
+    .filter((theme) => DEPT_DISALLOWED_KEYWORD_SET.has(theme));
+  if (!rule && sharedDisallowedThemes.length === 0) return text;
 
-  const disallowedThemes = rule.disallowedThemes.filter(Boolean);
+  const disallowedThemes = [...new Set(sharedDisallowedThemes)].filter(Boolean);
   if (disallowedThemes.length === 0) return text;
 
   const kept = text

@@ -82,6 +82,42 @@ function normalizeRepeatedNextMarkers(text: string): string {
   return `다음방문시에는 ${parts[parts.length - 1]}`;
 }
 
+function isGenericNextStrategy(text: string): boolean {
+  const normalized = text.replace(/\s+/g, '');
+  return /실제처방여부|실제처방흐름|실제적용사례|실제적용케이스|실제적용가능상황|처방가능케이스/.test(normalized);
+}
+
+function buildConcreteNextStrategy(primaryProduct: string, department: string): string {
+  if (primaryProduct === '위너프에이플러스') {
+    if (/정형외과|외과|신경외과|흉부외과/.test(department)) {
+      return '다음방문시에는 수술 후 식이 지연 환자의 영양 보충 반응 확인할예정';
+    }
+    if (/중환자|ICU|호흡기/i.test(department)) {
+      return '다음방문시에는 중증 환자의 단백 보충과 혈당 부담 반응 확인할예정';
+    }
+    if (/종양|혈액/.test(department)) {
+      return '다음방문시에는 항암 중 식사량 저하 환자의 영양 보충 반응 확인할예정';
+    }
+    return '다음방문시에는 영양 보충이 필요한 환자의 회복 반응 확인할예정';
+  }
+  if (primaryProduct === '페린젝트') {
+    if (/정형외과|외과|신경외과|흉부외과/.test(department)) {
+      return '다음방문시에는 수술 전후 빈혈 환자의 Hb 회복 반응 확인할예정';
+    }
+    if (/산부인과|산과|부인과/.test(department)) {
+      return '다음방문시에는 산후 또는 부인과 수술 후 빈혈 교정 반응 확인할예정';
+    }
+    if (/소화기|종양|혈액/.test(department)) {
+      return '다음방문시에는 경구용철분제 반응 부족 환자의 Hb 회복 반응 확인할예정';
+    }
+    return '다음방문시에는 외래 빈혈 환자의 Hb 회복 반응 확인할예정';
+  }
+  if (primaryProduct === '플라주OP') {
+    return '다음방문시에는 응급·마취 프로토콜 적용 기준과 의료진 반응 확인할예정';
+  }
+  return '다음방문시에는 해당 환자군의 처방 반응 확인할예정';
+}
+
 export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInput): FinalizedVisitGenerationOutput {
   const products = input.products.map(normalizeProduct).filter(Boolean);
   const primaryProduct = products[0] || '위너프에이플러스';
@@ -110,6 +146,9 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
   strategy = normalizeRepeatedNextMarkers(strategy);
   // 하드코딩 fallbackStrategy 호출 제거 — AI 출력을 그대로 유지
   strategy = normalizeRepeatedNextMarkers(sanitizeNextStrategyText(strategy, primaryProduct));
+  if (isGenericNextStrategy(strategy)) {
+    strategy = buildConcreteNextStrategy(primaryProduct, input.department);
+  }
 
   return {
     formattedLog: body,

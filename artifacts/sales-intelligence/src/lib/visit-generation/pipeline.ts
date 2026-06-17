@@ -3,9 +3,11 @@ import { generateWithPlan } from './generator';
 import { normalize } from './normalizer';
 import { buildPlan, preCheckUniqueness } from './planner';
 import { finalizeVisitGenerationOutput } from './finalizer';
-import { initTrace } from './trace';
-import type { GenerationResult, PipelineTrace, RawGenerationOutput, VisitGenerationDependencies, VisitGenerationInput } from './types';
+import { initTrace, type PipelineTraceBuilder } from './trace';
+import type { GenerationResult, RawGenerationOutput, ValidationFailType, VisitGenerationDependencies, VisitGenerationInput } from './types';
 import { validate } from './validator';
+
+const NON_BLOCKING_FINAL_FAIL_TYPES: ValidationFailType[] = ['LEARNED_FORBIDDEN'];
 
 export async function runVisitGenerationPipeline(
   input: VisitGenerationInput,
@@ -52,8 +54,7 @@ export async function runVisitGenerationPipeline(
     });
 
     if (firstValidation.pass) {
-      const final = trace.finish('success');
-      return makeResult(current, raw, plan, ctx, false, final);
+      return makeResult(current, raw, plan, ctx, false, trace);
     }
 
     // ── few-shot 프롬프트 전환 후: 모든 실패를 non-blocking으로 처리, AI 출력 그대로 반환 ──
@@ -62,8 +63,7 @@ export async function runVisitGenerationPipeline(
       output: current,
       note: `validation failed: ${firstValidation.failTypes.join(', ')} — AI 출력 유지 (repair 루프 제거)`,
     });
-    const final = trace.finish('success');
-    return makeResult(current, raw, plan, ctx, false, final);
+    return makeResult(current, raw, plan, ctx, false, trace);
 
   } catch (error) {
     trace.add('error', { note: error instanceof Error ? error.message : String(error) });
@@ -77,7 +77,7 @@ function makeResult(
   plan: ReturnType<typeof buildPlan>,
   ctx: ReturnType<typeof buildContext>,
   usedFallback: boolean,
-  trace: PipelineTrace
+  trace: PipelineTraceBuilder
 ): GenerationResult {
   const finalized = finalizeVisitGenerationOutput({
     formattedLog: current.formattedLog,
@@ -85,6 +85,35 @@ function makeResult(
     products: raw.products?.length ? raw.products : [plan.product],
     department: ctx.doctor.department || '',
   });
+  const finalValidation = validate(finalized.formattedLog, finalized.nextStrategy, plan, ctx);
+  trace.add('validate_final', {
+    output: finalValidation.pass ? 'PASS' : finalValidation.details,
+    failTypes: finalValidation.pass ? [] : finalValidation.failTypes,
+  });
+
+  const isNonBlockingFinalFailure = !finalValidation.pass &&
+    finalValidation.failTypes.length > 0 &&
+    finalValidation.failTypes.every((type) => NON_BLOCKING_FINAL_FAIL_TYPES.includes(type));
+
+  if (!finalValidation.pass && !isNonBlockingFinalFailure) {
+    trace.add('hard_fallback', {
+      output: finalized,
+      failTypes: finalValidation.failTypes,
+      note: `failed final validation: ${finalValidation.failTypes.join(', ')}`,
+    });
+    const fallbackTrace = trace.finish('fallback');
+    return {
+      formattedLog: finalized.formattedLog,
+      nextStrategy: finalized.nextStrategy,
+      visitDate: raw.visitDate ?? ctx.todayDate,
+      products: finalized.products,
+      templateId: plan.templateId,
+      usedFallback: true,
+      trace: fallbackTrace,
+    };
+  }
+
+  const finalTrace = trace.finish('success');
   return {
     formattedLog: finalized.formattedLog,
     nextStrategy: finalized.nextStrategy,
@@ -92,6 +121,6 @@ function makeResult(
     products: finalized.products,
     templateId: plan.templateId,
     usedFallback,
-    trace,
+    trace: finalTrace,
   };
 }

@@ -1124,6 +1124,25 @@ export const snippetStorage = {
   getByProduct(product: string): GoldenSnippet[] {
     return cache.snippets.filter((s) => s.product === product);
   },
+  getGoldenPlanCandidates(department: string, allowedProducts: string[]): GoldenSnippet[] {
+    const allowedSet = new Set(allowedProducts.filter(Boolean));
+    return [...cache.snippets]
+      .filter((s) => allowedSet.has(s.product) && (s.effectiveness ?? 0) >= 3)
+      .sort((a, b) => {
+        const aContext = a.context.trim();
+        const bContext = b.context.trim();
+        const aDeptHint = aContext && (aContext === department || department.includes(aContext) || aContext.includes(department)) ? 1 : 0;
+        const bDeptHint = bContext && (bContext === department || department.includes(bContext) || bContext.includes(department)) ? 1 : 0;
+        if (aDeptHint !== bDeptHint) return bDeptHint - aDeptHint;
+        const effDiff = (b.effectiveness ?? 0) - (a.effectiveness ?? 0);
+        if (effDiff !== 0) return effDiff;
+        const aAnalysis = (a.analysis ?? '').trim().length > 0 ? 1 : 0;
+        const bAnalysis = (b.analysis ?? '').trim().length > 0 ? 1 : 0;
+        if (aAnalysis !== bAnalysis) return bAnalysis - aAnalysis;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
+      .slice(0, 12);
+  },
   save(snippet: GoldenSnippet): SaveOutcome {
     const normalized = normalizeSnippet(snippet);
     const idx = cache.snippets.findIndex((s) => s.id === normalized.id);

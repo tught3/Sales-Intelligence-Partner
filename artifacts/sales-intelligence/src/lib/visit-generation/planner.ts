@@ -1,10 +1,12 @@
 import type { VisitContext } from './context';
+import { inferSnippetPatientGroup, isTextAllowedForDepartment } from './departmentFilters';
 import { collectKeys, extractKeys, extractReactionKeys, similarityRatio } from './detailKeys';
-import type { ExternalCasePattern } from '../storage';
+import { snippetStorage, type ExternalCasePattern, type GoldenSnippet } from '../storage';
 import type { DetailKey } from './types';
 import { getVisitTemplates } from './templates';
 
 type PlanCandidate = Omit<DetailKey, 'selectionReason'>;
+type SnippetPlanCandidate = PlanCandidate & { snippetId?: string };
 
 // REACTION_FALLBACKS 제거 — 고정 반응 패턴은 기계적 출력의 원인. AI가 자유롭게 생성.
 
@@ -158,6 +160,45 @@ function buildTemplateCandidates(ctx: VisitContext): PlanCandidate[] {
   }));
 }
 
+function inferSnippetNarrativeStyle(snippet: GoldenSnippet): DetailKey['narrativeStyle'] {
+  const text = `${snippet.content} ${snippet.context} ${(snippet.tags ?? []).join(' ')} ${snippet.analysis ?? ''}`;
+  if (/질문|문의|\?/.test(text)) return '교수 질문 답변형';
+  if (/급여|보험|청구/.test(text)) return '급여 기준 재확인형';
+  if (/지난|이전|재확인/.test(text)) return '지난 방문 확인형';
+  if (/처방|사용|적용/.test(text)) return '처방 경험 확인형';
+  return '환자 케이스 연결형';
+}
+
+function snippetDetailAxis(snippet: GoldenSnippet): string {
+  const source = (snippet.analysis || snippet.content).replace(/\s+/g, ' ').trim();
+  if (!source) return `${snippet.product} 핵심 디테일`;
+  const firstSentence = source.split(/(?<=[.。!?])\s+|\n+/).map((item) => item.trim()).find(Boolean) ?? source;
+  return firstSentence.length > 74 ? `${firstSentence.slice(0, 74)}...` : firstSentence;
+}
+
+function buildSnippetCandidates(ctx: VisitContext): SnippetPlanCandidate[] {
+  const department = ctx.doctor.department || '';
+  const snippets = snippetStorage.getGoldenPlanCandidates(department, ctx.availableProducts);
+  return uniqueByText(snippets.map((snippet) => {
+    const text = `${snippet.content} ${snippet.context} ${(snippet.tags ?? []).join(' ')} ${snippet.analysis ?? ''}`;
+    const detailAxis = snippetDetailAxis(snippet);
+    const patientGroup = inferSnippetPatientGroup(text, department);
+    return {
+      templateId: `snippet-${snippet.id}`,
+      snippetId: snippet.id,
+      product: snippet.product,
+      patientGroup,
+      detailAxis,
+      doctorReaction: '',
+      nextAction: `${snippet.product} 다른 환자군과 실제 처방 반응 확인`,
+      narrativeStyle: inferSnippetNarrativeStyle(snippet),
+      professorQuestion: professorQuestionFrom({ product: snippet.product, detailAxis, patientGroup }),
+      allowedDepartments: snippet.context === department ? [department] : undefined,
+      exampleMemo: snippet.content,
+    };
+  }));
+}
+
 // WINUF_CANDIDATES: 하드코딩된 고정 반응/문구 제거. doctorReaction은 AI가 생성.
 const WINUF_CANDIDATES: PlanCandidate[] = [
   {
@@ -280,19 +321,14 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
   if (candidate.blockedDepartments?.length && departmentMatches(department, candidate.blockedDepartments)) {
     return false;
   }
-  if (/소화기/.test(department) && /분만|산후|산부인과|부인과|제왕절개/.test(planText(candidate))) {
-    return false;
-  }
-  if (/산부인과|산과|부인과/.test(department) && /IBD|크론|궤양성대장염|위장관\s*출혈/.test(planText(candidate))) {
-    return false;
-  }
-  return true;
+  return isTextAllowedForDepartment(planText(candidate), department);
 }
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const templateCandidates = buildTemplateCandidates(ctx);
   const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.flatMap((pattern) => buildExternalCandidateVariants(pattern, ctx));
-  const all = [...templateCandidates, ...externalCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
+  const snippetCandidates = buildSnippetCandidates(ctx);
+  const all = [...templateCandidates, ...externalCandidates, ...snippetCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const manualProducts = ctx.manualRawNotes
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
     : [];
@@ -334,6 +370,11 @@ function externalPatternBonus(candidate: PlanCandidate, ctx: VisitContext): numb
   return 4 + Math.min(5, Math.max(0, Math.round((matched.confidence || 0) / 20)));
 }
 
+function snippetBonus(candidate: PlanCandidate): number {
+  // externalPatternBonus is 4..9; a golden snippet gets a mid-scale +5 and does not overpower high-confidence external cases.
+  return candidate.templateId?.startsWith('snippet-') ? 5 : 0;
+}
+
 function templateFreshnessBonus(candidate: PlanCandidate, ctx: VisitContext): number {
   if (!candidate.templateId) return 0;
   if (ctx.batchUsedTemplateIds.includes(candidate.templateId)) return -120;
@@ -350,6 +391,65 @@ function batchSimilarityPenalty(candidate: PlanCandidate, texts: string[]): numb
     if (ratio >= 0.45) return penalty + 20;
     return penalty;
   }, 0);
+}
+
+function professorHistoryPenalty(candidate: PlanCandidate, ctx: VisitContext): number {
+  // buildContext receives visitLogStorage.getByDoctorId(doctor.id), so ctx.pastLogs
+  // is scoped to the current professor/doctorId before this planner is called.
+  if (ctx.pastLogs.length === 0) return 0;
+  const candidateText = planText(candidate);
+  const candidateKeys = extractKeys(candidateText);
+  const patientGroupSample = candidate.patientGroup.replace(/\s+/g, '').slice(0, 12);
+  return ctx.pastLogs.slice(0, 8).reduce((penalty, log) => {
+    const historyText = `${log.formattedLog} ${log.nextStrategy ?? ''}`;
+    const historyKeys = extractKeys(historyText);
+    const sharedKeys = candidateKeys.filter((key) => historyKeys.includes(key)).length;
+    const sameProduct = Boolean(log.products?.includes(candidate.product) || historyText.includes(candidate.product));
+    const samePatientGroup = patientGroupSample.length >= 8 && historyText.replace(/\s+/g, '').includes(patientGroupSample);
+    const ratio = similarityRatio(candidateText, historyText);
+    if (sameProduct && sharedKeys >= 2) return penalty + 35;
+    if (samePatientGroup) return penalty + 25;
+    if (ratio >= 0.6) return penalty + 45;
+    if (ratio >= 0.4) return penalty + 15;
+    return penalty;
+  }, 0);
+}
+
+function hasSameNextActionAxis(candidate: PlanCandidate): boolean {
+  const detailKeys = extractKeys(`${candidate.detailAxis} ${candidate.patientGroup}`);
+  const nextKeys = extractKeys(candidate.nextAction);
+  return detailKeys.length > 0 && nextKeys.some((key) => detailKeys.includes(key));
+}
+
+function ensureDistinctNextActionAxis(selected: PlanCandidate, ranked: PlanCandidate[], ctx: VisitContext): PlanCandidate {
+  if (!hasSameNextActionAxis(selected)) return selected;
+  // Prefer a different product first, then another patient/context axis, then a minimal same-product fallback.
+  const alternatives = ranked.filter((candidate) => candidate !== selected && !hasSameNextActionAxis(candidate));
+  const productAlternative = alternatives.find((candidate) => candidate.product !== selected.product);
+  const axisAlternative = productAlternative ?? alternatives[0];
+  if (axisAlternative) {
+    return {
+      ...selected,
+      nextAction: axisAlternative.product !== selected.product
+        ? `${axisAlternative.product} ${axisAlternative.patientGroup} 처방 반응 확인할예정`
+        : normalizeNextActionEnding(axisAlternative.nextAction),
+    };
+  }
+  const otherProduct = ctx.availableProducts.find((product) => product !== selected.product);
+  if (otherProduct) {
+    return { ...selected, nextAction: `${otherProduct} 다른 환자군과 처방 반응 확인할예정` };
+  }
+  return { ...selected, nextAction: `${selected.product} 다른 환자군에서 처방 반응 확인할예정` };
+}
+
+function normalizeNextActionEnding(nextAction: string): string {
+  const trimmed = nextAction.trim();
+  if (!trimmed) return '다른 환자군에서 처방 반응 확인할예정';
+  if (/할예정$/.test(trimmed)) return trimmed;
+  if (/할 예정$/.test(trimmed)) return trimmed.replace(/할 예정$/, '할예정');
+  if (/예정$/.test(trimmed)) return trimmed;
+  if (/확인$|논의$|검토$|재확인$/.test(trimmed)) return `${trimmed}할예정`;
+  return `${trimmed} 확인할예정`;
 }
 
 function extractBatchProducts(texts: string[]): string[] {
@@ -417,6 +517,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       (ctx.batchUsedProducts.includes(a.product) ? 10 : 0) +
       (batchProducts.includes(a.product) ? 12 : 0) +
       (hasUsedTemplate(a, ctx) ? 50 : 0) +
+      professorHistoryPenalty(a, ctx) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length * 4 +
       batchSimilarityPenalty(a, ctx.batchAvoidTexts);
     const bPenalty =
@@ -427,6 +528,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       (ctx.batchUsedProducts.includes(b.product) ? 10 : 0) +
       (batchProducts.includes(b.product) ? 12 : 0) +
       (hasUsedTemplate(b, ctx) ? 50 : 0) +
+      professorHistoryPenalty(b, ctx) +
       ctx.learnedForbiddenPatterns.filter((pattern) => pattern && bText.includes(pattern.slice(0, 12))).length * 4 +
       batchSimilarityPenalty(b, ctx.batchAvoidTexts);
     const aBonus = ctx.learnedPreferredPatterns.filter((pattern) => pattern && aText.includes(pattern.slice(0, 12))).length;
@@ -437,6 +539,7 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       (canRotateProduct && mostRecentProduct && a.product !== mostRecentProduct ? 8 : 0) +
       (canRotateProduct && mostRecentProduct && a.product === mostRecentProduct ? -10 : 0) +
       externalPatternBonus(a, ctx) +
+      snippetBonus(a) +
       templateFreshnessBonus(a, ctx);
     const bCarryoverBonus =
       carryoverKeys.filter((key) => bKeys.includes(key)).length * 5 +
@@ -444,13 +547,17 @@ export function buildPlan(ctx: VisitContext): DetailKey {
       (canRotateProduct && mostRecentProduct && b.product !== mostRecentProduct ? 8 : 0) +
       (canRotateProduct && mostRecentProduct && b.product === mostRecentProduct ? -10 : 0) +
       externalPatternBonus(b, ctx) +
+      snippetBonus(b) +
       templateFreshnessBonus(b, ctx);
     return (aPenalty - aBonus - aCarryoverBonus) - (bPenalty - bBonus - bCarryoverBonus);
   });
 
   // 상위 3개 중 랜덤 선택 — 같은 입력이라도 매번 다른 결과 (A→A→A 방지 핵심)
   const topN = ranked.slice(0, Math.min(3, ranked.length));
-  const selected = pickRandom(topN) ?? candidatesFor({ ...ctx, availableProducts: ['위너프에이플러스', '페린젝트'] })[0] ?? FERINJECT_CANDIDATES[0];
+  const selectedRaw = (topN.length > 0 ? pickRandom(topN) : undefined) ??
+    candidatesFor({ ...ctx, availableProducts: ['위너프에이플러스', '페린젝트'] })[0] ??
+    FERINJECT_CANDIDATES[0];
+  const selected = ensureDistinctNextActionAxis(selectedRaw, ranked, ctx);
   const carryoverNote = latestStrategy
     ? `; 최근 다음방문전략(${latestStrategy.slice(0, 60)})과 이어질 수 있는 후보를 우선 반영`
     : '';

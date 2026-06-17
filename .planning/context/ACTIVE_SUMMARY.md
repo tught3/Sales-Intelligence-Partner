@@ -48,6 +48,7 @@
 - Visit-log generation now catches bare `지난번 ...` openings and strips that framing when the sentence does not include a real feedback/result before moving into a new detail.
 - When prior context says a product is already in use, same-product `오늘은 ... 중심으로` wording is normalized into usage reaction/reorder/applicable-patient follow-up instead of repeating the product focus.
 - Bulk auto-generation now feeds already-created logs from the current batch into later generation and validation calls so same-hospital multi-generate avoids repeated objection/answer/detail phrasing.
+- TASK_20260617_080523 revision completed: default product fallback excludes 플라주OP, shared department-patient filters block mismatched disease groups, golden snippets enter plan candidates with a 5-point bonus in the external 4-9 scale, professor-history repetition is penalized from current-doctor `ctx.pastLogs`, and nextAction uses a different axis. `node scripts/test-pipeline.mjs` passed with todo 0, `pnpm --filter @workspace/sales-intelligence run typecheck` passed, `pnpm --filter @workspace/sales-intelligence run build` passed, and root `pnpm run build` passed.
 
 ## Useful Entry Points
 - `package.json`
