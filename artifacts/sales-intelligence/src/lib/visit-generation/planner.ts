@@ -292,20 +292,6 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
   if (candidate.blockedDepartments?.length && departmentMatches(department, candidate.blockedDepartments)) {
     return false;
   }
-  if (/소화기/.test(department) && /분만|산후|산부인과|부인과|제왕절개/.test(planText(candidate))) {
-    return false;
-  }
-  if (/산부인과|산과|부인과/.test(department) && /IBD|크론|궤양성대장염|위장관\s*출혈/.test(planText(candidate))) {
-    return false;
-  }
-  // 순수 내과 계열 (수술 안 함) — 수술 회복기 환자군 금지
-  if (departmentMatches(department, ['호흡기내과', '호흡기', '종양내과', '혈액종양', '혈액내과', '소화기내과', '내분비내과', '순환기내과', '신장내과'])) {
-    if (/수술\s*후\s*회복|절제\s*후\s*회복|수술\s*회복기|수술\s*전후\s*영양/.test(planText(candidate))) return false;
-  }
-  // 비간담췌외과 — 간절제 표현 금지
-  if (!departmentMatches(department, ['간담췌외과', '간담'])) {
-    if (/간\s*절제|간절제/.test(planText(candidate))) return false;
-  }
   return isTextAllowedForDepartment(planText(candidate), department);
 }
 

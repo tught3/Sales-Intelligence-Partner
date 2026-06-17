@@ -21,6 +21,10 @@ const DEFAULT_PRODUCT: ProductName = '위너프에이플러스';
 
 const GENERAL_FORBIDDEN = /산후|분만|산모|제왕절개|부인과|IBD|크론|궤양성\s*대장염|위장관\s*출혈|대장암|직장암|항문\s*수술|췌장|담낭|담도|위암|위\s*절제|폐암|COPD|폐렴|호흡\s*재활|뇌수술|척추수술|항암|CIA|EPO|암환자/;
 
+// 임상 도메인 맥락 용어 — 진료과별로 허용 범위가 다른 영역을 표시
+// 이 단어가 포함된 텍스트는 반드시 해당 진료과의 allowedContext를 통과해야 함
+const CLINICAL_CONTEXT_TERMS = /수술|절제|ICU|중환자|항암|IBD|크론|산후|분만|폐암|COPD|뇌수술|척추|TKR|THR|관절\s*치환|골절|위암|대장암|췌장|담낭|위장관\s*출혈|패혈증|외상/;
+
 function fallbackSet(base: {
   winuf: [string, string, string, string, string];
   ferinject: [string, string, string, string, string];
@@ -312,10 +316,13 @@ export function getDepartmentContextGuide(department: string): string {
 
 export function hasDepartmentMismatch(text: string, department: string): boolean {
   const profile = getDepartmentProfile(department);
-  if (!profile) return false;
+  // 프로필 없는 과도 GENERAL_FORBIDDEN은 적용 (산후/분만 등 타과 전용 표현 차단)
+  if (!profile) return GENERAL_FORBIDDEN.test(text);
   if (profile.forbiddenContext.test(text)) return true;
   if (profile.allowedContext.test(text)) return false;
-  return GENERAL_FORBIDDEN.test(text);
+  // 임상 맥락 용어가 있지만 이 과의 허용 맥락에 해당하지 않으면 타과 콘텐츠로 판단
+  if (CLINICAL_CONTEXT_TERMS.test(text)) return true;
+  return false;
 }
 
 export function isTextAllowedForDepartment(text: string, department: string): boolean {
