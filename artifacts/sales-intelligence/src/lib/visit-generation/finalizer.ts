@@ -103,6 +103,10 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
     doctorName: input.doctorName,
     hospital: input.hospital,
   });
+  // 제품명 + 교수/선생 패턴 제거: "위너프에이플러스 교수님께서..." → "교수님께서..."
+  body = body.replace(/^(위너프에이플러스|플라주OP)\s+(교수님|교수\s*님|선생님|선생)\s*/g, '$2');
+  // 위너프/플라주가 아무 맥락 없이 첫 단어로만 나올 경우 제거
+  body = body.replace(/^(위너프에이플러스|플라주OP)\s+(?=[가-힣])/, '');
   body = sanitizeVisitLogBody(body, primaryProduct);
   body = removeForeignProductSentences(body, primaryProduct);
   body = trimAfterReactionSentence(body);

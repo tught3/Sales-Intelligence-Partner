@@ -197,7 +197,7 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     doctorReaction: '',
     nextAction: '적용 가능 케이스와 처방 타이밍 확인',
     narrativeStyle: '교수 질문 답변형',
-    allowedDepartments: ['외과', '흉부외과', '신경외과', '정형외과', '간담췌외과', '산부인과'],
+    allowedDepartments: ['외과', '흉부외과', '신경외과', '정형외과', '간담췌외과'],
   },
   {
     product: '위너프에이플러스',
@@ -207,15 +207,6 @@ const WINUF_CANDIDATES: PlanCandidate[] = [
     nextAction: '식사량 저하 환자에서 영양 반응과 처방 가능성 확인',
     narrativeStyle: '환자 케이스 연결형',
     allowedDepartments: ['소화기내과'],
-  },
-  {
-    product: '위너프에이플러스',
-    patientGroup: '부인과 수술 후 식이 진행이 늦어 영양 공급이 필요한 환자',
-    detailAxis: '위너프에이플러스의 수술 후 회복기 영양과 혈당 관리',
-    doctorReaction: '',
-    nextAction: '분만·수술 후 회복기 환자에서 영양 공급 반응 확인',
-    narrativeStyle: '지난 방문 확인형',
-    allowedDepartments: ['산부인과', '산과', '부인과'],
   },
 ];
 
