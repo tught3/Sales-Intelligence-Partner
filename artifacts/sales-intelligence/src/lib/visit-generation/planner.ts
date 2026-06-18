@@ -286,13 +286,20 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
   return isTextAllowedForDepartment(planText(candidate), department);
 }
 
+function getDeptForcedProducts(department: string): string[] | null {
+  if (/산부인과|산과|부인과/.test(department)) return ['페린젝트'];
+  return null;
+}
+
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
   const templateCandidates = buildTemplateCandidates(ctx);
   const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.flatMap((pattern) => buildExternalCandidateVariants(pattern, ctx));
   const manualProducts = ctx.manualRawNotes
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
     : [];
-  const productPool = manualProducts.length > 0 ? manualProducts : ctx.availableProducts;
+  const basePool = manualProducts.length > 0 ? manualProducts : ctx.availableProducts;
+  const deptForced = getDeptForcedProducts(ctx.doctor.department || '');
+  const productPool = deptForced ? basePool.filter((p) => deptForced.includes(p)) : basePool;
   const fallbackCandidates = productPool.map((product) => buildDepartmentFallbackPlanCandidate(ctx, product));
   const all = [...externalCandidates, ...templateCandidates, ...fallbackCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const filtered = all.filter((candidate) =>
