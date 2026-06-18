@@ -12,7 +12,7 @@ function hasReaction(text: string): boolean {
 }
 
 function hasForbiddenPhrase(text: string): boolean {
-  return /실제\s*적용\s*환자군|적용\s*환자군\s*확인|환자군\s*중심으로|추가\s*디테일\s*진행할예정/.test(text);
+  return /실제\s*적용\s*환자군|적용\s*환자군\s*확인|환자군\s*중심으로|추가\s*디테일\s*진행할예정|심포지엄\s*참석|학회\s*참석|제품설명회|참석\s*예정|행사\s*참석/.test(text);
 }
 
 function hasLearnedForbidden(text: string, patterns: string[]): boolean {
