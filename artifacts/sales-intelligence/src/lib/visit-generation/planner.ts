@@ -286,9 +286,13 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
   return isTextAllowedForDepartment(planText(candidate), department);
 }
 
-function getDeptForcedProducts(department: string): string[] | null {
+function getDeptForcedProducts(department: string, pool: string[]): string[] {
   if (/산부인과|산과|부인과/.test(department)) return ['페린젝트'];
-  return null;
+  // 마취통증/응급 외 모든 과에서 플라주OP 차단
+  if (!/마취통증|마취과|통증의학|응급의학|응급/.test(department)) {
+    return pool.filter((p) => p !== '플라주OP');
+  }
+  return pool;
 }
 
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
@@ -298,8 +302,7 @@ function candidatesFor(ctx: VisitContext): PlanCandidate[] {
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
     : [];
   const basePool = manualProducts.length > 0 ? manualProducts : ctx.availableProducts;
-  const deptForced = getDeptForcedProducts(ctx.doctor.department || '');
-  const productPool = deptForced ? basePool.filter((p) => deptForced.includes(p)) : basePool;
+  const productPool = getDeptForcedProducts(ctx.doctor.department || '', basePool);
   const fallbackCandidates = productPool.map((product) => buildDepartmentFallbackPlanCandidate(ctx, product));
   const all = [...externalCandidates, ...templateCandidates, ...fallbackCandidates, ...WINUF_CANDIDATES, ...FERINJECT_CANDIDATES];
   const filtered = all.filter((candidate) =>
