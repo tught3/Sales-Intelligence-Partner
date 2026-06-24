@@ -1,5 +1,5 @@
 import type { VisitContext } from './context';
-import { inferSnippetPatientGroup, isTextAllowedForDepartment } from './departmentFilters';
+import { inferSnippetPatientGroup, isErOrAnesthesiaDepartment, isTextAllowedForDepartment } from './departmentFilters';
 import { collectKeys, extractKeys, extractReactionKeys, similarityRatio } from './detailKeys';
 import { snippetStorage, type ExternalCasePattern, type GoldenSnippet } from '../storage';
 import type { DetailKey } from './types';
@@ -324,7 +324,12 @@ function isCandidateAllowedForDepartment(candidate: PlanCandidate, department: s
   return isTextAllowedForDepartment(planText(candidate), department);
 }
 
+function getDeptForcedProducts(department: string): string[] {
+  return isErOrAnesthesiaDepartment(department) ? [] : ['플라주OP'];
+}
+
 function candidatesFor(ctx: VisitContext): PlanCandidate[] {
+  const department = ctx.doctor.department || '';
   const templateCandidates = buildTemplateCandidates(ctx);
   const externalCandidates: PlanCandidate[] = ctx.externalCasePatterns.flatMap((pattern) => buildExternalCandidateVariants(pattern, ctx));
   const snippetCandidates = buildSnippetCandidates(ctx);
@@ -333,9 +338,11 @@ function candidatesFor(ctx: VisitContext): PlanCandidate[] {
     ? ctx.availableProducts.filter((product) => ctx.manualRawNotes?.replace(/\s+/g, '').includes(product.replace(/\s+/g, '')))
     : [];
   const productPool = manualProducts.length > 0 ? manualProducts : ctx.availableProducts;
+  const forcedExcludedProducts = getDeptForcedProducts(department);
   return all.filter((candidate) =>
     productPool.includes(candidate.product) &&
-    isCandidateAllowedForDepartment(candidate, ctx.doctor.department || '')
+    !forcedExcludedProducts.includes(candidate.product) &&
+    isCandidateAllowedForDepartment(candidate, department)
   );
 }
 

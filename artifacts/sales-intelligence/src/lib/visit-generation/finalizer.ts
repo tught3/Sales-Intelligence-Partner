@@ -20,9 +20,14 @@ export type FinalizedVisitGenerationOutput = {
 };
 
 const NEXT_MARKER_RE = /(?:다음\s*(?:방문\s*시(?:에는|엔|에|는)?|방문(?:시)?(?:에는|엔|에|는)?|번에는|번엔|번에|에는|엔|에)|다음방문시에는|다음방문에는|다음번에는|다음에는|다음엔|다음에)/gi;
+const SENTENCE_START_PRODUCT_RE = /(^|[.。!?]\s+)(?:위너프에이플러스|위너프|플라주OP|플라주|페린젝트)(?:의)?\s+/g;
 
 function compact(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+function stripSentenceStartProductNames(text: string): string {
+  return compact(text.replace(SENTENCE_START_PRODUCT_RE, '$1'));
 }
 
 function normalizeProduct(product: string): string {
@@ -129,6 +134,7 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
   body = removeForeignProductSentences(body, primaryProduct);
   body = trimAfterReactionSentence(body);
   body = compact(body)
+    .replace(SENTENCE_START_PRODUCT_RE, '$1')
     .replace(/(위너프에이플러스|페린젝트|플라주OP)의\s+/g, '$1 ')
     .replace(/빠르고\s+에\s+/g, '빠른 ')
     .replace(/빠른\s+도움/g, '빠르게 도움')
@@ -146,6 +152,7 @@ export function finalizeVisitGenerationOutput(input: FinalizeVisitGenerationInpu
   strategy = normalizeRepeatedNextMarkers(strategy);
   // 하드코딩 fallbackStrategy 호출 제거 — AI 출력을 그대로 유지
   strategy = normalizeRepeatedNextMarkers(sanitizeNextStrategyText(strategy, primaryProduct));
+  strategy = stripSentenceStartProductNames(strategy);
   if (isGenericNextStrategy(strategy)) {
     strategy = buildConcreteNextStrategy(primaryProduct, input.department);
   }
