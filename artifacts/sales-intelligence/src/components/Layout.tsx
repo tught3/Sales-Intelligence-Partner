@@ -17,6 +17,7 @@ import {
   Package,
   Menu,
   X,
+  MessageSquare,
 } from "lucide-react";
 
 const navGroups = [
@@ -27,6 +28,7 @@ const navGroups = [
       { href: "/visit-log", label: "영업 일지 작성", icon: FileText },
       { href: "/visit-log-history", label: "방문 일지 기록", icon: ClipboardList },
       { href: "/bulk-import", label: "교수 파일 일괄 입력", icon: FolderInput },
+      { href: "/chat", label: "기기 간 채팅", icon: MessageSquare },
     ],
   },
   {
@@ -153,6 +155,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
             <span className="text-sm font-bold">JW 영업 AI 비서</span>
           </div>
+          <button
+            onClick={() => setLocation("/chat")}
+            className="ml-auto touch-target rounded-lg hover:bg-muted p-2"
+          >
+            <MessageSquare className="w-5 h-5" />
+          </button>
         </div>
         <div className={cn(isMobile && "mobile-page-shell")}>{children}</div>
       </main>

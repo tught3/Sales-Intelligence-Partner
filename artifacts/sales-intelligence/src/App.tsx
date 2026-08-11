@@ -16,6 +16,7 @@ const SnippetsPage = lazy(() => import("@/pages/SnippetsPage"));
 const ExternalCasesPage = lazy(() => import("@/pages/ExternalCasesPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const BulkImportPage = lazy(() => import("@/pages/BulkImportPage"));
+const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ function Router() {
           <Route path="/external-cases" component={ExternalCasesPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/bulk-import" component={BulkImportPage} />
+          <Route path="/chat" component={ChatPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
