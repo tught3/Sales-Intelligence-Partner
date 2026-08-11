@@ -1,6 +1,7 @@
 import app from "./app";
 import { runDataMigrations } from "./bootstrap";
 import { logger } from "./lib/logger";
+import { attachChatWebSocket } from "./chat/chat-ws";
 
 const rawPort = process.env["API_SERVER_PORT"] ?? process.env["PORT"];
 
@@ -14,7 +15,7 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, "0.0.0.0", (err?: Error) => {
+const server = app.listen(port, "0.0.0.0", (err?: Error) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -22,6 +23,8 @@ app.listen(port, "0.0.0.0", (err?: Error) => {
 
   logger.info({ port, host: "0.0.0.0" }, "Server listening");
 });
+
+attachChatWebSocket(server);
 
 runDataMigrations().catch((err) => {
   logger.warn({ err }, "Data migration failed after server startup");
